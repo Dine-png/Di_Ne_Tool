@@ -1,0 +1,29 @@
+name: Build Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set Package Name
+        id: pkg
+        run: |
+          echo "name=$(jq -r '.name' Packages/com.dinetool.avatar-tools/package.json)" >> $GITHUB_OUTPUT
+          echo "version=$(jq -r '.version' Packages/com.dinetool.avatar-tools/package.json)" >> $GITHUB_OUTPUT
+
+      - name: Zip Package
+        run: |
+          cd Packages/com.dinetool.avatar-tools
+          zip -r ../../${{ steps.pkg.outputs.name }}-${{ steps.pkg.outputs.version }}.zip .
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.pkg.outputs.version }}
+          name: ${{ steps.pkg.outputs.version }}
+          files: ${{ steps.pkg.outputs.name }}-${{ steps.pkg.outputs.version }}.zip
+          token: ${{ secrets.GITHUB_TOKEN }}
