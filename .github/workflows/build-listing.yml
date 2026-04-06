@@ -15,37 +15,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Get All Releases
-        id: releases
-        run: |
-          releases=$(gh release list --json tagName,assets --jq '[.[] | {version: .tagName, url: (.assets[] | select(.name | endswith(".zip")) | .browserDownloadUrl)}]')
-          echo "releases=$releases" >> $GITHUB_OUTPUT
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Build index.json
         run: |
-          pkg_name=$(jq -r '.name' Packages/com.dinetool.avatar-tools/package.json)
-          pkg_display=$(jq -r '.displayName' Packages/com.dinetool.avatar-tools/package.json)
-          
           mkdir -p Website
           
-          versions="{}"
-          while IFS= read -r release; do
-            version=$(echo "$release" | jq -r '.version')
-            url=$(echo "$release" | jq -r '.url')
-            pkg=$(jq --arg url "$url" '.url = $url' Packages/com.dinetool.avatar-tools/package.json)
-            versions=$(echo "$versions" | jq --arg v "$version" --argjson p "$pkg" '.[$v] = $p')
-          done < <(echo '${{ steps.releases.outputs.releases }}' | jq -c '.[]')
+          pkg_name=$(jq -r '.name' Packages/com.dinetool.avatar-tools/package.json)
+          pkg_display=$(jq -r '.displayName' Packages/com.dinetool.avatar-tools/package.json)
+          pkg_version=$(jq -r '.version' Packages/com.dinetool.avatar-tools/package.json)
+          zip_url="https://github.com/${{ github.repository }}/releases/download/${pkg_version}/${pkg_name}-${pkg_version}.zip"
+          
+          pkg=$(jq --arg url "$zip_url" '.url = $url' Packages/com.dinetool.avatar-tools/package.json)
           
           jq -n \
             --arg name "$pkg_display" \
             --arg author "Dine" \
             --arg url "https://Dine-png.github.io/Di_Ne_Tool/index.json" \
             --arg pkg_name "$pkg_name" \
-            --argjson versions "$versions" \
-            '{name: $name, author: $author, url: $url, packages: {($pkg_name): {versions: $versions}}}' \
+            --arg version "$pkg_version" \
+            --argjson pkg "$pkg" \
+            '{name: $name, author: $author, url: $url, packages: {($pkg_name): {versions: {($version): $pkg}}}}' \
             > Website/index.json
+          
+          cat Website/index.json
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
