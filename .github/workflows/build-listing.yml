@@ -12,6 +12,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build Listing
-        uses: vrchat-community/package-list-action@v1
+        uses: vrchat-community/package-list-action@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
