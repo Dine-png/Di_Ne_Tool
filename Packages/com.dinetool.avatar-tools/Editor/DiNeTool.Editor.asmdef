@@ -1,0 +1,10 @@
+{
+    "name": "DiNeTool.Editor",
+    "references": [
+        "com.vrchat.base.Editor",
+        "com.vrchat.avatars.Editor"
+    ],
+    "includePlatforms": ["Editor"],
+    "excludePlatforms": [],
+    "autoReferenced": true
+}
