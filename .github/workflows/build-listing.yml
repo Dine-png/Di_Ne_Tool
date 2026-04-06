@@ -8,10 +8,49 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build Listing
-        uses: vrchat-community/package-list-action@v2
+      - name: Get All Releases
+        id: releases
+        run: |
+          releases=$(gh release list --json tagName,assets --jq '[.[] | {version: .tagName, url: (.assets[] | select(.name | endswith(".zip")) | .browserDownloadUrl)}]')
+          echo "releases=$releases" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build index.json
+        run: |
+          pkg_name=$(jq -r '.name' Packages/com.dinetool.avatar-tools/package.json)
+          pkg_display=$(jq -r '.displayName' Packages/com.dinetool.avatar-tools/package.json)
+          
+          mkdir -p Website
+          
+          versions="{}"
+          while IFS= read -r release; do
+            version=$(echo "$release" | jq -r '.version')
+            url=$(echo "$release" | jq -r '.url')
+            pkg=$(jq --arg url "$url" '.url = $url' Packages/com.dinetool.avatar-tools/package.json)
+            versions=$(echo "$versions" | jq --arg v "$version" --argjson p "$pkg" '.[$v] = $p')
+          done < <(echo '${{ steps.releases.outputs.releases }}' | jq -c '.[]')
+          
+          jq -n \
+            --arg name "$pkg_display" \
+            --arg author "Dine" \
+            --arg url "https://Dine-png.github.io/Di_Ne_Tool/index.json" \
+            --arg pkg_name "$pkg_name" \
+            --argjson versions "$versions" \
+            '{name: $name, author: $author, url: $url, packages: {($pkg_name): {versions: $versions}}}' \
+            > Website/index.json
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          path: Website
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
