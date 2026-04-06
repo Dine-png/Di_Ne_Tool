@@ -2,7 +2,8 @@
     "name": "DiNeTool.Editor",
     "references": [
         "com.vrchat.base.Editor",
-        "com.vrchat.avatars.Editor"
+        "com.vrchat.avatars.Editor",
+        "DiNeTool.Runtime"
     ],
     "includePlatforms": ["Editor"],
     "excludePlatforms": [],
