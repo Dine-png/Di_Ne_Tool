@@ -37,9 +37,9 @@ public class ArmatureScalerEditor : EditorWindow
     private enum HumanoidBodyPart
     {
         None,
-        Head, Spine, Torso, Hips,
-        LeftArm, LeftLowerArm, LeftHand,
-        RightArm, RightLowerArm, RightHand,
+        Head, Neck, Spine, Torso, Hips,
+        LeftShoulder, LeftArm, LeftLowerArm, LeftHand,
+        RightShoulder, RightArm, RightLowerArm, RightHand,
         LeftLeg, LeftLowerLeg, LeftFoot,
         RightLeg, RightLowerLeg, RightFoot,
         LeftBreast, RightBreast, LeftButt, RightButt
@@ -333,67 +333,7 @@ public class ArmatureScalerEditor : EditorWindow
         EditorGUILayout.EndVertical();
 
         scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
-
-        EditorGUILayout.BeginVertical("box");
-        
-        GuiLine(1, 10);
-        
-        // 본 선택 버튼들 UI (기존과 동일)
-        EditorGUILayout.BeginHorizontal();
-        GUILayout.FlexibleSpace();
-        EditorGUILayout.BeginVertical(GUILayout.Width(130));
-        DrawBoneButton(HumanoidBodyPart.LeftArm, UI_TEXT[3], 100, 25);
-        DrawBoneButton(HumanoidBodyPart.LeftLowerArm, UI_TEXT[4], 100, 25);
-        DrawBoneButton(HumanoidBodyPart.LeftHand, UI_TEXT[5], 100, 25);
-        GUILayout.Space(50);
-        DrawBoneButton(HumanoidBodyPart.LeftLeg, UI_TEXT[13], 100, 25);
-        DrawBoneButton(HumanoidBodyPart.LeftLowerLeg, UI_TEXT[14], 100, 25);
-        DrawBoneButton(HumanoidBodyPart.LeftFoot, UI_TEXT[15], 100, 25);
-        EditorGUILayout.EndVertical();
-
-        GUILayout.FlexibleSpace();
-        EditorGUILayout.BeginVertical(GUILayout.Width(120));
-        DrawBoneButton(HumanoidBodyPart.Head, UI_TEXT[6], 100, 25);
-        GUILayout.Space(5);
-        DrawBoneButton(HumanoidBodyPart.Torso, UI_TEXT[7], 100, 25);
-        DrawBoneButton(HumanoidBodyPart.Spine, UI_TEXT[8], 100, 25);
-        DrawBoneButton(HumanoidBodyPart.Hips, UI_TEXT[9], 100, 25);
-        EditorGUILayout.EndVertical();
-        
-        GUILayout.FlexibleSpace();
-        EditorGUILayout.BeginVertical(GUILayout.Width(130));
-        DrawBoneButton(HumanoidBodyPart.RightArm, UI_TEXT[10], 100, 25);
-        DrawBoneButton(HumanoidBodyPart.RightLowerArm, UI_TEXT[11], 100, 25);
-        DrawBoneButton(HumanoidBodyPart.RightHand, UI_TEXT[12], 100, 25);
-        GUILayout.Space(50);
-        DrawBoneButton(HumanoidBodyPart.RightLeg, UI_TEXT[16], 100, 25);
-        DrawBoneButton(HumanoidBodyPart.RightLowerLeg, UI_TEXT[17], 100, 25);
-        DrawBoneButton(HumanoidBodyPart.RightFoot, UI_TEXT[18], 100, 25);
-        EditorGUILayout.EndVertical();
-        
-        GUILayout.FlexibleSpace();
-        EditorGUILayout.EndHorizontal();
-
-        GuiLine(1, 10);
-        EditorGUILayout.LabelField(UI_TEXT[19], EditorStyles.boldLabel);
-        
-        EditorGUILayout.BeginHorizontal();
-        GUILayout.FlexibleSpace();
-        DrawBoneButton(HumanoidBodyPart.LeftBreast, UI_TEXT[20], 120, 25);
-        GUILayout.FlexibleSpace();
-        DrawBoneButton(HumanoidBodyPart.RightBreast, UI_TEXT[21], 120, 25);
-        GUILayout.FlexibleSpace();
-        EditorGUILayout.EndHorizontal();
-
-        EditorGUILayout.BeginHorizontal();
-        GUILayout.FlexibleSpace();
-        DrawBoneButton(HumanoidBodyPart.LeftButt, UI_TEXT[22], 120, 25);
-        GUILayout.FlexibleSpace();
-        DrawBoneButton(HumanoidBodyPart.RightButt, UI_TEXT[23], 120, 25);
-        GUILayout.FlexibleSpace();
-        EditorGUILayout.EndHorizontal();
-
-        EditorGUILayout.EndVertical();
+        DrawBodyMap();
         EditorGUILayout.EndScrollView();
         
         GuiLine(1, 10);
@@ -601,9 +541,12 @@ public class ArmatureScalerEditor : EditorWindow
         switch (part)
         {
             case HumanoidBodyPart.Head: return UI_TEXT[6];
+            case HumanoidBodyPart.Neck: return UI_TEXT[44];
             case HumanoidBodyPart.Torso: return UI_TEXT[7];
             case HumanoidBodyPart.Spine: return UI_TEXT[8];
             case HumanoidBodyPart.Hips: return UI_TEXT[9];
+            case HumanoidBodyPart.LeftShoulder: return UI_TEXT[45];
+            case HumanoidBodyPart.RightShoulder: return UI_TEXT[46];
             case HumanoidBodyPart.LeftArm: return UI_TEXT[3];
             case HumanoidBodyPart.LeftLowerArm: return UI_TEXT[4];
             case HumanoidBodyPart.LeftHand: return UI_TEXT[5];
@@ -630,6 +573,7 @@ public class ArmatureScalerEditor : EditorWindow
         switch (part)
         {
             case HumanoidBodyPart.Head: return HumanBodyBones.Head;
+            case HumanoidBodyPart.Neck: return HumanBodyBones.Neck;
             case HumanoidBodyPart.Torso: return HumanBodyBones.Chest;
             case HumanoidBodyPart.Spine: return HumanBodyBones.Spine;
             case HumanoidBodyPart.Hips: return HumanBodyBones.Hips;
@@ -637,6 +581,8 @@ public class ArmatureScalerEditor : EditorWindow
             case HumanoidBodyPart.RightBreast: return (HumanBodyBones)101;
             case HumanoidBodyPart.LeftButt: return (HumanBodyBones)102;
             case HumanoidBodyPart.RightButt: return (HumanBodyBones)103;
+            case HumanoidBodyPart.LeftShoulder: return HumanBodyBones.LeftShoulder;
+            case HumanoidBodyPart.RightShoulder: return HumanBodyBones.RightShoulder;
             case HumanoidBodyPart.LeftArm: return HumanBodyBones.LeftUpperArm;
             case HumanoidBodyPart.LeftLowerArm: return HumanBodyBones.LeftLowerArm;
             case HumanoidBodyPart.LeftHand: return HumanBodyBones.LeftHand;
@@ -684,6 +630,327 @@ public class ArmatureScalerEditor : EditorWindow
         return result;
     }
     
+    // ─── 인체 실루엣 UI ───
+
+    private string GetShortLabel(HumanoidBodyPart part)
+    {
+        switch (language)
+        {
+            case LanguagePreset.Korean:
+                switch (part)
+                {
+                    case HumanoidBodyPart.Head: return "머리";
+                    case HumanoidBodyPart.Neck: return "목";
+                    case HumanoidBodyPart.Torso: return "몸통";
+                    case HumanoidBodyPart.Spine: return "척추";
+                    case HumanoidBodyPart.Hips: return "골반";
+                    case HumanoidBodyPart.LeftShoulder: return "L 어깨";
+                    case HumanoidBodyPart.RightShoulder: return "R 어깨";
+                    case HumanoidBodyPart.LeftArm: return "L 팔";
+                    case HumanoidBodyPart.LeftLowerArm: return "L 하완";
+                    case HumanoidBodyPart.LeftHand: return "L 손";
+                    case HumanoidBodyPart.RightArm: return "R 팔";
+                    case HumanoidBodyPart.RightLowerArm: return "R 하완";
+                    case HumanoidBodyPart.RightHand: return "R 손";
+                    case HumanoidBodyPart.LeftLeg: return "L 다리";
+                    case HumanoidBodyPart.LeftLowerLeg: return "L 하퇴";
+                    case HumanoidBodyPart.LeftFoot: return "L 발";
+                    case HumanoidBodyPart.RightLeg: return "R 다리";
+                    case HumanoidBodyPart.RightLowerLeg: return "R 하퇴";
+                    case HumanoidBodyPart.RightFoot: return "R 발";
+                    case HumanoidBodyPart.LeftBreast: return "L 가슴";
+                    case HumanoidBodyPart.RightBreast: return "R 가슴";
+                    case HumanoidBodyPart.LeftButt: return "L 엉덩이";
+                    case HumanoidBodyPart.RightButt: return "R 엉덩이";
+                }
+                break;
+            case LanguagePreset.Japanese:
+                switch (part)
+                {
+                    case HumanoidBodyPart.Head: return "頭";
+                    case HumanoidBodyPart.Neck: return "首";
+                    case HumanoidBodyPart.Torso: return "胴体";
+                    case HumanoidBodyPart.Spine: return "脊椎";
+                    case HumanoidBodyPart.Hips: return "骨盤";
+                    case HumanoidBodyPart.LeftShoulder: return "L 肩";
+                    case HumanoidBodyPart.RightShoulder: return "R 肩";
+                    case HumanoidBodyPart.LeftArm: return "L 腕";
+                    case HumanoidBodyPart.LeftLowerArm: return "L 前腕";
+                    case HumanoidBodyPart.LeftHand: return "L 手";
+                    case HumanoidBodyPart.RightArm: return "R 腕";
+                    case HumanoidBodyPart.RightLowerArm: return "R 前腕";
+                    case HumanoidBodyPart.RightHand: return "R 手";
+                    case HumanoidBodyPart.LeftLeg: return "L 脚";
+                    case HumanoidBodyPart.LeftLowerLeg: return "L 下脚";
+                    case HumanoidBodyPart.LeftFoot: return "L 足";
+                    case HumanoidBodyPart.RightLeg: return "R 脚";
+                    case HumanoidBodyPart.RightLowerLeg: return "R 下脚";
+                    case HumanoidBodyPart.RightFoot: return "R 足";
+                    case HumanoidBodyPart.LeftBreast: return "L 胸";
+                    case HumanoidBodyPart.RightBreast: return "R 胸";
+                    case HumanoidBodyPart.LeftButt: return "L 尻";
+                    case HumanoidBodyPart.RightButt: return "R 尻";
+                }
+                break;
+            default: // English
+                switch (part)
+                {
+                    case HumanoidBodyPart.Head: return "Head";
+                    case HumanoidBodyPart.Neck: return "Neck";
+                    case HumanoidBodyPart.Torso: return "Torso";
+                    case HumanoidBodyPart.Spine: return "Spine";
+                    case HumanoidBodyPart.Hips: return "Hips";
+                    case HumanoidBodyPart.LeftShoulder: return "L Shoulder";
+                    case HumanoidBodyPart.RightShoulder: return "R Shoulder";
+                    case HumanoidBodyPart.LeftArm: return "L Arm";
+                    case HumanoidBodyPart.LeftLowerArm: return "L Elbow";
+                    case HumanoidBodyPart.LeftHand: return "L Hand";
+                    case HumanoidBodyPart.RightArm: return "R Arm";
+                    case HumanoidBodyPart.RightLowerArm: return "R Elbow";
+                    case HumanoidBodyPart.RightHand: return "R Hand";
+                    case HumanoidBodyPart.LeftLeg: return "L Leg";
+                    case HumanoidBodyPart.LeftLowerLeg: return "L Knee";
+                    case HumanoidBodyPart.LeftFoot: return "L Foot";
+                    case HumanoidBodyPart.RightLeg: return "R Leg";
+                    case HumanoidBodyPart.RightLowerLeg: return "R Knee";
+                    case HumanoidBodyPart.RightFoot: return "R Foot";
+                    case HumanoidBodyPart.LeftBreast: return "L Breast";
+                    case HumanoidBodyPart.RightBreast: return "R Breast";
+                    case HumanoidBodyPart.LeftButt: return "L Butt";
+                    case HumanoidBodyPart.RightButt: return "R Butt";
+                }
+                break;
+        }
+        return part.ToString();
+    }
+
+    private void DrawBodyMap()
+    {
+        float panelWidth = position.width - 30;
+        float panelHeight = 660;
+        Rect area = GUILayoutUtility.GetRect(panelWidth, panelHeight);
+
+        EditorGUI.DrawRect(area, new Color(0.15f, 0.15f, 0.15f, 1f));
+
+        // 선택된 본 정보 표시 (상단)
+        if (selectedPart != HumanoidBodyPart.None)
+        {
+            HumanBodyBones selBone = GetBoneType(selectedPart);
+            string selName = (boneMapping != null && boneMapping.ContainsKey(selBone)) ? boneMapping[selBone].name : "---";
+            GUIStyle infoStyle = new GUIStyle(EditorStyles.boldLabel)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                normal = { textColor = new Color(0.4f, 0.7f, 1f) },
+                fontSize = 12
+            };
+            Rect infoRect = new Rect(area.x, area.y + 4, area.width, 20);
+            GUI.Label(infoRect, GetPartName(selectedPart) + " : " + selName, infoStyle);
+        }
+
+        float cx = area.x + area.width * 0.5f;
+        float top = area.y + 30;
+        Color lc = new Color(0.2f, 0.8f, 0.3f, 0.5f);
+        float lw = 2f;
+
+        // ─── 여성형 실루엣 ───
+
+        // 머리
+        Vector2 headC = new Vector2(cx, top + 35);
+        DrawCircleOutline(headC, 28, lc, lw);
+
+        // 목
+        float neckTop = top + 63;
+        float neckBot = top + 80;
+        DrawLineAA(new Vector2(cx - 8, neckTop), new Vector2(cx - 8, neckBot), lc, lw);
+        DrawLineAA(new Vector2(cx + 8, neckTop), new Vector2(cx + 8, neckBot), lc, lw);
+
+        // 어깨
+        float shY = top + 85;
+        float shW = 85;
+        // 어깨 → 목 연결 (부드러운 경사)
+        DrawLineAA(new Vector2(cx - 8, neckBot), new Vector2(cx - shW, shY + 5), lc, lw);
+        DrawLineAA(new Vector2(cx + 8, neckBot), new Vector2(cx + shW, shY + 5), lc, lw);
+
+        // 몸통 (여성형: 가슴 넓고 허리 좁고 골반 넓음)
+        float chestY = top + 130;
+        float chestW = 52;
+        float waistY = top + 200;
+        float waistW = 34;
+        float hipY = top + 260;
+        float hipW = 55;
+
+        // 어깨 → 가슴 (벌어지는 곡선)
+        DrawLineAA(new Vector2(cx - shW, shY + 5), new Vector2(cx - chestW, chestY), lc, lw);
+        DrawLineAA(new Vector2(cx + shW, shY + 5), new Vector2(cx + chestW, chestY), lc, lw);
+
+        // 가슴 → 허리 (좁아짐)
+        DrawLineAA(new Vector2(cx - chestW, chestY), new Vector2(cx - waistW, waistY), lc, lw);
+        DrawLineAA(new Vector2(cx + chestW, chestY), new Vector2(cx + waistW, waistY), lc, lw);
+
+        // 허리 → 골반 (넓어짐)
+        DrawLineAA(new Vector2(cx - waistW, waistY), new Vector2(cx - hipW, hipY), lc, lw);
+        DrawLineAA(new Vector2(cx + waistW, waistY), new Vector2(cx + hipW, hipY), lc, lw);
+
+        // 골반 하단 연결
+        DrawLineAA(new Vector2(cx - hipW, hipY), new Vector2(cx - 22, hipY + 20), lc, lw);
+        DrawLineAA(new Vector2(cx + hipW, hipY), new Vector2(cx + 22, hipY + 20), lc, lw);
+
+        // 가슴 곡선 힌트
+        DrawLineAA(new Vector2(cx - 18, chestY - 10), new Vector2(cx - 25, chestY + 8), lc, lw);
+        DrawLineAA(new Vector2(cx - 25, chestY + 8), new Vector2(cx - 15, chestY + 18), lc, lw);
+        DrawLineAA(new Vector2(cx + 18, chestY - 10), new Vector2(cx + 25, chestY + 8), lc, lw);
+        DrawLineAA(new Vector2(cx + 25, chestY + 8), new Vector2(cx + 15, chestY + 18), lc, lw);
+
+        // 팔
+        float elbowY = top + 200;
+        float handY = top + 290;
+        float armOffX = 30;
+        // 왼팔
+        DrawLineAA(new Vector2(cx - shW, shY + 5), new Vector2(cx - shW - armOffX, elbowY), lc, lw);
+        DrawLineAA(new Vector2(cx - shW - armOffX, elbowY), new Vector2(cx - shW - armOffX - 18, handY), lc, lw);
+        // 오른팔
+        DrawLineAA(new Vector2(cx + shW, shY + 5), new Vector2(cx + shW + armOffX, elbowY), lc, lw);
+        DrawLineAA(new Vector2(cx + shW + armOffX, elbowY), new Vector2(cx + shW + armOffX + 18, handY), lc, lw);
+
+        // 다리
+        float legSplit = 22;
+        float kneeY = top + 410;
+        float footY = top + 550;
+        // 왼다리
+        DrawLineAA(new Vector2(cx - legSplit, hipY + 20), new Vector2(cx - legSplit - 12, kneeY), lc, lw);
+        DrawLineAA(new Vector2(cx - legSplit - 12, kneeY), new Vector2(cx - legSplit - 8, footY), lc, lw);
+        // 오른다리
+        DrawLineAA(new Vector2(cx + legSplit, hipY + 20), new Vector2(cx + legSplit + 12, kneeY), lc, lw);
+        DrawLineAA(new Vector2(cx + legSplit + 12, kneeY), new Vector2(cx + legSplit + 8, footY), lc, lw);
+
+        // 발
+        DrawLineAA(new Vector2(cx - legSplit - 8, footY), new Vector2(cx - legSplit - 22, footY + 18), lc, lw);
+        DrawLineAA(new Vector2(cx + legSplit + 8, footY), new Vector2(cx + legSplit + 22, footY + 18), lc, lw);
+
+        // ─── 관절 버튼 ───
+        float r = 12;
+        float rs = 8; // 세부 부위 반지름
+
+        // 중심부
+        DrawJointButton(HumanoidBodyPart.Head, headC, r);
+        DrawJointButton(HumanoidBodyPart.Torso, new Vector2(cx, chestY - 20), r);
+        DrawJointButton(HumanoidBodyPart.Spine, new Vector2(cx, waistY), r);
+        DrawJointButton(HumanoidBodyPart.Hips, new Vector2(cx, hipY + 5), r);
+
+        // 왼팔
+        DrawJointButton(HumanoidBodyPart.LeftArm, new Vector2(cx - shW, shY + 5), r);
+        DrawJointButton(HumanoidBodyPart.LeftLowerArm, new Vector2(cx - shW - armOffX, elbowY), r);
+        DrawJointButton(HumanoidBodyPart.LeftHand, new Vector2(cx - shW - armOffX - 18, handY), r);
+
+        // 오른팔
+        DrawJointButton(HumanoidBodyPart.RightArm, new Vector2(cx + shW, shY + 5), r);
+        DrawJointButton(HumanoidBodyPart.RightLowerArm, new Vector2(cx + shW + armOffX, elbowY), r);
+        DrawJointButton(HumanoidBodyPart.RightHand, new Vector2(cx + shW + armOffX + 18, handY), r);
+
+        // 왼다리
+        DrawJointButton(HumanoidBodyPart.LeftLeg, new Vector2(cx - legSplit - 5, hipY + 40), r);
+        DrawJointButton(HumanoidBodyPart.LeftLowerLeg, new Vector2(cx - legSplit - 12, kneeY), r);
+        DrawJointButton(HumanoidBodyPart.LeftFoot, new Vector2(cx - legSplit - 15, footY + 8), r);
+
+        // 오른다리
+        DrawJointButton(HumanoidBodyPart.RightLeg, new Vector2(cx + legSplit + 5, hipY + 40), r);
+        DrawJointButton(HumanoidBodyPart.RightLowerLeg, new Vector2(cx + legSplit + 12, kneeY), r);
+        DrawJointButton(HumanoidBodyPart.RightFoot, new Vector2(cx + legSplit + 15, footY + 8), r);
+
+        // 세부 (가슴/엉덩이)
+        DrawJointButton(HumanoidBodyPart.LeftBreast, new Vector2(cx - 22, chestY + 5), rs);
+        DrawJointButton(HumanoidBodyPart.RightBreast, new Vector2(cx + 22, chestY + 5), rs);
+        DrawJointButton(HumanoidBodyPart.LeftButt, new Vector2(cx - 30, hipY + 10), rs);
+        DrawJointButton(HumanoidBodyPart.RightButt, new Vector2(cx + 30, hipY + 10), rs);
+    }
+
+    private void DrawJointButton(HumanoidBodyPart part, Vector2 center, float radius)
+    {
+        HumanBodyBones boneType = GetBoneType(part);
+        bool found = boneMapping != null && boneMapping.ContainsKey(boneType);
+        bool isSelected = selectedPart == part;
+
+        Color dotColor = !found ? new Color(0.3f, 0.3f, 0.3f, 0.6f)
+                       : isSelected ? new Color(0.3f, 0.5f, 1f, 1f)
+                       : new Color(0.2f, 0.8f, 0.3f, 0.9f);
+
+        float clickSize = Mathf.Max(radius * 2.5f, 26f);
+        Rect clickRect = new Rect(center.x - clickSize / 2, center.y - clickSize / 2, clickSize, clickSize);
+
+        DrawFilledCircle(center, radius, dotColor);
+        if (isSelected)
+            DrawCircleOutline(center, radius + 4, new Color(0.3f, 0.5f, 1f, 0.5f), 2f);
+
+        // 짧은 라벨
+        GUIStyle labelStyle = new GUIStyle(EditorStyles.miniLabel)
+        {
+            alignment = TextAnchor.MiddleCenter,
+            normal = { textColor = found ? new Color(0.85f, 0.85f, 0.85f) : new Color(0.45f, 0.45f, 0.45f) },
+            fontSize = 9
+        };
+        string shortLabel = GetShortLabel(part);
+        Vector2 sz = labelStyle.CalcSize(new GUIContent(shortLabel));
+        Rect labelRect = new Rect(center.x - sz.x / 2, center.y + radius + 2, sz.x, 13);
+        GUI.Label(labelRect, shortLabel, labelStyle);
+
+        // 클릭
+        if (found && Event.current.type == EventType.MouseDown && Event.current.button == 0 && clickRect.Contains(Event.current.mousePosition))
+        {
+            Event.current.Use();
+            GUI.FocusControl(null);
+            if (selectedPart != part && selectedPart != HumanoidBodyPart.None)
+                ApplyCurrentChanges(selectedPart);
+
+            selectedPart = part;
+            if (boneMapping.TryGetValue(boneType, out Transform boneTransform))
+            {
+                lastKnownScale = boneTransform.localScale;
+                lastKnownRotation = boneTransform.localRotation;
+                lastKnownPosition = boneTransform.localPosition;
+                Selection.activeGameObject = boneTransform.gameObject;
+            }
+            Repaint();
+        }
+    }
+
+    // ─── 드로잉 헬퍼 ───
+
+    private void DrawLineAA(Vector2 a, Vector2 b, Color color, float width)
+    {
+        Handles.BeginGUI();
+        Color prev = Handles.color;
+        Handles.color = color;
+        Handles.DrawAAPolyLine(width, new Vector3(a.x, a.y, 0), new Vector3(b.x, b.y, 0));
+        Handles.color = prev;
+        Handles.EndGUI();
+    }
+
+    private void DrawCircleOutline(Vector2 center, float radius, Color color, float width)
+    {
+        Handles.BeginGUI();
+        Color prev = Handles.color;
+        Handles.color = color;
+        Vector3[] points = new Vector3[33];
+        for (int i = 0; i <= 32; i++)
+        {
+            float angle = (float)i / 32 * Mathf.PI * 2;
+            points[i] = new Vector3(center.x + Mathf.Cos(angle) * radius, center.y + Mathf.Sin(angle) * radius, 0);
+        }
+        Handles.DrawAAPolyLine(width, points);
+        Handles.color = prev;
+        Handles.EndGUI();
+    }
+
+    private void DrawFilledCircle(Vector2 center, float radius, Color color)
+    {
+        Handles.BeginGUI();
+        Color prev = Handles.color;
+        Handles.color = color;
+        Handles.DrawSolidDisc(new Vector3(center.x, center.y, 0), Vector3.forward, radius);
+        Handles.color = prev;
+        Handles.EndGUI();
+    }
+
     void GuiLine(int i_height = 1, int padding = 5)
     {
         GUILayout.Space(padding);
