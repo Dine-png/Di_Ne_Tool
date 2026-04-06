@@ -20,7 +20,8 @@ public class ArmatureScalerEditor : EditorWindow
     
     private string[] UI_TEXT;
     private Texture2D windowIcon;
-    private Vector2 scrollPosition; 
+    private Vector2 scrollPosition;
+    private Texture2D selectedButtonTex;
     
     private Dictionary<HumanBodyBones, Transform> boneMapping;
     
@@ -49,14 +50,15 @@ public class ArmatureScalerEditor : EditorWindow
     {
         EditorWindow window = GetWindow<ArmatureScalerEditor>("Armature Scaler");
         window.minSize = new Vector2(300, 400); 
-        window.position = new Rect(window.position.y, window.position.y, 420, 850); 
+        window.position = new Rect(window.position.x, window.position.y, 420, 850);
     }
 
     void OnEnable()
     {
-        windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/Di Ne/Assets/DiNe.png");
+        windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
+        selectedButtonTex = MakeTex(1, 1, new Color(0.2f, 0.4f, 1f, 1f));
         SetLanguage(language);
-        InitializeValues(); // 이름 변경됨 (InitializeScaleValues -> InitializeValues)
+        InitializeValues();
         if (targetAvatarRoot != null)
         {
             boneMapping = ArmatureScalerCore.AssignBoneMappings(targetAvatarRoot);
@@ -242,7 +244,7 @@ public class ArmatureScalerEditor : EditorWindow
                         GUIStyle buttonStyle = new GUIStyle(GUI.skin.button);
                         if (selectedPresetIndex == index)
                         {
-                            buttonStyle.normal.background = MakeTex(1, 1, new Color(0.2f, 0.4f, 1f, 1f));
+                            buttonStyle.normal.background = selectedButtonTex;
                         }
                         
                         if (buttonsOnThisRow == 1)
@@ -408,7 +410,7 @@ public class ArmatureScalerEditor : EditorWindow
             if (EditorGUI.EndChangeCheck())
             {
                 UpdatePartScale(new Vector3(uniformScale, uniformScale, uniformScale));
-                ArmatureScalerLogic.ApplyScale(targetAvatarRoot, MapToHumanBodyBones(scaleValues));
+                ArmatureScalerLogic.ApplyScale(boneMapping, MapToHumanBodyBones(scaleValues));
             }
             
             EditorGUI.BeginChangeCheck();
@@ -416,7 +418,7 @@ public class ArmatureScalerEditor : EditorWindow
             if (EditorGUI.EndChangeCheck())
             {
                 UpdatePartScale(newScale);
-                ArmatureScalerLogic.ApplyScale(targetAvatarRoot, MapToHumanBodyBones(scaleValues));
+                ArmatureScalerLogic.ApplyScale(boneMapping, MapToHumanBodyBones(scaleValues));
             }
 
             // 2. Position (추가됨) - 스케일처럼 전체 적용 가능
@@ -429,7 +431,7 @@ public class ArmatureScalerEditor : EditorWindow
             if (EditorGUI.EndChangeCheck())
             {
                 UpdatePartPosition(newPosition);
-                ArmatureScalerLogic.ApplyPosition(targetAvatarRoot, MapToHumanBodyBonesForPosition(positionValues));
+                ArmatureScalerLogic.ApplyPosition(boneMapping, MapToHumanBodyBones(positionValues));
             }
             
             // 3. Rotation (특정 부위만)
@@ -444,7 +446,7 @@ public class ArmatureScalerEditor : EditorWindow
                 if (EditorGUI.EndChangeCheck())
                 {
                     UpdatePartRotation(newRotation);
-                    ArmatureScalerLogic.ApplyRotation(targetAvatarRoot, MapToHumanBodyBonesForRotation(rotationValues));
+                    ArmatureScalerLogic.ApplyRotation(boneMapping, MapToHumanBodyBonesForRotation(rotationValues));
                 }
             }
         }
@@ -467,7 +469,7 @@ public class ArmatureScalerEditor : EditorWindow
         
         if (selectedPart == part)
         {
-            buttonStyle.normal.background = MakeTex(1, 1, new Color(0.2f, 0.4f, 1f, 1f));
+            buttonStyle.normal.background = selectedButtonTex;
         }
         else
         {
@@ -513,23 +515,20 @@ public class ArmatureScalerEditor : EditorWindow
 
     private void ApplyCurrentChanges(HumanoidBodyPart part)
     {
-        if (targetAvatarRoot != null)
+        if (targetAvatarRoot == null || boneMapping == null) return;
+
+        HumanBodyBones boneType = GetBoneType(part);
+        if (scaleValues.TryGetValue(part, out Vector3 scale))
         {
-            // Scale
-            if (scaleValues.TryGetValue(part, out Vector3 scale))
-            {
-                ArmatureScalerLogic.ApplyScale(targetAvatarRoot, new Dictionary<HumanBodyBones, Vector3> { { GetBoneType(part), scale } });
-            }
-            // Position (전체 가능)
-            if (positionValues.TryGetValue(part, out Vector3 position))
-            {
-                ArmatureScalerLogic.ApplyPosition(targetAvatarRoot, new Dictionary<HumanBodyBones, Vector3> { { GetBoneType(part), position } });
-            }
-            // Rotation (제한됨)
-            if (CanRotate(part) && rotationValues.TryGetValue(part, out Quaternion rotation))
-            {
-                ArmatureScalerLogic.ApplyRotation(targetAvatarRoot, new Dictionary<HumanBodyBones, Quaternion> { { GetBoneType(part), rotation } });
-            }
+            ArmatureScalerLogic.ApplyScale(boneMapping, new Dictionary<HumanBodyBones, Vector3> { { boneType, scale } });
+        }
+        if (positionValues.TryGetValue(part, out Vector3 position))
+        {
+            ArmatureScalerLogic.ApplyPosition(boneMapping, new Dictionary<HumanBodyBones, Vector3> { { boneType, position } });
+        }
+        if (CanRotate(part) && rotationValues.TryGetValue(part, out Quaternion rotation))
+        {
+            ArmatureScalerLogic.ApplyRotation(boneMapping, new Dictionary<HumanBodyBones, Quaternion> { { boneType, rotation } });
         }
     }
 
@@ -668,21 +667,6 @@ public class ArmatureScalerEditor : EditorWindow
         return result;
     }
 
-    // 추가: 포지션 매핑 (스케일과 동일하게 전체 허용)
-    private Dictionary<HumanBodyBones, Vector3> MapToHumanBodyBonesForPosition(Dictionary<HumanoidBodyPart, Vector3> positions)
-    {
-        Dictionary<HumanBodyBones, Vector3> result = new Dictionary<HumanBodyBones, Vector3>();
-        foreach (var kvp in positions)
-        {
-            HumanBodyBones boneType = GetBoneType(kvp.Key);
-            if (boneType != HumanBodyBones.LastBone)
-            {
-                result[boneType] = kvp.Value;
-            }
-        }
-        return result;
-    }
-    
     private Dictionary<HumanBodyBones, Quaternion> MapToHumanBodyBonesForRotation(Dictionary<HumanoidBodyPart, Quaternion> rotations)
     {
         Dictionary<HumanBodyBones, Quaternion> result = new Dictionary<HumanBodyBones, Quaternion>();
@@ -805,7 +789,7 @@ public class ArmatureScalerEditor : EditorWindow
                             scaleValues[part] = kvp.Value.ToVector3();
                         }
                     }
-                    ArmatureScalerLogic.ApplyScale(targetAvatarRoot, MapToHumanBodyBones(scaleValues));
+                    ArmatureScalerLogic.ApplyScale(boneMapping, MapToHumanBodyBones(scaleValues));
                 }
 
                 // 2. Rotation
@@ -819,7 +803,7 @@ public class ArmatureScalerEditor : EditorWindow
                             rotationValues[part] = kvp.Value.ToQuaternion();
                         }
                     }
-                    ArmatureScalerLogic.ApplyRotation(targetAvatarRoot, MapToHumanBodyBonesForRotation(rotationValues));
+                    ArmatureScalerLogic.ApplyRotation(boneMapping, MapToHumanBodyBonesForRotation(rotationValues));
                 }
 
                 // 3. Position (추가됨)
@@ -833,7 +817,7 @@ public class ArmatureScalerEditor : EditorWindow
                             positionValues[part] = kvp.Value.ToVector3();
                         }
                     }
-                    ArmatureScalerLogic.ApplyPosition(targetAvatarRoot, MapToHumanBodyBonesForPosition(positionValues));
+                    ArmatureScalerLogic.ApplyPosition(boneMapping, MapToHumanBodyBones(positionValues));
                 }
                 
                 string appliedType = "데이터";
@@ -932,7 +916,7 @@ public class ArmatureScalerEditor : EditorWindow
             }
         }
         
-        ArmatureScalerLogic.ApplyScale(targetAvatarRoot, MapToHumanBodyBones(scaleValues));
+        ArmatureScalerLogic.ApplyScale(boneMapping, MapToHumanBodyBones(scaleValues));
         
         selectedPart = HumanoidBodyPart.None;
         Debug.Log("모든 스케일이 초기화되었습니다.");

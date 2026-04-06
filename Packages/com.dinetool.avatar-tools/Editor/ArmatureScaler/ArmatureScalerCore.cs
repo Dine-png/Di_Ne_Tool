@@ -26,7 +26,7 @@ public static class ArmatureScalerCore
         new[] {"RightShoulder", "Shoulder_Right", "Shoulder_R"},
         new[] {"LeftUpperArm", "UpperArm_Left", "UpperArm_L", "Arm_Left", "Arm_L", "UArm_L", "Left arm", "UpperLeftArm"},
         new[] {"RightUpperArm", "UpperArm_Right", "UpperArm_R", "Arm_Right", "Arm_R", "UArm_R", "Right arm", "UpperRightArm"},
-        new[] {"LeftLowerArm", "LowerArm_Left", "LowerArm_L", "LArm_L", "Left elbow", "LeftForeArm", "Elbow_L", "forearm_L", "ForArm_R"},
+        new[] {"LeftLowerArm", "LowerArm_Left", "LowerArm_L", "LArm_L", "Left elbow", "LeftForeArm", "Elbow_L", "forearm_L", "ForArm_L"},
         new[] {"RightLowerArm", "LowerArm_Right", "LowerArm_R", "LArm_R", "Right elbow", "RightForeArm", "Elbow_R", "forearm_R", "ForArm_R"},
         new[] {"LeftHand", "Hand_Left", "Hand_L", "Left wrist", "Wrist_L"},
         new[] {"RightHand", "Hand_Right", "Hand_R", "Right wrist", "Wrist_R"},
@@ -65,14 +65,7 @@ public static class ArmatureScalerCore
         new[] {"RightLittleProximal", "ProximalLittle_Right", "ProximalLittle_R", "Little1_R", "LittleFinger1_R", "RightHandPinky1", "Little Proximal.R", "finger05_01_R", "f_pinky.01.R"},
         new[] {"RightLittleIntermediate", "IntermediateLittle_Right", "IntermediateLittle_R", "Little2_R", "LittleFinger2_R", "RightHandPinky2", "Little Intermediate.R", "finger05_02_R", "f_pinky.02.R"},
         new[] {"RightLittleDistal", "DistalLittle_Right", "DistalLittle_R", "Little3_R", "LittleFinger3_R", "RightHandPinky3", "Little Distal.R", "finger05_03_R", "f_pinky.03.R"},
-        new[] {"UpperChest", "UChest"},
-        
-        // 아래 항목들은 표준 HumanBodyBones 루프에서는 무시되지만, 명시적으로 유지
-        new[] {"LeftBreast", "Breast_L", "Breast L"},
-        new[] {"RightBreast", "Breast_R", "Breast R"},
-        // 요청하신 패턴 업데이트 반영
-        new[] {"Butt_L", "Butt L", "Hips_L", "Hips-L", "Hips L", "HipsL"},
-        new[] {"Butt_R", "Butt R", "Hips_R", "Hips-R", "Hips R", "HipsR"}
+        new[] {"UpperChest", "UChest"}
     };
     
     private static string NormalizeName(string name)
@@ -131,7 +124,7 @@ public static class ArmatureScalerCore
     private static Transform FindChildByPatterns(Transform parent, string[] patterns)
     {
         if (parent == null) return null;
-        
+
         foreach (string pattern in patterns)
         {
             Transform t = parent.Find(pattern);
@@ -171,19 +164,29 @@ public static class ArmatureScalerCore
         // --- 여기서부터 요청하신 확장된 패턴 적용 ---
         
         // 1. 패턴 정의 (요청하신 Hips 패턴 포함)
-        string[] leftBreastPatterns = new[] { "LeftBreast", "Breast_L", "Breast L", "Breast.L", "Breast_l", "breast_L", "breast.l", "breast_l", "leftbreast", "left_breast", "Left_Breast", "Left breast", "Breasts_L", "Breasts_l" };
-        string[] rightBreastPatterns = new[] { "RightBreast", "Breast_R", "Breast R", "Breast.R", "Breast_r", "breast.r", "breast_R", "breast_r", "rightbreast", "right_breast", "Right_Breast", "Right breast", "Breasts_R", "Breasts_r" };
-        
-        string[] leftButtPatterns = new[] 
-        { 
-            "Butt_L", "Butt L", "butt.l", "butt_l", "leftbutt", "left_butt", "Left_Butt", "Left butt", "Butts_L", "Butts_l",
-            "Hips_L", "Hips-L", "Hips L", "HipsL" // 추가됨
+        string[] leftBreastPatterns = new[] {
+            "LeftBreast", "Breast_L", "Breast L", "Breast.L", "Breast_l", "breast_L", "breast.l", "breast_l",
+            "leftbreast", "left_breast", "Left_Breast", "Left breast", "Breasts_L", "Breasts_l",
+            "Breast_root_L", "Breast_Root_L", "BreastRoot_L" // 루트 본 바리에이션
         };
-        
-        string[] rightButtPatterns = new[] 
-        { 
+        string[] rightBreastPatterns = new[] {
+            "RightBreast", "Breast_R", "Breast R", "Breast.R", "Breast_r", "breast.r", "breast_R", "breast_r",
+            "rightbreast", "right_breast", "Right_Breast", "Right breast", "Breasts_R", "Breasts_r",
+            "Breast_root_R", "Breast_Root_R", "BreastRoot_R" // 루트 본 바리에이션
+        };
+
+        string[] leftButtPatterns = new[]
+        {
+            "Butt_L", "Butt L", "butt.l", "butt_l", "leftbutt", "left_butt", "Left_Butt", "Left butt", "Butts_L", "Butts_l",
+            "Hips_L", "Hips-L", "Hips L", "HipsL",
+            "Butt_Root_L", "Butt_root_L", "ButtRoot_L" // 루트 본 바리에이션
+        };
+
+        string[] rightButtPatterns = new[]
+        {
             "Butt_R", "Butt R", "butt.r", "butt_r", "rightbutt", "right_butt", "Right_Butt", "Right butt", "Butts_R", "Butts_r",
-            "Hips_R", "Hips-R", "Hips R", "HipsR" // 추가됨
+            "Hips_R", "Hips-R", "Hips R", "HipsR",
+            "Butt_Root_R", "Butt_root_R", "ButtRoot_R" // 루트 본 바리에이션
         };
 
         // 2. 가슴 (Chest 자식에서 찾기)

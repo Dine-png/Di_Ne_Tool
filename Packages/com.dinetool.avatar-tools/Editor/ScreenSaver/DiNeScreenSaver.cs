@@ -66,7 +66,7 @@ namespace DiNeScreenSaver
         {
             LoadSettings();
             SetLanguage(language);
-            windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/Di Ne/Assets/DiNe.png");
+            windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
         }
 
         void OnDisable()

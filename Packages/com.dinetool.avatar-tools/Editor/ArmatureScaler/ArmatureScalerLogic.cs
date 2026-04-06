@@ -5,13 +5,10 @@ using UnityEditor;
 public static class ArmatureScalerLogic
 {
     public static void ApplyScale(
-        GameObject targetAvatarRoot,
+        Dictionary<HumanBodyBones, Transform> boneMapping,
         Dictionary<HumanBodyBones, Vector3> scaleValues)
     {
-        if (targetAvatarRoot == null) return;
-
-        Dictionary<HumanBodyBones, Transform> boneMapping = ArmatureScalerCore.AssignBoneMappings(targetAvatarRoot);
-        
+        if (boneMapping == null) return;
         foreach (var kvp in scaleValues)
         {
             ScaleBone(boneMapping, kvp.Key, kvp.Value);
@@ -19,28 +16,21 @@ public static class ArmatureScalerLogic
     }
 
     public static void ApplyRotation(
-        GameObject targetAvatarRoot,
+        Dictionary<HumanBodyBones, Transform> boneMapping,
         Dictionary<HumanBodyBones, Quaternion> rotationValues)
     {
-        if (targetAvatarRoot == null) return;
-
-        Dictionary<HumanBodyBones, Transform> boneMapping = ArmatureScalerCore.AssignBoneMappings(targetAvatarRoot);
-        
+        if (boneMapping == null) return;
         foreach (var kvp in rotationValues)
         {
             RotateBone(boneMapping, kvp.Key, kvp.Value);
         }
     }
 
-    // 추가: 포지션 적용 메서드
     public static void ApplyPosition(
-        GameObject targetAvatarRoot,
+        Dictionary<HumanBodyBones, Transform> boneMapping,
         Dictionary<HumanBodyBones, Vector3> positionValues)
     {
-        if (targetAvatarRoot == null) return;
-
-        Dictionary<HumanBodyBones, Transform> boneMapping = ArmatureScalerCore.AssignBoneMappings(targetAvatarRoot);
-
+        if (boneMapping == null) return;
         foreach (var kvp in positionValues)
         {
             MoveBone(boneMapping, kvp.Key, kvp.Value);

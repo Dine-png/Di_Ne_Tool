@@ -26,7 +26,7 @@ public static class DiNeMultiMenuGenerator
             AssetDatabase.Refresh();
         }
 
-        Texture2D defaultIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/Di Ne/MultiDresser/Assets/DNDresser.png");
+        Texture2D defaultIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/MultiDresser/DNDresser.png");
 
         VRCExpressionsMenu multiMenu = ScriptableObject.CreateInstance<VRCExpressionsMenu>();
         bool isAnyLayerAdded = false;
