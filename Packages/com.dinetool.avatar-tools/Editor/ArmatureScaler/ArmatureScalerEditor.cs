@@ -475,7 +475,9 @@ public class ArmatureScalerEditor : EditorWindow
     private bool CanRotate(HumanoidBodyPart part)
     {
         return part == HumanoidBodyPart.LeftBreast || part == HumanoidBodyPart.RightBreast ||
-               part == HumanoidBodyPart.LeftButt || part == HumanoidBodyPart.RightButt;
+               part == HumanoidBodyPart.LeftButt || part == HumanoidBodyPart.RightButt ||
+               part == HumanoidBodyPart.Neck ||
+               part == HumanoidBodyPart.LeftShoulder || part == HumanoidBodyPart.RightShoulder;
     }
     
     private Vector3 GetPartScale(HumanoidBodyPart part)
@@ -833,16 +835,19 @@ public class ArmatureScalerEditor : EditorWindow
 
         // 중심부
         DrawJointButton(HumanoidBodyPart.Head, headC, r);
+        DrawJointButton(HumanoidBodyPart.Neck, new Vector2(cx, neckTop + 8), rs);
         DrawJointButton(HumanoidBodyPart.Torso, new Vector2(cx, chestY - 20), r);
         DrawJointButton(HumanoidBodyPart.Spine, new Vector2(cx, waistY), r);
         DrawJointButton(HumanoidBodyPart.Hips, new Vector2(cx, hipY + 5), r);
 
-        // 왼팔
+        // 왼팔 (어깨/쇄골 포함)
+        DrawJointButton(HumanoidBodyPart.LeftShoulder, new Vector2(cx - shW * 0.52f, shY + 2), rs);
         DrawJointButton(HumanoidBodyPart.LeftArm, new Vector2(cx - shW, shY + 5), r);
         DrawJointButton(HumanoidBodyPart.LeftLowerArm, new Vector2(cx - shW - armOffX, elbowY), r);
         DrawJointButton(HumanoidBodyPart.LeftHand, new Vector2(cx - shW - armOffX - 18, handY), r);
 
-        // 오른팔
+        // 오른팔 (어깨/쇄골 포함)
+        DrawJointButton(HumanoidBodyPart.RightShoulder, new Vector2(cx + shW * 0.52f, shY + 2), rs);
         DrawJointButton(HumanoidBodyPart.RightArm, new Vector2(cx + shW, shY + 5), r);
         DrawJointButton(HumanoidBodyPart.RightLowerArm, new Vector2(cx + shW + armOffX, elbowY), r);
         DrawJointButton(HumanoidBodyPart.RightHand, new Vector2(cx + shW + armOffX + 18, handY), r);
