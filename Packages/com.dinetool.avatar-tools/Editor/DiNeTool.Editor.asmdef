@@ -3,7 +3,9 @@
     "references": [
         "com.vrchat.base.Editor",
         "com.vrchat.avatars.Editor",
-        "DiNeTool.Runtime"
+        "DiNeTool.Runtime",
+        "vrchat.blackstartx.gesture-manager",
+        "vrchat.blackstartx.gesture-manager.editor"
     ],
     "includePlatforms": ["Editor"],
     "excludePlatforms": [],
