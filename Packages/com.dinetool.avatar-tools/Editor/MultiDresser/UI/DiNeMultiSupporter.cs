@@ -326,30 +326,7 @@ public class DiNeMultiSupporter : Editor
             EditorGUILayout.BeginHorizontal();
             string headerLabel = (i == 0) ? lang["defaultState"] : $"{lang["menuButton"]} {i}";
             EditorGUILayout.LabelField(headerLabel, EditorStyles.boldLabel);
-
-            // ▲ Move Up
-            EditorGUI.BeginDisabledGroup(i <= 0);
-            if (GUILayout.Button("▲", GUILayout.Width(24), GUILayout.Height(20)))
-            {
-                SwapItems(currentLayerData, i, i - 1);
-                EditorUtility.SetDirty(target);
-                serializedObject.Update();
-                break;
-            }
-            EditorGUI.EndDisabledGroup();
-
-            // ▼ Move Down
-            EditorGUI.BeginDisabledGroup(i >= targets.arraySize - 1);
-            if (GUILayout.Button("▼", GUILayout.Width(24), GUILayout.Height(20)))
-            {
-                SwapItems(currentLayerData, i, i + 1);
-                EditorUtility.SetDirty(target);
-                serializedObject.Update();
-                break;
-            }
-            EditorGUI.EndDisabledGroup();
-
-            if (GUILayout.Button("X", GUILayout.Width(24), GUILayout.Height(20)))
+            if (GUILayout.Button("X", GUILayout.Width(30), GUILayout.Height(20)))
             {
                 currentLayerData.RemoveAt(i);
                 EditorUtility.SetDirty(target);
@@ -411,6 +388,42 @@ public class DiNeMultiSupporter : Editor
         }
     }
     
+    private void SwapItems(DiNeMultiDresser.DresserLayer layerData, int indexA, int indexB)
+    {
+        if (indexA < 0 || indexB < 0 || indexA >= layerData.targets.Count || indexB >= layerData.targets.Count) return;
+
+        // Swap targets
+        var tempTarget = layerData.targets[indexA];
+        layerData.targets[indexA] = layerData.targets[indexB];
+        layerData.targets[indexB] = tempTarget;
+
+        // Swap labels
+        var tempLabel = layerData.labels[indexA];
+        layerData.labels[indexA] = layerData.labels[indexB];
+        layerData.labels[indexB] = tempLabel;
+
+        // Swap icons
+        var tempIcon = layerData.icons[indexA];
+        layerData.icons[indexA] = layerData.icons[indexB];
+        layerData.icons[indexB] = tempIcon;
+
+        // Swap linkedObjects
+        if (indexA < layerData.linkedObjects.Count && indexB < layerData.linkedObjects.Count)
+        {
+            var tempLinked = layerData.linkedObjects[indexA];
+            layerData.linkedObjects[indexA] = layerData.linkedObjects[indexB];
+            layerData.linkedObjects[indexB] = tempLinked;
+        }
+
+        // Swap perButtonShapeKeyStates
+        if (indexA < layerData.perButtonShapeKeyStates.Count && indexB < layerData.perButtonShapeKeyStates.Count)
+        {
+            var tempShape = layerData.perButtonShapeKeyStates[indexA];
+            layerData.perButtonShapeKeyStates[indexA] = layerData.perButtonShapeKeyStates[indexB];
+            layerData.perButtonShapeKeyStates[indexB] = tempShape;
+        }
+    }
+
     private void DrawGlobalShapeKeyTargets(SerializedProperty shapeKeyTargets, Dictionary<string, string> lang)
     {
         for (int i = 0; i < shapeKeyTargets.arraySize; i++)
