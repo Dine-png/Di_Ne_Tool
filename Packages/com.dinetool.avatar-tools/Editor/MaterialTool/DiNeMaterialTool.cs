@@ -255,8 +255,11 @@ public class DiNeMaterialTool : EditorWindow
 
     private void DrawLangBar()
     {
+        var prevBg = GUI.backgroundColor;
+        GUI.backgroundColor = new Color(0.12f, 0.45f, 0.40f);
         int idx = L;
         int next = GUILayout.Toolbar(idx, new[] { "English", "한국어", "日本語" }, GUILayout.Height(26));
+        GUI.backgroundColor = prevBg;
         if (next != idx) { _lang = (Lang)next; SaveSettings(); }
     }
 
@@ -305,16 +308,6 @@ public class DiNeMaterialTool : EditorWindow
         if (_includeChildren != prevChildren || _includeInactive != prevInactive)
             AutoScan();
         GUILayout.Space(4);
-        GuiLine(1, 2);
-
-        EditorGUILayout.BeginHorizontal();
-        _previewOnly = EditorGUILayout.Toggle(_previewOnly, GUILayout.Width(14));
-        GUILayout.Label(_previewOnly ? T(6) : T(7), new GUIStyle(EditorStyles.label)
-        {
-            fontStyle = FontStyle.Bold,
-            normal = { textColor = _previewOnly ? new Color(1f, 0.75f, 0.2f) : new Color(0.45f, 0.75f, 1f) }
-        });
-        EditorGUILayout.EndHorizontal();
     }
 
     private void AutoScan()
@@ -420,7 +413,7 @@ public class DiNeMaterialTool : EditorWindow
             (string.IsNullOrEmpty(_search) || p.Name.ToLower().Contains(_search.ToLower()))
         ).ToList();
 
-        float h = Mathf.Clamp(filtered.Count * 36f + 8f, 80f, 220f);
+        float h = Mathf.Clamp(filtered.Count * 36f + 8f, 80f, 145f);
         _libScroll = EditorGUILayout.BeginScrollView(_libScroll, GUILayout.Height(h));
         if (filtered.Count == 0) { GUILayout.Space(20); DrawCenteredHint(T(11)); }
         else foreach (var e in filtered) DrawPresetRow(e);

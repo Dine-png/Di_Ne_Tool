@@ -263,7 +263,10 @@ namespace DiNeTool.GestureManager
         private void DrawLangBar()
         {
             int idx = L;
+            var prevBg = GUI.backgroundColor;
+            GUI.backgroundColor = new Color(0.12f, 0.45f, 0.40f);
             idx = GUILayout.Toolbar(idx, new[] { "English", "한국어", "日本語" }, GUILayout.Height(26));
+            GUI.backgroundColor = prevBg;
             CurrentLang = (Language)idx;
         }
 

@@ -126,7 +126,10 @@ public class DiNeMultiSupporter : Editor
         
         GUILayout.Space(5);
         int langIndex = (int)currentLanguage;
+        var prevBg = GUI.backgroundColor;
+        GUI.backgroundColor = new Color(0.12f, 0.45f, 0.40f);
         langIndex = GUILayout.Toolbar(langIndex, LangButtonLabels, GUILayout.Height(35)); 
+        GUI.backgroundColor = prevBg;
         currentLanguage = (Language)langIndex;
         var lang = text[currentLanguage]; 
 

@@ -133,7 +133,10 @@ namespace DiNeScreenSaver
             GUILayout.Space(5);
             int currentLanguageIndex = (int)language;
             string[] languageButtons = { "English", "한국어", "日本語" };
+            var prevLangBg = GUI.backgroundColor;
+            GUI.backgroundColor = new Color(0.12f, 0.45f, 0.40f);
             int newLanguageIndex = GUILayout.Toolbar(currentLanguageIndex, languageButtons, GUILayout.Height(30));
+            GUI.backgroundColor = prevLangBg;
             if (newLanguageIndex != currentLanguageIndex)
             {
                 language = (LanguagePreset)newLanguageIndex;

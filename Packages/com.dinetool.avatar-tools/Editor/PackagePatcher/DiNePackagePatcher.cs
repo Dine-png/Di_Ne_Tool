@@ -96,7 +96,10 @@ public class DiNePackagePatcher : EditorWindow
         // ─── 언어 선택 ───
         int currentLangIndex = (int)language;
         string[] langButtons = { "English", "한국어", "日本語" };
+        var prevLangBg = GUI.backgroundColor;
+        GUI.backgroundColor = new Color(0.12f, 0.45f, 0.40f);
         int newLangIndex = GUILayout.Toolbar(currentLangIndex, langButtons, GUILayout.Height(30));
+        GUI.backgroundColor = prevLangBg;
         if (newLangIndex != currentLangIndex)
         {
             language = (LanguagePreset)newLangIndex;
