@@ -19,6 +19,7 @@ public class DiNePackagePatcher : EditorWindow
 
     private string[] UI_TEXT;
     private Texture2D windowIcon;
+    private Font      titleFont;
     private Texture2D selectedButtonTex;
 
     // 임포트 추적용 정적 필드
@@ -38,7 +39,8 @@ public class DiNePackagePatcher : EditorWindow
 
     void OnEnable()
     {
-        windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
+        windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
+        titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
         selectedButtonTex = MakeTex(1, 1, new Color(0.2f, 0.4f, 1f, 1f));
         SetLanguage(language);
         activeWindow = this;
@@ -59,10 +61,11 @@ public class DiNePackagePatcher : EditorWindow
         GUILayout.FlexibleSpace();
         GUIStyle titleStyle = new GUIStyle(EditorStyles.label)
         {
+            font      = titleFont,
             alignment = TextAnchor.MiddleCenter,
             fontStyle = FontStyle.Bold,
-            fontSize = 28,
-            normal = new GUIStyleState() { textColor = Color.white }
+            fontSize  = 28,
+            normal    = new GUIStyleState() { textColor = Color.white }
         };
         GUIContent titleContent = new GUIContent("Package Patcher", windowIcon);
         GUILayout.Label(titleContent, titleStyle);

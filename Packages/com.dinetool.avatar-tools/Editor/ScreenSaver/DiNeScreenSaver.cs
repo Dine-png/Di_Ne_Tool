@@ -50,6 +50,7 @@ namespace DiNeScreenSaver
         private string[] UI_TEXT;
         private string[] BG_TYPE_TEXT;
         private Texture2D windowIcon;
+        private Font      titleFont;
 
         // 경로 관리를 위한 상수 추가
         private const string RELATIVE_PATH = "Assets/Di Ne/ScreenSaver/ScreenShot/";
@@ -66,7 +67,8 @@ namespace DiNeScreenSaver
         {
             LoadSettings();
             SetLanguage(language);
-            windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
+            windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
+            titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
         }
 
         void OnDisable()
@@ -97,10 +99,11 @@ namespace DiNeScreenSaver
             
             GUIStyle titleStyle = new GUIStyle(EditorStyles.label)
             {
+                font      = titleFont,
                 alignment = TextAnchor.MiddleCenter,
                 fontStyle = FontStyle.Bold,
-                fontSize = 28,
-                normal = new GUIStyleState() { textColor = Color.white }
+                fontSize  = 28,
+                normal    = new GUIStyleState() { textColor = Color.white }
             };
             GUIContent titleContent = new GUIContent("DiNe Screen Saver", windowIcon);
             GUILayout.Label(titleContent, titleStyle);

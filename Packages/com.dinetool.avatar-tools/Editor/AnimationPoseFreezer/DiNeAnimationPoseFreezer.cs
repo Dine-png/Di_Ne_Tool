@@ -13,6 +13,7 @@ public class DiNeAnimationPoseFreezer : EditorWindow
 
     private string[] UI_TEXT;
     private Texture2D windowIcon;
+    private Font      titleFont;
 
     [MenuItem("DiNe/Avatar/Animation Pose Freezer")]
     public static void ShowWindow()
@@ -24,7 +25,8 @@ public class DiNeAnimationPoseFreezer : EditorWindow
 
     void OnEnable()
     {
-        windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
+        windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
+        titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
         SetLanguage(language);
     }
 
@@ -38,10 +40,11 @@ public class DiNeAnimationPoseFreezer : EditorWindow
         GUILayout.FlexibleSpace();
         GUIStyle titleStyle = new GUIStyle(EditorStyles.label)
         {
+            font      = titleFont,
             alignment = TextAnchor.MiddleCenter,
             fontStyle = FontStyle.Bold,
-            fontSize = 28,
-            normal = new GUIStyleState() { textColor = Color.white }
+            fontSize  = 28,
+            normal    = new GUIStyleState() { textColor = Color.white }
         };
         GUIContent titleContent = new GUIContent("Pose Freezer", windowIcon);
         GUILayout.Label(titleContent, titleStyle);

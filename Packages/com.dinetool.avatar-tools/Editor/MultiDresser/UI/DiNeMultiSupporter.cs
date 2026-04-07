@@ -7,6 +7,7 @@ using System.Collections.Generic;
 public class DiNeMultiSupporter : Editor
 {
     private Texture2D windowIcon;
+    private Font      titleFont;
     private int selectedLayerIndex = 0; 
     
     private enum Language { Korean, English, Japanese }
@@ -104,7 +105,8 @@ public class DiNeMultiSupporter : Editor
 
     private void OnEnable()
     {
-        windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
+        windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
+        titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
         DiNeMultiDresser gen = (DiNeMultiDresser)target;
         if(gen.rootTransform == null) gen.TryAutoAssignFXController();
     }
@@ -517,7 +519,7 @@ public class DiNeMultiSupporter : Editor
         EditorGUILayout.BeginVertical("box");
         EditorGUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
-        GUIStyle titleStyle = new GUIStyle(EditorStyles.label) { alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold, fontSize = 28 };
+        GUIStyle titleStyle = new GUIStyle(EditorStyles.label) { font = titleFont, alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold, fontSize = 28 };
         GUIContent content = new GUIContent(titleText, windowIcon);
         GUILayout.Label(content, titleStyle);
         GUILayout.FlexibleSpace();

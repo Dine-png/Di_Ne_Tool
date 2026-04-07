@@ -33,6 +33,7 @@ public class DiNeNoMoreAO : EditorWindow
     //  아이콘
     // ──────────────────────────────────────────────
     private Texture2D _windowIcon;
+    private Font      _titleFont;
 
     // ──────────────────────────────────────────────
     //  LilToon 실제 AO 텍스처 프로퍼티명
@@ -82,7 +83,8 @@ public class DiNeNoMoreAO : EditorWindow
     {
         LoadSettings();
         SetLanguage(_language);
-        _windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
+        _windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
+        _titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
     }
 
     void OnDisable() => SaveSettings();
@@ -101,6 +103,7 @@ public class DiNeNoMoreAO : EditorWindow
 
         GUIStyle titleStyle = new GUIStyle(EditorStyles.label)
         {
+            font      = _titleFont,
             alignment = TextAnchor.MiddleCenter,
             fontStyle = FontStyle.Bold,
             fontSize  = 28,

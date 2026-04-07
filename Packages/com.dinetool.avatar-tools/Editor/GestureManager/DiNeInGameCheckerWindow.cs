@@ -84,7 +84,7 @@ namespace DiNeTool.GestureManager
         // ─── Lifecycle ────────────────────────────────────────────────────────────
         private void OnEnable()
         {
-            _icon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
+            _icon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
             titleContent = new GUIContent("DiNe In-Game Checker", _icon);
 
             EditorApplication.playModeStateChanged += OnPlayModeChanged;
