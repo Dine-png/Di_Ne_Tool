@@ -1,0 +1,544 @@
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using BlackStartX.GestureManager;
+using BlackStartX.GestureManager.Data;
+using BlackStartX.GestureManager.Editor.Modules;
+using UnityEditor;
+using UnityEngine;
+using UnityEngine.UIElements;
+using VRC.SDKBase;
+
+namespace DiNeTool.GestureManager
+{
+    public class DiNeInGameCheckerWindow : EditorWindow
+    {
+        // ─── Language ────────────────────────────────────────────────────────────
+        private enum Language { Korean, English, Japanese }
+        private Language CurrentLang
+        {
+            get => (Language)EditorPrefs.GetInt("DiNeLang", 0);
+            set => EditorPrefs.SetInt("DiNeLang", (int)value);
+        }
+        private int L => (int)CurrentLang;
+
+        private static readonly string[][] UI_TEXT =
+        {
+            /* 00 */ new[] { "플레이 모드에서 아바타를 제어할 수 있습니다",  "Avatar can be controlled in Play Mode",          "プレイモードでアバターを操作できます"             },
+            /* 01 */ new[] { "▶   플레이 모드 시작",                          "▶   Enter Play Mode",                            "▶   プレイモード開始"                             },
+            /* 02 */ new[] { "■   플레이 모드 종료",                          "■   Exit Play Mode",                             "■   プレイモード終了"                             },
+            /* 03 */ new[] { "아바타 선택",                                    "Select Avatar",                                  "アバター選択"                                     },
+            /* 04 */ new[] { "설정",                                           "Select",                                         "設定"                                             },
+            /* 05 */ new[] { "비적합 아바타",                                  "Non-Eligible",                                   "非適格アバター"                                   },
+            /* 06 */ new[] { "다시 확인",                                      "Refresh",                                        "更新"                                             },
+            /* 07 */ new[] { "씬에 VRCAvatarDescriptor가 없습니다",            "No VRCAvatarDescriptor in scene",                "シーンにVRCAvatarDescriptorがありません"           },
+            /* 08 */ new[] { "✕  해제",                                        "✕  Unlink",                                      "✕  解除"                                          },
+            /* 09 */ new[] { "아바타 성능 정보",                               "Avatar Performance Info",                        "アバターパフォーマンス情報"                       },
+            /* 10 */ new[] { "퍼포먼스",                                       "Performance",                                    "パフォーマンス"                                   },
+            /* 11 */ new[] { "트라이앵글",                                     "Triangles",                                      "トライアングル"                                   },
+            /* 12 */ new[] { "버텍스",                                         "Vertices",                                       "バーテックス"                                     },
+            /* 13 */ new[] { "메쉬",                                           "Meshes",                                         "メッシュ"                                         },
+            /* 14 */ new[] { "본",                                             "Bones",                                          "ボーン"                                           },
+            /* 15 */ new[] { "메테리얼",                                       "Materials",                                      "マテリアル"                                       },
+            /* 16 */ new[] { "텍스쳐",                                         "Textures",                                       "テクスチャー"                                     },
+            /* 17 */ new[] { "VRAM",                                           "VRAM",                                           "VRAM"                                             },
+            /* 18 */ new[] { "업로드 예상",                                    "Est. Upload",                                    "推定アップロード"                                 },
+            /* 19 */ new[] { "새로고침",                                       "Refresh",                                        "更新"                                             },
+            /* 20 */ new[] { "※ 실제 업로드 크기와 다를 수 있습니다",         "※ May differ from actual upload size",           "※ 実際のアップロードサイズと異なる場合があります" },
+            /* 21 */ new[] { "컴포넌트가 비활성화 상태입니다",                 "Component is disabled",                          "コンポーネントが無効です"                         },
+            /* 22 */ new[] { "Avatar",                                         "Avatar",                                         "アバター"                                         },
+        };
+        private string T(int i) => UI_TEXT[i][L];
+
+        // ─── Colors ───────────────────────────────────────────────────────────────
+        private static readonly Color ColBg      = new Color(0.17f, 0.17f, 0.19f);
+        private static readonly Color ColCard    = new Color(0.21f, 0.21f, 0.24f);
+        private static readonly Color ColAccent  = new Color(0.35f, 0.65f, 1.00f);
+        private static readonly Color ColGreen   = new Color(0.25f, 0.60f, 0.30f);
+        private static readonly Color ColRed     = new Color(0.60f, 0.20f, 0.20f);
+        private static readonly Color ColBlue    = new Color(0.28f, 0.42f, 0.65f);
+        private static readonly Color ColText    = new Color(0.88f, 0.88f, 0.92f);
+        private static readonly Color ColSubText = new Color(0.58f, 0.58f, 0.63f);
+        private static readonly Color ColLine    = new Color(0.30f, 0.30f, 0.35f, 0.8f);
+
+        // ─── State ────────────────────────────────────────────────────────────────
+        private Texture2D   _icon;
+        private Vector2     _scroll;
+        private bool        _showStats;
+        private bool        _statsDirty = true;
+        private DiNeAvatarStats.StatsData _stats;
+
+        // GestureManager references
+        private DiNeGestureManager                    _wrapper;
+        private BlackStartX.GestureManager.GestureManager _gm;
+        private Editor                                _gmEditor; // for Module.EditorContent()
+
+        // ─── Entry ───────────────────────────────────────────────────────────────
+        [MenuItem("DiNe/Avatar/인게임 체커")]
+        public static void ShowWindow()
+        {
+            var w = GetWindow<DiNeInGameCheckerWindow>("DiNe 인게임 체커");
+            w.minSize = new Vector2(340, 480);
+        }
+
+        // ─── Lifecycle ────────────────────────────────────────────────────────────
+        private void OnEnable()
+        {
+            _icon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
+            titleContent = new GUIContent("DiNe 인게임 체커", _icon);
+
+            EditorApplication.playModeStateChanged += OnPlayModeChanged;
+            EditorApplication.hierarchyChanged     += OnHierarchyChanged;
+
+            FindOrCreateManager();
+        }
+
+        private void OnDisable()
+        {
+            EditorApplication.playModeStateChanged -= OnPlayModeChanged;
+            EditorApplication.hierarchyChanged     -= OnHierarchyChanged;
+            DestroyGMEditor();
+        }
+
+        private void OnDestroy()
+        {
+            // 윈도우 닫을 때 에디트 모드면 씬 오브젝트 정리
+            if (!Application.isPlaying && _wrapper != null)
+                DestroyImmediate(_wrapper.gameObject);
+        }
+
+        private void Update()
+        {
+            // 모듈이 활성화 중일 때 Repaint — 파라미터 실시간 반영
+            if (_gm?.Module != null && Application.isPlaying)
+                Repaint();
+        }
+
+        private void OnPlayModeChanged(PlayModeStateChange state)
+        {
+            if (state == PlayModeStateChange.EnteredPlayMode)
+            {
+                FindOrCreateManager();
+                EditorApplication.delayCall += TryAutoInit;
+            }
+            if (state == PlayModeStateChange.ExitingPlayMode)
+            {
+                _statsDirty = true;
+                DestroyGMEditor();
+            }
+            Repaint();
+        }
+
+        private void OnHierarchyChanged()
+        {
+            FindOrCreateManager();
+            Repaint();
+        }
+
+        // ─── Manager Lifecycle ────────────────────────────────────────────────────
+        private void FindOrCreateManager()
+        {
+            _wrapper = FindObjectOfType<DiNeGestureManager>();
+
+            if (_wrapper == null)
+            {
+                var go = new GameObject("DiNe Gesture Manager") { hideFlags = HideFlags.HideInHierarchy };
+                _wrapper = go.AddComponent<DiNeGestureManager>();
+            }
+
+            _gm = _wrapper.Core;
+            RefreshGMEditor();
+        }
+
+        private void RefreshGMEditor()
+        {
+            DestroyGMEditor();
+            if (_gm != null)
+                _gmEditor = Editor.CreateEditor(_gm);
+        }
+
+        private void DestroyGMEditor()
+        {
+            if (_gmEditor != null) { DestroyImmediate(_gmEditor); _gmEditor = null; }
+        }
+
+        private void TryAutoInit()
+        {
+            if (_gm == null || _gm.Module != null) return;
+            _gm.StartCoroutine(AutoInitRoutine());
+        }
+
+        private IEnumerator AutoInitRoutine()
+        {
+            yield return null;
+            ModuleBase module = null;
+            if (_gm.settings?.favourite != null)
+                module = ModuleHelper.GetModuleFor(_gm.settings.favourite);
+            module ??= RefreshModuleList().FirstOrDefault(m => m.IsPerfectDesc());
+            if (module != null)
+            {
+                _gm.SetModule(module);
+                _statsDirty = true;
+            }
+        }
+
+        private static List<ModuleBase> RefreshModuleList() =>
+            BlackStartX.GestureManager.GestureManager.LastCheckedActiveModules =
+                Resources.FindObjectsOfTypeAll<VRC_AvatarDescriptor>()
+                    .Where(d => d.hideFlags != HideFlags.NotEditable &&
+                                d.hideFlags != HideFlags.HideAndDontSave &&
+                                d.gameObject.scene.name != null)
+                    .Select(d => ModuleHelper.GetModuleFor(d.gameObject))
+                    .Where(m => m != null)
+                    .ToList();
+
+        // ═════════════════════════════════════════════════════════════════════════
+        // OnGUI
+        // ═════════════════════════════════════════════════════════════════════════
+        private void OnGUI()
+        {
+            DrawHeader();
+            DrawLangBar();
+            HLine();
+
+            _scroll = EditorGUILayout.BeginScrollView(_scroll);
+
+            if (_gm != null && _gm.Module != null)
+                DrawActiveModule();
+            else
+                DrawSetup();
+
+            HLine();
+            DrawStatsSection();
+
+            GUILayout.Space(10);
+            EditorGUILayout.EndScrollView();
+        }
+
+        // ─── Header ───────────────────────────────────────────────────────────────
+        private void DrawHeader()
+        {
+            using (new BgColor(ColBg))
+            {
+                EditorGUILayout.BeginVertical("box");
+                GUILayout.Space(6);
+
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Space(8);
+
+                if (_icon != null)
+                    GUILayout.Label(_icon, GUILayout.Width(48), GUILayout.Height(48));
+
+                GUILayout.Space(10);
+
+                EditorGUILayout.BeginVertical();
+                GUILayout.FlexibleSpace();
+                GUILayout.Label("DiNe 인게임 체커", new GUIStyle(EditorStyles.label)
+                {
+                    fontStyle = FontStyle.Bold,
+                    fontSize  = 28,
+                    normal    = { textColor = ColText }
+                });
+                GUILayout.Label("VRChat Avatar In-Game Checker", new GUIStyle(EditorStyles.miniLabel)
+                    { normal = { textColor = ColSubText } });
+                GUILayout.FlexibleSpace();
+                EditorGUILayout.EndVertical();
+
+                GUILayout.FlexibleSpace();
+                EditorGUILayout.EndHorizontal();
+
+                GUILayout.Space(6);
+                var line = EditorGUILayout.GetControlRect(false, 2);
+                EditorGUI.DrawRect(line, ColAccent);
+                GUILayout.Space(2);
+                EditorGUILayout.EndVertical();
+            }
+        }
+
+        // ─── Language Bar ─────────────────────────────────────────────────────────
+        private void DrawLangBar()
+        {
+            int idx = L;
+            idx = GUILayout.Toolbar(idx, new[] { "한국어", "English", "日本語" }, GUILayout.Height(26));
+            CurrentLang = (Language)idx;
+        }
+
+        // ═════════════════════════════════════════════════════════════════════════
+        // SETUP
+        // ═════════════════════════════════════════════════════════════════════════
+        private void DrawSetup()
+        {
+            bool isPlaying = EditorApplication.isPlaying;
+
+            GUILayout.Space(12);
+
+            // 상태 힌트
+            if (!isPlaying)
+                DrawCenteredHint(T(0), ColSubText);
+
+            GUILayout.Space(10);
+
+            // Play / Stop 버튼
+            DrawCenteredButton(
+                isPlaying ? T(2) : T(1),
+                isPlaying ? ColRed : ColGreen,
+                200, 36,
+                () => { if (isPlaying) EditorApplication.ExitPlaymode(); else EditorApplication.EnterPlaymode(); });
+
+            if (!isPlaying) { GUILayout.Space(8); return; }
+
+            GUILayout.Space(14);
+            HLine();
+            GUILayout.Space(6);
+
+            // 아바타 목록
+            if (BlackStartX.GestureManager.GestureManager.LastCheckedActiveModules.Count == 0)
+                RefreshModuleList();
+
+            var modules     = BlackStartX.GestureManager.GestureManager.LastCheckedActiveModules;
+            var eligible    = modules.Where(m => m.IsValidDesc()).ToList();
+            var nonEligible = modules.Where(m => !m.IsValidDesc()).ToList();
+
+            if (modules.Count == 0)
+            {
+                DrawCenteredHint(T(7), new Color(1f, 0.65f, 0.3f));
+            }
+            else
+            {
+                if (eligible.Count > 0)
+                {
+                    SectionLabel(T(3));
+                    GUILayout.Space(4);
+
+                    foreach (var module in eligible)
+                    {
+                        using (new BgColor(ColCard))
+                        {
+                            EditorGUILayout.BeginVertical("box");
+                            EditorGUILayout.BeginHorizontal();
+
+                            GUILayout.Label(module.Name, new GUIStyle(EditorStyles.boldLabel)
+                                { fontSize = 12, normal = { textColor = new Color(0.80f, 0.95f, 0.70f) } },
+                                GUILayout.ExpandWidth(true));
+
+                            using (new BgColor(ColGreen))
+                            {
+                                if (GUILayout.Button(T(4), GUILayout.Width(60), GUILayout.Height(22)))
+                                {
+                                    _gm.SetModule(module);
+                                    _statsDirty = true;
+                                }
+                            }
+
+                            EditorGUILayout.EndHorizontal();
+                            foreach (var w in module.GetWarnings())
+                                GUILayout.Label(w, new GUIStyle(EditorStyles.miniLabel)
+                                    { normal = { textColor = ColSubText } });
+                            EditorGUILayout.EndVertical();
+                        }
+                        GUILayout.Space(2);
+                    }
+                }
+
+                if (nonEligible.Count > 0)
+                {
+                    GUILayout.Space(6);
+                    SectionLabel(T(5));
+                    GUILayout.Space(4);
+
+                    foreach (var module in nonEligible)
+                    {
+                        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                        GUILayout.Label(module.Name, EditorStyles.boldLabel);
+                        foreach (var err in module.GetErrors())
+                            EditorGUILayout.HelpBox(err, MessageType.Error);
+                        EditorGUILayout.EndVertical();
+                        GUILayout.Space(2);
+                    }
+                }
+            }
+
+            GUILayout.Space(8);
+            using (new BgColor(ColBlue))
+                if (GUILayout.Button(T(6), GUILayout.Height(26)))
+                    RefreshModuleList();
+        }
+
+        // ═════════════════════════════════════════════════════════════════════════
+        // ACTIVE MODULE
+        // ═════════════════════════════════════════════════════════════════════════
+        private void DrawActiveModule()
+        {
+            GUILayout.Space(4);
+
+            // 아바타 정보 바
+            using (new BgColor(ColCard))
+            {
+                EditorGUILayout.BeginHorizontal("box");
+                GUILayout.Label(T(22) + ":", new GUIStyle(EditorStyles.miniLabel)
+                    { normal = { textColor = ColSubText } }, GUILayout.Width(52));
+                GUILayout.Label(_gm.Module.Avatar?.name ?? "—", new GUIStyle(EditorStyles.boldLabel)
+                    { fontSize = 12, normal = { textColor = new Color(0.80f, 0.95f, 0.70f) } },
+                    GUILayout.ExpandWidth(true));
+
+                using (new BgColor(ColRed))
+                {
+                    if (GUILayout.Button(T(8), GUILayout.Width(70), GUILayout.Height(20)))
+                    {
+                        _gm.UnlinkModule();
+                        _statsDirty = true;
+                    }
+                }
+                EditorGUILayout.EndHorizontal();
+            }
+
+            GUILayout.Space(4);
+
+            // 원본 모듈에 UI 위임 (제스처, 라디알 메뉴, 툴, 디버그 전부)
+            if (_gmEditor != null)
+            {
+                _gm.Module.EditorHeader();
+                _gm.Module.EditorContent(_gmEditor, rootVisualElement);
+            }
+        }
+
+        // ═════════════════════════════════════════════════════════════════════════
+        // STATS
+        // ═════════════════════════════════════════════════════════════════════════
+        private void DrawStatsSection()
+        {
+            bool hasAvatar = _gm?.Module?.Avatar != null;
+            GUI.enabled = hasAvatar;
+
+            using (new BgColor(_showStats ? new Color(0.28f, 0.48f, 0.28f) : ColCard))
+            {
+                if (GUILayout.Button((_showStats ? "▼  " : "▶  ") + T(9), GUILayout.Height(28)))
+                {
+                    _showStats = !_showStats;
+                    if (_showStats) _statsDirty = true;
+                }
+            }
+            GUI.enabled = true;
+
+            if (!_showStats) return;
+
+            if (_statsDirty && _gm?.Module?.Avatar != null)
+            {
+                _stats      = DiNeAvatarStats.Calculate(_gm.Module.Avatar);
+                _statsDirty = false;
+            }
+
+            GUILayout.Space(4);
+            using (new BgColor(ColCard))
+            {
+                EditorGUILayout.BeginVertical("box");
+
+                // 퍼포먼스 랭크
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Label(T(10), new GUIStyle(EditorStyles.boldLabel)
+                    { fontSize = 11, normal = { textColor = ColAccent } }, GUILayout.Width(110));
+                GUILayout.Label(_stats.PerformanceRank, new GUIStyle(EditorStyles.boldLabel)
+                    { fontSize = 13, normal = { textColor = _stats.RankColor } });
+                EditorGUILayout.EndHorizontal();
+
+                HLine();
+
+                // 2열 그리드
+                DrawStatGrid(new[]
+                {
+                    (T(11), _stats.TriangleCount.ToString("N0"), _stats.TriColor),
+                    (T(12), _stats.VertexCount.ToString("N0"),   ColText),
+                    (T(13), _stats.MeshCount.ToString(),         ColText),
+                    (T(14), _stats.BoneCount.ToString(),         ColText),
+                });
+                HLine();
+                DrawStatGrid(new[]
+                {
+                    (T(15), _stats.MaterialCount.ToString(),    ColText),
+                    (T(16), _stats.TextureCount.ToString(),     ColText),
+                    (T(17), FormatBytes(_stats.VRAMBytes),      _stats.VRAMColor),
+                    (T(18), FormatBytes(_stats.UploadSizeBytes), ColSubText),
+                });
+
+                GUILayout.Space(4);
+                GUILayout.Label(T(20), new GUIStyle(EditorStyles.miniLabel)
+                    { normal = { textColor = ColSubText }, fontSize = 9 });
+                GUILayout.Space(4);
+
+                using (new BgColor(ColBlue))
+                    if (GUILayout.Button(T(19), GUILayout.Height(24)))
+                        _statsDirty = true;
+
+                EditorGUILayout.EndVertical();
+            }
+        }
+
+        private void DrawStatGrid((string label, string value, Color col)[] rows)
+        {
+            for (int i = 0; i < rows.Length; i += 2)
+            {
+                EditorGUILayout.BeginHorizontal();
+                DrawStatCell(rows[i].label, rows[i].value, rows[i].col);
+                if (i + 1 < rows.Length)
+                    DrawStatCell(rows[i + 1].label, rows[i + 1].value, rows[i + 1].col);
+                EditorGUILayout.EndHorizontal();
+            }
+        }
+
+        private void DrawStatCell(string label, string value, Color col)
+        {
+            EditorGUILayout.BeginVertical();
+            GUILayout.Label(label, new GUIStyle(EditorStyles.miniLabel)
+                { normal = { textColor = ColSubText } });
+            GUILayout.Label(value, new GUIStyle(EditorStyles.boldLabel)
+                { normal = { textColor = col } });
+            EditorGUILayout.EndVertical();
+        }
+
+        // ─── Helpers ─────────────────────────────────────────────────────────────
+        private void SectionLabel(string text) =>
+            GUILayout.Label(text, new GUIStyle(EditorStyles.boldLabel)
+                { fontSize = 11, normal = { textColor = ColAccent } });
+
+        private static void DrawCenteredHint(string text, Color color)
+        {
+            GUILayout.Label(text, new GUIStyle(EditorStyles.centeredGreyMiniLabel)
+                { fontStyle = FontStyle.Italic, fontSize = 11, wordWrap = true,
+                  normal = { textColor = color } });
+        }
+
+        private static void DrawCenteredButton(string label, Color color, int width, int height, System.Action onClick)
+        {
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+            using (new BgColor(color))
+                if (GUILayout.Button(label, GUILayout.Width(width), GUILayout.Height(height)))
+                    onClick?.Invoke();
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private static void HLine()
+        {
+            GUILayout.Space(4);
+            var r = EditorGUILayout.GetControlRect(false, 1);
+            EditorGUI.DrawRect(r, ColLine);
+            GUILayout.Space(4);
+        }
+
+        private static string FormatBytes(long bytes)
+        {
+            if (bytes >= 1024L * 1024 * 1024) return $"{bytes / (1024f * 1024f * 1024f):F2} GB";
+            if (bytes >= 1024L * 1024)        return $"{bytes / (1024f * 1024f):F2} MB";
+            if (bytes >= 1024L)               return $"{bytes / 1024f:F1} KB";
+            return $"{bytes} B";
+        }
+
+        private readonly struct BgColor : System.IDisposable
+        {
+            private readonly Color _prev;
+            public BgColor(Color c) { _prev = GUI.backgroundColor; GUI.backgroundColor = c; }
+            public void Dispose() => GUI.backgroundColor = _prev;
+        }
+    }
+}

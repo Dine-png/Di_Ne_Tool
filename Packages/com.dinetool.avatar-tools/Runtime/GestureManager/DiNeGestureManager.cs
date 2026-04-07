@@ -4,17 +4,17 @@ using UnityEngine;
 namespace DiNeTool.GestureManager
 {
     /// <summary>
-    /// DiNe Gesture Manager — BlackStartX GestureManager 위에 DiNe UI를 얹는 래퍼 컴포넌트.
-    /// GestureManager 컴포넌트를 자동으로 생성하고 인스펙터에서 숨깁니다.
+    /// DiNe 인게임 체커가 내부적으로 씬에 생성하는 래퍼 컴포넌트.
+    /// 직접 씬에 추가하지 않아도 됩니다 — EditorWindow에서 자동 관리합니다.
     /// </summary>
-    [AddComponentMenu("DiNe Tool/DiNe Gesture Manager")]
+    [AddComponentMenu("")] // 컴포넌트 메뉴에서 숨김
     [RequireComponent(typeof(BlackStartX.GestureManager.GestureManager))]
     [DisallowMultipleComponent]
     public class DiNeGestureManager : MonoBehaviour
     {
         private BlackStartX.GestureManager.GestureManager _gm;
 
-        public BlackStartX.GestureManager.GestureManager GestureManager
+        public BlackStartX.GestureManager.GestureManager Core
         {
             get
             {
@@ -26,14 +26,8 @@ namespace DiNeTool.GestureManager
         private void Awake()
         {
             _gm = GetComponent<BlackStartX.GestureManager.GestureManager>();
-            if (_gm != null)
-                _gm.hideFlags = HideFlags.HideInInspector;
-        }
-
-        private void OnValidate()
-        {
-            var gm = GetComponent<BlackStartX.GestureManager.GestureManager>();
-            if (gm != null) gm.hideFlags = HideFlags.HideInInspector;
+            // GestureManager 컴포넌트는 인스펙터에서 숨김
+            if (_gm != null) _gm.hideFlags = HideFlags.HideInInspector;
         }
     }
 }
