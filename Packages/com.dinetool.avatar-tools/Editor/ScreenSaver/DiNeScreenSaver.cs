@@ -108,7 +108,7 @@ namespace DiNeScreenSaver
                 fontSize  = 28,
                 normal    = new GUIStyleState() { textColor = Color.white }
             };
-            GUIContent titleContent = new GUIContent("DiNe Screen Saver", windowIcon);
+            GUIContent titleContent = new GUIContent("Screen Saver", windowIcon);
             GUILayout.Label(titleContent, titleStyle);
             
             GUILayout.FlexibleSpace();

@@ -122,7 +122,7 @@ public class DiNeMultiSupporter : Editor
         SerializedProperty shapeKeyTargets = serializedObject.FindProperty("shapeKeyTargets");
         SerializedProperty layers = serializedObject.FindProperty("layers");
 
-        DrawHeader("DiNe Multi Dresser");
+        DrawHeader("Multi Dresser");
         
         GUILayout.Space(5);
         int langIndex = (int)currentLanguage;

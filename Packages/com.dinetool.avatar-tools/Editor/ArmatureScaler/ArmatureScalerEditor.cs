@@ -186,7 +186,7 @@ public class ArmatureScalerEditor : EditorWindow
             fontSize  = 28,
             normal    = new GUIStyleState() { textColor = Color.white }
         };
-        GUIContent titleContent = new GUIContent("DiNe Armature Scaler", windowIcon);
+        GUIContent titleContent = new GUIContent("Armature Scaler", windowIcon);
         GUILayout.Label(titleContent, titleStyle);
         
         GUILayout.FlexibleSpace();
