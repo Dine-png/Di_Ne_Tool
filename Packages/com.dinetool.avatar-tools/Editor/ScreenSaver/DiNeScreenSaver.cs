@@ -50,6 +50,7 @@ namespace DiNeScreenSaver
         private string[] UI_TEXT;
         private string[] BG_TYPE_TEXT;
         private Texture2D windowIcon;
+        private Texture2D tabIcon;
         private Font      titleFont;
 
         // 경로 관리를 위한 상수 추가
@@ -67,8 +68,10 @@ namespace DiNeScreenSaver
         {
             LoadSettings();
             SetLanguage(language);
-            windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
+            windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
+            tabIcon    = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
             titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
+            titleContent = new GUIContent("DiNe Screen Saver", tabIcon);
         }
 
         void OnDisable()

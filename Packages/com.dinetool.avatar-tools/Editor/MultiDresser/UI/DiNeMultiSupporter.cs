@@ -105,7 +105,7 @@ public class DiNeMultiSupporter : Editor
 
     private void OnEnable()
     {
-        windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
+        windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
         titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
         DiNeMultiDresser gen = (DiNeMultiDresser)target;
         if(gen.rootTransform == null) gen.TryAutoAssignFXController();

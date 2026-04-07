@@ -20,6 +20,7 @@ public class ArmatureScalerEditor : EditorWindow
     
     private string[] UI_TEXT;
     private Texture2D windowIcon;
+    private Texture2D tabIcon;
     private Font      titleFont;
     private Vector2 scrollPosition;
     private Texture2D selectedButtonTex;
@@ -56,8 +57,10 @@ public class ArmatureScalerEditor : EditorWindow
 
     void OnEnable()
     {
-        windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
+        windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
+        tabIcon    = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
         titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
+        titleContent = new GUIContent("DiNe Armature Scaler", tabIcon);
         selectedButtonTex = MakeTex(1, 1, new Color(0.2f, 0.4f, 1f, 1f));
         SetLanguage(language);
         InitializeValues();

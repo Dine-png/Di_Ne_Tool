@@ -33,6 +33,7 @@ public class DiNeNoMoreAO : EditorWindow
     //  아이콘
     // ──────────────────────────────────────────────
     private Texture2D _windowIcon;
+    private Texture2D _tabIcon;
     private Font      _titleFont;
 
     // ──────────────────────────────────────────────
@@ -84,7 +85,9 @@ public class DiNeNoMoreAO : EditorWindow
         LoadSettings();
         SetLanguage(_language);
         _windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
+        _tabIcon    = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
         _titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
+        titleContent = new GUIContent("DiNe No More AO", _tabIcon);
     }
 
     void OnDisable() => SaveSettings();

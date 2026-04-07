@@ -116,6 +116,7 @@ public class DiNeLilToonPreset : EditorWindow
     //  UI 에셋
     // ──────────────────────────────────────────────────────────────────────────
     private Texture2D _windowIcon;
+    private Texture2D _tabIcon;
     private Font      _titleFont;
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -135,8 +136,9 @@ public class DiNeLilToonPreset : EditorWindow
     void OnEnable()
     {
         _windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
+        _tabIcon    = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
         _titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
-        titleContent = new GUIContent("DiNe LilToon Preset", _windowIcon);
+        titleContent = new GUIContent("DiNe LilToon Preset", _tabIcon);
         LoadSettings();
         ScanLibrary();
     }

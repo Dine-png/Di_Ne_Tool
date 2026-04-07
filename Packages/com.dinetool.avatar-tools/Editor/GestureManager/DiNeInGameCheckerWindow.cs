@@ -86,10 +86,10 @@ namespace DiNeTool.GestureManager
         // ─── Lifecycle ────────────────────────────────────────────────────────────
         private void OnEnable()
         {
-            _icon       = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
-            _headerIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
+            _icon       = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
+            _headerIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
             _titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
-            titleContent = new GUIContent("DiNe In-Game Checker", _icon);
+            titleContent = new GUIContent("DiNe In-Game Checker", _headerIcon);
 
             EditorApplication.playModeStateChanged += OnPlayModeChanged;
             EditorApplication.hierarchyChanged     += OnHierarchyChanged;
@@ -230,6 +230,7 @@ namespace DiNeTool.GestureManager
 
             var titleStyle = new GUIStyle(EditorStyles.label)
             {
+                font      = _titleFont,
                 alignment = TextAnchor.MiddleCenter,
                 fontStyle = FontStyle.Bold,
                 fontSize  = 28,
