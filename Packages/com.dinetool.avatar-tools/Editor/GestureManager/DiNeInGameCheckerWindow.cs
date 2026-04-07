@@ -14,39 +14,39 @@ namespace DiNeTool.GestureManager
     public class DiNeInGameCheckerWindow : EditorWindow
     {
         // ─── Language ────────────────────────────────────────────────────────────
-        private enum Language { Korean, English, Japanese }
+        private enum Language { English, Korean, Japanese }
         private Language CurrentLang
         {
-            get => (Language)EditorPrefs.GetInt("DiNeLang", 0);
-            set => EditorPrefs.SetInt("DiNeLang", (int)value);
+            get => (Language)EditorPrefs.GetInt("DiNeCheckerLang", 0);
+            set => EditorPrefs.SetInt("DiNeCheckerLang", (int)value);
         }
         private int L => (int)CurrentLang;
 
         private static readonly string[][] UI_TEXT =
         {
-            /* 00 */ new[] { "플레이 모드에서 아바타를 제어할 수 있습니다",  "Avatar can be controlled in Play Mode",          "プレイモードでアバターを操作できます"             },
-            /* 01 */ new[] { "▶   플레이 모드 시작",                          "▶   Enter Play Mode",                            "▶   プレイモード開始"                             },
-            /* 02 */ new[] { "■   플레이 모드 종료",                          "■   Exit Play Mode",                             "■   プレイモード終了"                             },
-            /* 03 */ new[] { "아바타 선택",                                    "Select Avatar",                                  "アバター選択"                                     },
-            /* 04 */ new[] { "설정",                                           "Select",                                         "設定"                                             },
-            /* 05 */ new[] { "비적합 아바타",                                  "Non-Eligible",                                   "非適格アバター"                                   },
-            /* 06 */ new[] { "다시 확인",                                      "Refresh",                                        "更新"                                             },
-            /* 07 */ new[] { "씬에 VRCAvatarDescriptor가 없습니다",            "No VRCAvatarDescriptor in scene",                "シーンにVRCAvatarDescriptorがありません"           },
-            /* 08 */ new[] { "✕  해제",                                        "✕  Unlink",                                      "✕  解除"                                          },
-            /* 09 */ new[] { "아바타 성능 정보",                               "Avatar Performance Info",                        "アバターパフォーマンス情報"                       },
-            /* 10 */ new[] { "퍼포먼스",                                       "Performance",                                    "パフォーマンス"                                   },
-            /* 11 */ new[] { "트라이앵글",                                     "Triangles",                                      "トライアングル"                                   },
-            /* 12 */ new[] { "버텍스",                                         "Vertices",                                       "バーテックス"                                     },
-            /* 13 */ new[] { "메쉬",                                           "Meshes",                                         "メッシュ"                                         },
-            /* 14 */ new[] { "본",                                             "Bones",                                          "ボーン"                                           },
-            /* 15 */ new[] { "메테리얼",                                       "Materials",                                      "マテリアル"                                       },
-            /* 16 */ new[] { "텍스쳐",                                         "Textures",                                       "テクスチャー"                                     },
-            /* 17 */ new[] { "VRAM",                                           "VRAM",                                           "VRAM"                                             },
-            /* 18 */ new[] { "업로드 예상",                                    "Est. Upload",                                    "推定アップロード"                                 },
-            /* 19 */ new[] { "새로고침",                                       "Refresh",                                        "更新"                                             },
-            /* 20 */ new[] { "※ 실제 업로드 크기와 다를 수 있습니다",         "※ May differ from actual upload size",           "※ 実際のアップロードサイズと異なる場合があります" },
-            /* 21 */ new[] { "컴포넌트가 비활성화 상태입니다",                 "Component is disabled",                          "コンポーネントが無効です"                         },
-            /* 22 */ new[] { "Avatar",                                         "Avatar",                                         "アバター"                                         },
+            /* 00 */ new[] { "Avatar can be controlled in Play Mode",          "플레이 모드에서 아바타를 제어할 수 있습니다",  "プレイモードでアバターを操作できます"             },
+            /* 01 */ new[] { "▶   Enter Play Mode",                            "▶   플레이 모드 시작",                          "▶   プレイモード開始"                             },
+            /* 02 */ new[] { "■   Exit Play Mode",                             "■   플레이 모드 종료",                          "■   プレイモード終了"                             },
+            /* 03 */ new[] { "Select Avatar",                                  "아바타 선택",                                    "アバター選択"                                     },
+            /* 04 */ new[] { "Select",                                         "설정",                                          "設定"                                             },
+            /* 05 */ new[] { "Non-Eligible",                                   "비적합 아바타",                                  "非適格アバター"                                   },
+            /* 06 */ new[] { "Refresh",                                        "다시 확인",                                      "更新"                                             },
+            /* 07 */ new[] { "No VRCAvatarDescriptor in scene",                "씬에 VRCAvatarDescriptor가 없습니다",            "シーンにVRCAvatarDescriptorがありません"           },
+            /* 08 */ new[] { "✕  Unlink",                                      "✕  해제",                                       "✕  解除"                                          },
+            /* 09 */ new[] { "Avatar Performance Info",                        "아바타 성능 정보",                               "アバターパフォーマンス情報"                       },
+            /* 10 */ new[] { "Performance",                                    "퍼포먼스",                                      "パフォーマンス"                                   },
+            /* 11 */ new[] { "Triangles",                                      "트라이앵글",                                    "トライアングル"                                   },
+            /* 12 */ new[] { "Vertices",                                       "버텍스",                                        "バーテックス"                                     },
+            /* 13 */ new[] { "Meshes",                                         "메쉬",                                          "メッシュ"                                         },
+            /* 14 */ new[] { "Bones",                                          "본",                                            "ボーン"                                           },
+            /* 15 */ new[] { "Materials",                                      "메테리얼",                                      "マテリアル"                                       },
+            /* 16 */ new[] { "Textures",                                       "텍스쳐",                                        "テクスチャー"                                     },
+            /* 17 */ new[] { "VRAM",                                           "VRAM",                                          "VRAM"                                             },
+            /* 18 */ new[] { "Est. Upload",                                    "업로드 예상",                                   "推定アップロード"                                 },
+            /* 19 */ new[] { "Refresh",                                        "새로고침",                                      "更新"                                             },
+            /* 20 */ new[] { "※ May differ from actual upload size",           "※ 실제 업로드 크기와 다를 수 있습니다",         "※ 実際のアップロードサイズと異なる場合があります" },
+            /* 21 */ new[] { "Component is disabled",                          "컴포넌트가 비활성화 상태입니다",                 "コンポーネントが無効です"                         },
+            /* 22 */ new[] { "Avatar",                                         "Avatar",                                        "アバター"                                         },
         };
         private string T(int i) => UI_TEXT[i][L];
 
@@ -74,10 +74,10 @@ namespace DiNeTool.GestureManager
         private Editor                                _gmEditor; // for Module.EditorContent()
 
         // ─── Entry ───────────────────────────────────────────────────────────────
-        [MenuItem("DiNe/Avatar/인게임 체커")]
+        [MenuItem("DiNe/Avatar/In-Game Checker")]
         public static void ShowWindow()
         {
-            var w = GetWindow<DiNeInGameCheckerWindow>("DiNe 인게임 체커");
+            var w = GetWindow<DiNeInGameCheckerWindow>("DiNe In-Game Checker");
             w.minSize = new Vector2(340, 480);
         }
 
@@ -85,7 +85,7 @@ namespace DiNeTool.GestureManager
         private void OnEnable()
         {
             _icon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
-            titleContent = new GUIContent("DiNe 인게임 체커", _icon);
+            titleContent = new GUIContent("DiNe In-Game Checker", _icon);
 
             EditorApplication.playModeStateChanged += OnPlayModeChanged;
             EditorApplication.hierarchyChanged     += OnHierarchyChanged;
@@ -218,48 +218,33 @@ namespace DiNeTool.GestureManager
         // ─── Header ───────────────────────────────────────────────────────────────
         private void DrawHeader()
         {
-            using (new BgColor(ColBg))
+            GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
+            EditorGUILayout.BeginVertical("box");
+
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+
+            var titleStyle = new GUIStyle(EditorStyles.label)
             {
-                EditorGUILayout.BeginVertical("box");
-                GUILayout.Space(6);
+                alignment = TextAnchor.MiddleCenter,
+                fontStyle = FontStyle.Bold,
+                fontSize  = 28,
+                normal    = { textColor = Color.white }
+            };
+            GUILayout.Label(new GUIContent("DiNe In-Game Checker", _icon), titleStyle);
 
-                EditorGUILayout.BeginHorizontal();
-                GUILayout.Space(8);
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.EndHorizontal();
 
-                if (_icon != null)
-                    GUILayout.Label(_icon, GUILayout.Width(48), GUILayout.Height(48));
-
-                GUILayout.Space(10);
-
-                EditorGUILayout.BeginVertical();
-                GUILayout.FlexibleSpace();
-                GUILayout.Label("DiNe 인게임 체커", new GUIStyle(EditorStyles.label)
-                {
-                    fontStyle = FontStyle.Bold,
-                    fontSize  = 28,
-                    normal    = { textColor = ColText }
-                });
-                GUILayout.Label("VRChat Avatar In-Game Checker", new GUIStyle(EditorStyles.miniLabel)
-                    { normal = { textColor = ColSubText } });
-                GUILayout.FlexibleSpace();
-                EditorGUILayout.EndVertical();
-
-                GUILayout.FlexibleSpace();
-                EditorGUILayout.EndHorizontal();
-
-                GUILayout.Space(6);
-                var line = EditorGUILayout.GetControlRect(false, 2);
-                EditorGUI.DrawRect(line, ColAccent);
-                GUILayout.Space(2);
-                EditorGUILayout.EndVertical();
-            }
+            GUILayout.Space(5);
+            EditorGUILayout.EndVertical();
         }
 
         // ─── Language Bar ─────────────────────────────────────────────────────────
         private void DrawLangBar()
         {
             int idx = L;
-            idx = GUILayout.Toolbar(idx, new[] { "한국어", "English", "日本語" }, GUILayout.Height(26));
+            idx = GUILayout.Toolbar(idx, new[] { "English", "한국어", "日本語" }, GUILayout.Height(26));
             CurrentLang = (Language)idx;
         }
 

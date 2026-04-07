@@ -135,7 +135,7 @@ public class DiNeLilToonPreset : EditorWindow
     void OnEnable()
     {
         _windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
-        _titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dinetool.avatar-tools/DungGeunMo.ttf");
+        _titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
         titleContent = new GUIContent("DiNe LilToon Preset", _windowIcon);
         LoadSettings();
         ScanLibrary();
@@ -183,41 +183,26 @@ public class DiNeLilToonPreset : EditorWindow
     // ──────────────────────────────────────────────────────────────────────────
     private void DrawHeader()
     {
-        var prevBg = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.15f, 0.15f, 0.17f);
+        GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
         EditorGUILayout.BeginVertical("box");
-        GUI.backgroundColor = prevBg;
 
-        GUILayout.Space(6);
         EditorGUILayout.BeginHorizontal();
-        GUILayout.Space(8);
-
-        if (_windowIcon != null)
-            GUILayout.Label(_windowIcon, GUILayout.Width(48), GUILayout.Height(48));
-
-        GUILayout.Space(10);
-
-        EditorGUILayout.BeginVertical();
         GUILayout.FlexibleSpace();
-        GUILayout.Label("DiNe LilToon Preset", new GUIStyle(EditorStyles.label)
+
+        var titleStyle = new GUIStyle(EditorStyles.label)
         {
             font      = _titleFont,
+            alignment = TextAnchor.MiddleCenter,
             fontStyle = FontStyle.Bold,
             fontSize  = 28,
-            normal    = { textColor = new Color(0.88f, 0.88f, 0.92f) }
-        });
-        GUILayout.Label("lilToon Material Preset Manager", new GUIStyle(EditorStyles.miniLabel)
-            { normal = { textColor = new Color(0.58f, 0.58f, 0.63f) } });
-        GUILayout.FlexibleSpace();
-        EditorGUILayout.EndVertical();
+            normal    = { textColor = Color.white }
+        };
+        GUILayout.Label(new GUIContent("DiNe LilToon Preset", _windowIcon), titleStyle);
 
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
 
-        GUILayout.Space(6);
-        var line = EditorGUILayout.GetControlRect(false, 2);
-        EditorGUI.DrawRect(line, new Color(0.35f, 0.65f, 1.00f));
-        GUILayout.Space(2);
+        GUILayout.Space(5);
         EditorGUILayout.EndVertical();
     }
 
