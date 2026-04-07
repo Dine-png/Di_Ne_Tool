@@ -183,10 +183,11 @@ public class ArmatureScalerEditor : EditorWindow
             font      = titleFont,
             alignment = TextAnchor.MiddleCenter,
             fontStyle = FontStyle.Bold,
-            fontSize  = 34,
+            fontSize  = 36,
             normal    = new GUIStyleState() { textColor = Color.white }
         };
-        GUILayout.Label(windowIcon, GUILayout.Width(38), GUILayout.Height(38));
+        float iconSize = windowIcon != null ? windowIcon.height * 2f / 3f : 48;
+        GUILayout.Label(windowIcon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
         GUILayout.Space(6);
         GUILayout.Label("Armature Scaler", titleStyle);
         

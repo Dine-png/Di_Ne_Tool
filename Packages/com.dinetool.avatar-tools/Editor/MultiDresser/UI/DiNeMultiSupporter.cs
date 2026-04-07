@@ -519,8 +519,9 @@ public class DiNeMultiSupporter : Editor
         EditorGUILayout.BeginVertical("box");
         EditorGUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
-        GUIStyle titleStyle = new GUIStyle(EditorStyles.label) { font = titleFont, alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold, fontSize = 34 };
-        GUILayout.Label(windowIcon, GUILayout.Width(38), GUILayout.Height(38));
+        GUIStyle titleStyle = new GUIStyle(EditorStyles.label) { font = titleFont, alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold, fontSize = 36 };\r
+        float iconSize = windowIcon != null ? windowIcon.height * 2f / 3f : 48;\r
+        GUILayout.Label(windowIcon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
         GUILayout.Space(6);
         GUILayout.Label(titleText, titleStyle);
         GUILayout.FlexibleSpace();
