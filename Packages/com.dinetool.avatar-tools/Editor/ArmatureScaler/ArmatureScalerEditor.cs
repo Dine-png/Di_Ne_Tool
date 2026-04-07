@@ -48,7 +48,7 @@ public class ArmatureScalerEditor : EditorWindow
     [MenuItem("DiNe/Avatar/Armature Scaler")]
     public static void ShowWindow()
     {
-        EditorWindow window = GetWindow<ArmatureScalerEditor>("Armature Scaler");
+        EditorWindow window = GetWindow<ArmatureScalerEditor>("DiNe Armature Scaler");
         window.minSize = new Vector2(300, 400); 
         window.position = new Rect(window.position.x, window.position.y, 420, 850);
     }
@@ -180,7 +180,7 @@ public class ArmatureScalerEditor : EditorWindow
             fontSize = 28,
             normal = new GUIStyleState() { textColor = Color.white }
         };
-        GUIContent titleContent = new GUIContent("Armature Scaler", windowIcon);
+        GUIContent titleContent = new GUIContent("DiNe Armature Scaler", windowIcon);
         GUILayout.Label(titleContent, titleStyle);
         
         GUILayout.FlexibleSpace();
