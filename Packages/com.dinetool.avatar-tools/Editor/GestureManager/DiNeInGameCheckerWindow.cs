@@ -62,7 +62,9 @@ namespace DiNeTool.GestureManager
         private static readonly Color ColLine    = new Color(0.30f, 0.30f, 0.35f, 0.8f);
 
         // ─── State ────────────────────────────────────────────────────────────────
-        private Texture2D   _icon;
+        private Texture2D   _icon;        // 탭 아이콘 (마스코트)
+        private Texture2D   _headerIcon;  // 헤더 로고 (DiNe.png)
+        private Font        _titleFont;
         private Vector2     _scroll;
         private bool        _showStats;
         private bool        _statsDirty = true;
@@ -84,7 +86,9 @@ namespace DiNeTool.GestureManager
         // ─── Lifecycle ────────────────────────────────────────────────────────────
         private void OnEnable()
         {
-            _icon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
+            _icon       = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
+            _headerIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
+            _titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
             titleContent = new GUIContent("DiNe In-Game Checker", _icon);
 
             EditorApplication.playModeStateChanged += OnPlayModeChanged;
