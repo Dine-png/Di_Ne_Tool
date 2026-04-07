@@ -226,10 +226,12 @@ public class DiNeMaterialTool : EditorWindow
         var style = new GUIStyle(EditorStyles.label)
         {
             font = _titleFont, alignment = TextAnchor.MiddleCenter,
-            fontStyle = FontStyle.Bold, fontSize = 28,
+            fontStyle = FontStyle.Bold, fontSize = 34,
             normal = { textColor = Color.white }
         };
-        GUILayout.Label(new GUIContent("DiNe Material Tool", _windowIcon), style);
+        GUILayout.Label(_windowIcon, GUILayout.Width(38), GUILayout.Height(38));
+        GUILayout.Space(6);
+        GUILayout.Label("Material Tool", style);
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
         GUILayout.Space(5);

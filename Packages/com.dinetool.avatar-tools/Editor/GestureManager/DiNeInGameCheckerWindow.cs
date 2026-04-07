@@ -233,10 +233,12 @@ namespace DiNeTool.GestureManager
                 font      = _titleFont,
                 alignment = TextAnchor.MiddleCenter,
                 fontStyle = FontStyle.Bold,
-                fontSize  = 28,
+                fontSize  = 34,
                 normal    = { textColor = Color.white }
             };
-            GUILayout.Label(new GUIContent("DiNe In-Game Checker", _icon), titleStyle);
+            GUILayout.Label(_icon, GUILayout.Width(38), GUILayout.Height(38));
+            GUILayout.Space(6);
+            GUILayout.Label("In-Game Checker", titleStyle);
 
             GUILayout.FlexibleSpace();
             EditorGUILayout.EndHorizontal();

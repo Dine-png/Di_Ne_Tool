@@ -67,11 +67,12 @@ public class DiNePackagePatcher : EditorWindow
             font      = titleFont,
             alignment = TextAnchor.MiddleCenter,
             fontStyle = FontStyle.Bold,
-            fontSize  = 28,
+            fontSize  = 34,
             normal    = new GUIStyleState() { textColor = Color.white }
         };
-        GUIContent titleContent = new GUIContent("DiNe Package Patcher", windowIcon);
-        GUILayout.Label(titleContent, titleStyle);
+        GUILayout.Label(windowIcon, GUILayout.Width(38), GUILayout.Height(38));
+        GUILayout.Space(6);
+        GUILayout.Label("Package Patcher", titleStyle);
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
         GUILayout.Space(5);

@@ -122,7 +122,7 @@ public class DiNeMultiSupporter : Editor
         SerializedProperty shapeKeyTargets = serializedObject.FindProperty("shapeKeyTargets");
         SerializedProperty layers = serializedObject.FindProperty("layers");
 
-        DrawHeader("DiNe Multi Dresser");
+        DrawHeader("Multi Dresser");
         
         GUILayout.Space(5);
         int langIndex = (int)currentLanguage;
@@ -519,9 +519,10 @@ public class DiNeMultiSupporter : Editor
         EditorGUILayout.BeginVertical("box");
         EditorGUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
-        GUIStyle titleStyle = new GUIStyle(EditorStyles.label) { font = titleFont, alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold, fontSize = 28 };
-        GUIContent content = new GUIContent(titleText, windowIcon);
-        GUILayout.Label(content, titleStyle);
+        GUIStyle titleStyle = new GUIStyle(EditorStyles.label) { font = titleFont, alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold, fontSize = 34 };
+        GUILayout.Label(windowIcon, GUILayout.Width(38), GUILayout.Height(38));
+        GUILayout.Space(6);
+        GUILayout.Label(titleText, titleStyle);
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
         EditorGUILayout.EndVertical();
