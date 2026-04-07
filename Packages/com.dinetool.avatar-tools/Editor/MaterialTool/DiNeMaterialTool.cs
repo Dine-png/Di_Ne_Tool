@@ -94,10 +94,10 @@ public class DiNeMaterialTool : EditorWindow
     //  Colors
     // ══════════════════════════════════════════════════════════════════════════
     private static readonly Color ColCard    = new Color(0.21f, 0.21f, 0.24f);
-    private static readonly Color ColAccent  = new Color(0.18f, 0.76f, 0.64f);
-    private static readonly Color ColAction  = new Color(0.20f, 0.60f, 0.55f);
-    private static readonly Color ColApply   = new Color(0.15f, 0.68f, 0.58f);
-    private static readonly Color ColSelect  = new Color(0.20f, 0.70f, 0.60f);
+    private static readonly Color ColAccent  = new Color(0.30f, 0.82f, 0.76f);
+    private static readonly Color ColAction  = new Color(0.30f, 0.82f, 0.76f);
+    private static readonly Color ColApply   = new Color(0.30f, 0.82f, 0.76f);
+    private static readonly Color ColSelect  = new Color(0.30f, 0.82f, 0.76f);
     private static readonly Color ColDanger  = new Color(0.60f, 0.25f, 0.25f);
     private static readonly Color ColWarn    = new Color(0.72f, 0.55f, 0.18f);
     private static readonly Color ColText    = new Color(0.88f, 0.88f, 0.92f);
@@ -256,7 +256,7 @@ public class DiNeMaterialTool : EditorWindow
     private void DrawLangBar()
     {
         var prevBg = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.12f, 0.45f, 0.40f);
+        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
         int idx = L;
         int next = GUILayout.Toolbar(idx, new[] { "English", "한국어", "日本語" }, GUILayout.Height(26));
         GUI.backgroundColor = prevBg;

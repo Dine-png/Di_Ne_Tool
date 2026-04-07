@@ -127,7 +127,7 @@ public class DiNeMultiSupporter : Editor
         GUILayout.Space(5);
         int langIndex = (int)currentLanguage;
         var prevBg = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.12f, 0.45f, 0.40f);
+        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
         langIndex = GUILayout.Toolbar(langIndex, LangButtonLabels, GUILayout.Height(35)); 
         GUI.backgroundColor = prevBg;
         currentLanguage = (Language)langIndex;
@@ -195,7 +195,7 @@ public class DiNeMultiSupporter : Editor
         if (selectedLayerIndex >= layers.arraySize) selectedLayerIndex = layers.arraySize - 1;
         selectedLayerIndex = GUILayout.Toolbar(selectedLayerIndex, tabNames.ToArray(), GUILayout.Height(35));
 
-        GUI.backgroundColor = new Color(0.20f, 0.76f, 0.64f);
+        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
         if (GUILayout.Button("+", GUILayout.Width(40), GUILayout.Height(35)))
         {
             layers.InsertArrayElementAtIndex(layers.arraySize);
@@ -222,7 +222,7 @@ public class DiNeMultiSupporter : Editor
         
         // [생성 버튼]
         var genPrevCol = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.15f, 0.68f, 0.58f);
+        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
         var genBtnStyle = new GUIStyle(GUI.skin.button) { fontSize = 18, fontStyle = FontStyle.Bold, fixedHeight = 50, normal = { textColor = Color.white } };
         if (GUILayout.Button(lang["generate"], genBtnStyle))
         {

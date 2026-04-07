@@ -212,7 +212,7 @@ public class ArmatureScalerEditor : EditorWindow
         int currentLanguageIndex = (int)language;
         string[] languageButtons = { "English", "한국어", "日本語" };
         var prevLangBg = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.12f, 0.45f, 0.40f);
+        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
         int newLanguageIndex = GUILayout.Toolbar(currentLanguageIndex, languageButtons, GUILayout.Height(30));
         GUI.backgroundColor = prevLangBg;
         if (newLanguageIndex != currentLanguageIndex)
@@ -329,7 +329,7 @@ public class ArmatureScalerEditor : EditorWindow
         // ----------------------------------------
 
         var prevBg = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.18f, 0.76f, 0.64f);
+        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
         if (GUILayout.Button(UI_TEXT[29], new GUIStyle(GUI.skin.button) { fontStyle = FontStyle.Bold, normal = { textColor = Color.white } }))
         {
             SaveNewPreset();

@@ -97,7 +97,7 @@ public class DiNePackagePatcher : EditorWindow
         int currentLangIndex = (int)language;
         string[] langButtons = { "English", "한국어", "日本語" };
         var prevLangBg = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.12f, 0.45f, 0.40f);
+        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
         int newLangIndex = GUILayout.Toolbar(currentLangIndex, langButtons, GUILayout.Height(30));
         GUI.backgroundColor = prevLangBg;
         if (newLangIndex != currentLangIndex)
@@ -225,7 +225,7 @@ public class DiNePackagePatcher : EditorWindow
             importBtnStyle.normal.textColor = Color.white;
         }
         var prevBg = GUI.backgroundColor;
-        if (!isImporting) GUI.backgroundColor = new Color(0.18f, 0.76f, 0.64f); // Mint Green
+        if (!isImporting) GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f); // Mint Green
         
         if (GUILayout.Button(isImporting ? UI_TEXT[9] : UI_TEXT[10], importBtnStyle, GUILayout.Height(40))) // 임포트 중... / 임포트 시작
         {

@@ -53,10 +53,10 @@ namespace DiNeTool.GestureManager
         // ─── Colors ───────────────────────────────────────────────────────────────
         private static readonly Color ColBg      = new Color(0.17f, 0.17f, 0.19f);
         private static readonly Color ColCard    = new Color(0.21f, 0.21f, 0.24f);
-        private static readonly Color ColAccent  = new Color(0.18f, 0.76f, 0.64f);
-        private static readonly Color ColGreen   = new Color(0.15f, 0.68f, 0.58f);
+        private static readonly Color ColAccent  = new Color(0.30f, 0.82f, 0.76f);
+        private static readonly Color ColGreen   = new Color(0.30f, 0.82f, 0.76f);
         private static readonly Color ColRed     = new Color(0.60f, 0.25f, 0.25f);
-        private static readonly Color ColBlue    = new Color(0.20f, 0.60f, 0.55f);
+        private static readonly Color ColBlue    = new Color(0.30f, 0.82f, 0.76f);
         private static readonly Color ColText    = new Color(0.88f, 0.88f, 0.92f);
         private static readonly Color ColSubText = new Color(0.58f, 0.58f, 0.63f);
         private static readonly Color ColLine    = new Color(0.30f, 0.30f, 0.35f, 0.8f);
@@ -264,7 +264,7 @@ namespace DiNeTool.GestureManager
         {
             int idx = L;
             var prevBg = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0.12f, 0.45f, 0.40f);
+            GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
             idx = GUILayout.Toolbar(idx, new[] { "English", "한국어", "日本語" }, GUILayout.Height(26));
             GUI.backgroundColor = prevBg;
             CurrentLang = (Language)idx;

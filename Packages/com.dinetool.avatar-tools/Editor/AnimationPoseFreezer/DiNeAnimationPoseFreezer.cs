@@ -76,7 +76,7 @@ public class DiNeAnimationPoseFreezer : EditorWindow
         int currentLangIndex = (int)language;
         string[] langButtons = { "English", "한국어", "日本語" };
         var prevLangBg = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.12f, 0.45f, 0.40f);
+        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
         int newLangIndex = GUILayout.Toolbar(currentLangIndex, langButtons, GUILayout.Height(30));
         GUI.backgroundColor = prevLangBg;
         if (newLangIndex != currentLangIndex)
@@ -127,7 +127,7 @@ public class DiNeAnimationPoseFreezer : EditorWindow
         GUILayout.Space(5);
 
         var prevBg = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.18f, 0.76f, 0.64f);
+        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
         if (GUILayout.Button(UI_TEXT[4], new GUIStyle(GUI.skin.button) { fontStyle = FontStyle.Bold, normal = { textColor = Color.white } }, GUILayout.Height(38)))
         {
             SampleBlendShapesOnly();

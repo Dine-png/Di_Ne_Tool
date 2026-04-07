@@ -134,7 +134,7 @@ namespace DiNeScreenSaver
             int currentLanguageIndex = (int)language;
             string[] languageButtons = { "English", "한국어", "日本語" };
             var prevLangBg = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0.12f, 0.45f, 0.40f);
+            GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
             int newLanguageIndex = GUILayout.Toolbar(currentLanguageIndex, languageButtons, GUILayout.Height(30));
             GUI.backgroundColor = prevLangBg;
             if (newLanguageIndex != currentLanguageIndex)
@@ -173,7 +173,7 @@ namespace DiNeScreenSaver
             
             EditorGUI.BeginDisabledGroup(captureTarget == CaptureTarget.GameView && camera == null);
 
-            GUI.backgroundColor = new Color(0.15f, 0.68f, 0.58f);
+            GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
             GUIStyle buttonStyle = new GUIStyle(GUI.skin.button);
             buttonStyle.fontSize = 20;
             buttonStyle.fontStyle = FontStyle.Bold;
