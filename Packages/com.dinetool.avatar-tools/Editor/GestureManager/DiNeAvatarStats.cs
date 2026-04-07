@@ -133,7 +133,7 @@ namespace DiNeTool.GestureManager
                 case TextureFormat.BC7:    return 1f;
                 case TextureFormat.RGB24:  return 3f;
                 case TextureFormat.RGBA32: return 4f;
-                case TextureFormat.RGBA16: return 2f;
+                case TextureFormat.RGBA4444: return 2f;
                 case TextureFormat.R8:     return 1f;
                 case TextureFormat.RG16:   return 2f;
                 case TextureFormat.RGBAHalf: return 8f;
