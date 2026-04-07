@@ -125,11 +125,7 @@ public class DiNeMultiSupporter : Editor
         DrawHeader("Multi Dresser");
         
         GUILayout.Space(5);
-        int langIndex = (int)currentLanguage;
-        var prevBg = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
-        langIndex = GUILayout.Toolbar(langIndex, LangButtonLabels, GUILayout.Height(35)); 
-        GUI.backgroundColor = prevBg;
+        int langIndex = DrawCustomToolbar((int)currentLanguage, LangButtonLabels, 35); 
         currentLanguage = (Language)langIndex;
         var lang = text[currentLanguage]; 
 
@@ -193,7 +189,7 @@ public class DiNeMultiSupporter : Editor
 
         EditorGUILayout.BeginHorizontal();
         if (selectedLayerIndex >= layers.arraySize) selectedLayerIndex = layers.arraySize - 1;
-        selectedLayerIndex = GUILayout.Toolbar(selectedLayerIndex, tabNames.ToArray(), GUILayout.Height(35));
+        selectedLayerIndex = DrawCustomToolbar(selectedLayerIndex, tabNames.ToArray(), 35);
 
         GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
         if (GUILayout.Button("+", GUILayout.Width(40), GUILayout.Height(35)))
@@ -579,6 +575,29 @@ public class DiNeMultiSupporter : Editor
 
         GUILayout.Space(5);
         EditorGUILayout.EndVertical();
+    }
+
+    private int DrawCustomToolbar(int selected, string[] options, float height)
+    {
+        EditorGUILayout.BeginHorizontal();
+        int newSelected = selected;
+        for (int i = 0; i < options.Length; i++)
+        {
+            var prevBg = GUI.backgroundColor;
+            GUI.backgroundColor = (i == selected) ? new Color(0.30f, 0.82f, 0.76f) : new Color(0.5f, 0.5f, 0.5f, 1f);
+            GUIStyle style = new GUIStyle(GUI.skin.button) { 
+                fontStyle = (i == selected) ? FontStyle.Bold : FontStyle.Normal,
+                fontSize = 12,
+                normal = { textColor = (i == selected) ? Color.white : new Color(0.8f, 0.8f, 0.8f) }
+            };
+            if (GUILayout.Button(options[i], style, GUILayout.Height(height)))
+            {
+                newSelected = i;
+            }
+            GUI.backgroundColor = prevBg;
+        }
+        EditorGUILayout.EndHorizontal();
+        return newSelected;
     }
 }
 #endif

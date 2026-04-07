@@ -133,10 +133,7 @@ namespace DiNeScreenSaver
             GUILayout.Space(5);
             int currentLanguageIndex = (int)language;
             string[] languageButtons = { "English", "한국어", "日本語" };
-            var prevLangBg = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
-            int newLanguageIndex = GUILayout.Toolbar(currentLanguageIndex, languageButtons, GUILayout.Height(30));
-            GUI.backgroundColor = prevLangBg;
+            int newLanguageIndex = DrawCustomToolbar(currentLanguageIndex, languageButtons, 30);
             if (newLanguageIndex != currentLanguageIndex)
             {
                 language = (LanguagePreset)newLanguageIndex;
@@ -146,7 +143,7 @@ namespace DiNeScreenSaver
             
             int currentTargetIndex = (int)captureTarget;
             string[] targetButtons = { UI_TEXT[9], UI_TEXT[10] };
-            int newTargetIndex = GUILayout.Toolbar(currentTargetIndex, targetButtons, GUILayout.Height(30));
+            int newTargetIndex = DrawCustomToolbar(currentTargetIndex, targetButtons, 30);
             if (newTargetIndex != currentTargetIndex)
             {
                 captureTarget = (CaptureTarget)newTargetIndex;
@@ -513,6 +510,30 @@ namespace DiNeScreenSaver
             AssetDatabase.Refresh();
             DestroyImmediate(screenShot);
             DestroyImmediate(tempRT);
+        }
+    }
+
+        private int DrawCustomToolbar(int selected, string[] options, float height)
+        {
+            EditorGUILayout.BeginHorizontal();
+            int newSelected = selected;
+            for (int i = 0; i < options.Length; i++)
+            {
+                var prevBg = GUI.backgroundColor;
+                GUI.backgroundColor = (i == selected) ? new Color(0.30f, 0.82f, 0.76f) : new Color(0.5f, 0.5f, 0.5f, 1f);
+                GUIStyle style = new GUIStyle(GUI.skin.button) { 
+                    fontStyle = (i == selected) ? FontStyle.Bold : FontStyle.Normal,
+                    fontSize = 12,
+                    normal = { textColor = (i == selected) ? Color.white : new Color(0.8f, 0.8f, 0.8f) }
+                };
+                if (GUILayout.Button(options[i], style, GUILayout.Height(height)))
+                {
+                    newSelected = i;
+                }
+                GUI.backgroundColor = prevBg;
+            }
+            EditorGUILayout.EndHorizontal();
+            return newSelected;
         }
     }
 }

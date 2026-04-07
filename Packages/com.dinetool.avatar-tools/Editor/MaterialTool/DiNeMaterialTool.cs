@@ -255,27 +255,44 @@ public class DiNeMaterialTool : EditorWindow
 
     private void DrawLangBar()
     {
-        var prevBg = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
         int idx = L;
-        int next = GUILayout.Toolbar(idx, new[] { "English", "한국어", "日本語" }, GUILayout.Height(26));
-        GUI.backgroundColor = prevBg;
+        int next = DrawCustomToolbar(idx, new[] { "English", "한국어", "日本語" }, 26);
         if (next != idx) { _lang = (Lang)next; SaveSettings(); }
     }
 
     private void DrawModeSelector()
     {
         int idx = (int)_mode;
-        var prev = GUI.backgroundColor;
-        GUI.backgroundColor = ColAccent;
-        int next = GUILayout.Toolbar(idx, new[] { T(0), T(1) }, GUILayout.Height(30));
-        GUI.backgroundColor = prev;
+        int next = DrawCustomToolbar(idx, new[] { T(0), T(1) }, 30);
         if (next != idx)
         {
             _mode = (ToolMode)next;
             _status = "";
             AutoScan();
         }
+    }
+
+    private int DrawCustomToolbar(int selected, string[] options, float height)
+    {
+        EditorGUILayout.BeginHorizontal();
+        int newSelected = selected;
+        for (int i = 0; i < options.Length; i++)
+        {
+            var prevBg = GUI.backgroundColor;
+            GUI.backgroundColor = (i == selected) ? new Color(0.30f, 0.82f, 0.76f) : new Color(0.5f, 0.5f, 0.5f, 1f);
+            GUIStyle style = new GUIStyle(GUI.skin.button) { 
+                fontStyle = (i == selected) ? FontStyle.Bold : FontStyle.Normal,
+                fontSize = 12,
+                normal = { textColor = (i == selected) ? Color.white : new Color(0.8f, 0.8f, 0.8f) }
+            };
+            if (GUILayout.Button(options[i], style, GUILayout.Height(height)))
+            {
+                newSelected = i;
+            }
+            GUI.backgroundColor = prevBg;
+        }
+        EditorGUILayout.EndHorizontal();
+        return newSelected;
     }
 
     private void DrawTargetSettings()
