@@ -194,6 +194,17 @@ public class ArmatureScalerEditor : EditorWindow
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
 
+        GUILayout.Space(4);
+        string desc = "";
+        switch (language)
+        {
+            case LanguagePreset.Korean: desc = "아바타의 아마추어 비율을 쉽고 안전하게 조절합니다."; break;
+            case LanguagePreset.Japanese: desc = "アバターのアーマチュアの比率を簡単かつ安全に調整します。"; break;
+            default: desc = "Easily and safely scale your avatar's armature proportions."; break;
+        }
+        GUILayout.Label(desc, new GUIStyle(EditorStyles.wordWrappedLabel) 
+            { alignment = TextAnchor.MiddleCenter, fontSize = 12, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } });
+
         GUILayout.Space(5);
         EditorGUILayout.EndVertical();
 
@@ -314,10 +325,13 @@ public class ArmatureScalerEditor : EditorWindow
         EditorGUI.EndDisabledGroup();
         // ----------------------------------------
 
-        if (GUILayout.Button(UI_TEXT[29]))
+        var prevBg = GUI.backgroundColor;
+        GUI.backgroundColor = new Color(0.18f, 0.76f, 0.64f);
+        if (GUILayout.Button(UI_TEXT[29], new GUIStyle(GUI.skin.button) { fontStyle = FontStyle.Bold, normal = { textColor = Color.white } }))
         {
             SaveNewPreset();
         }
+        GUI.backgroundColor = prevBg;
         
         EditorGUILayout.BeginHorizontal();
         EditorGUI.BeginDisabledGroup(selectedPresetIndex == -1);

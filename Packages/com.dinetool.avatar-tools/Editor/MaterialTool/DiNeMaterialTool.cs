@@ -94,10 +94,10 @@ public class DiNeMaterialTool : EditorWindow
     //  Colors
     // ══════════════════════════════════════════════════════════════════════════
     private static readonly Color ColCard    = new Color(0.21f, 0.21f, 0.24f);
-    private static readonly Color ColAccent  = new Color(0.35f, 0.65f, 1.00f);
-    private static readonly Color ColAction  = new Color(0.35f, 0.48f, 0.70f);
-    private static readonly Color ColApply   = new Color(0.30f, 0.45f, 0.72f);
-    private static readonly Color ColSelect  = new Color(0.28f, 0.42f, 0.65f);
+    private static readonly Color ColAccent  = new Color(0.18f, 0.76f, 0.64f);
+    private static readonly Color ColAction  = new Color(0.20f, 0.60f, 0.55f);
+    private static readonly Color ColApply   = new Color(0.15f, 0.68f, 0.58f);
+    private static readonly Color ColSelect  = new Color(0.20f, 0.70f, 0.60f);
     private static readonly Color ColDanger  = new Color(0.60f, 0.25f, 0.25f);
     private static readonly Color ColWarn    = new Color(0.72f, 0.55f, 0.18f);
     private static readonly Color ColText    = new Color(0.88f, 0.88f, 0.92f);
@@ -222,6 +222,7 @@ public class DiNeMaterialTool : EditorWindow
     {
         GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
         EditorGUILayout.BeginVertical("box");
+        
         EditorGUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
         var style = new GUIStyle(EditorStyles.label)
@@ -236,6 +237,18 @@ public class DiNeMaterialTool : EditorWindow
         GUILayout.Label("Material Tool", style, GUILayout.Height(iconSize));
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
+
+        GUILayout.Space(4);
+        string desc = "";
+        switch (_lang)
+        {
+            case Lang.KO: desc = "빠르고 간편하게 마테리얼과 릴툰 프리셋을 일괄 적용/수정하는 도구입니다."; break;
+            case Lang.JA: desc = "マテリアルとlilToonプリセットを素早く適用・変更するためのツールです。"; break;
+            default:      desc = "A tool to quickly apply and modify materials and lilToon presets."; break;
+        }
+        GUILayout.Label(desc, new GUIStyle(EditorStyles.wordWrappedLabel) 
+            { alignment = TextAnchor.MiddleCenter, fontSize = 12, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } });
+
         GUILayout.Space(5);
         EditorGUILayout.EndVertical();
     }
@@ -419,7 +432,7 @@ public class DiNeMaterialTool : EditorWindow
         bool sel = (_selPreset == entry);
         var prev = GUI.backgroundColor;
         GUI.backgroundColor = sel ? new Color(0.22f, 0.35f, 0.55f) : ColCard;
-        EditorGUILayout.BeginHorizontal("box");
+        Rect rowRect = EditorGUILayout.BeginHorizontal("box");
         GUI.backgroundColor = prev;
 
         int ci = entry.CategoryIdx;
@@ -433,17 +446,30 @@ public class DiNeMaterialTool : EditorWindow
             fontStyle = sel ? FontStyle.Bold : FontStyle.Normal, fontSize = 12,
             normal = { textColor = sel ? Color.white : new Color(0.85f, 0.85f, 0.88f) }
         };
-        if (GUILayout.Button(entry.Name, ns, GUILayout.ExpandWidth(true), GUILayout.Height(24)))
-        { _selPreset = entry; _status = ""; _presetScanned = false; _presetMats.Clear(); }
+        GUILayout.Label(entry.Name, ns, GUILayout.ExpandWidth(true), GUILayout.Height(24));
 
         GUILayout.FlexibleSpace();
         string catName = ci >= 0 && ci < CategoryNames.Length ? CategoryNames[ci] : "?";
         GUILayout.Label(catName, new GUIStyle(EditorStyles.miniLabel)
             { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = cc } },
             GUILayout.Width(58));
-        if (GUILayout.Button("⊙", EditorStyles.miniButton, GUILayout.Width(22), GUILayout.Height(22)))
-            EditorGUIUtility.PingObject(entry.Asset);
+        bool pingClicked = GUILayout.Button("⊙", EditorStyles.miniButton, GUILayout.Width(22), GUILayout.Height(22));
         EditorGUILayout.EndHorizontal();
+
+        if (pingClicked)
+        {
+            EditorGUIUtility.PingObject(entry.Asset);
+        }
+        else
+        {
+            var e = Event.current;
+            if (e.type == EventType.MouseDown && e.button == 0 && rowRect.Contains(e.mousePosition))
+            {
+                _selPreset = entry; _status = ""; AutoScan();
+                e.Use();
+                GUIUtility.keyboardControl = 0;
+            }
+        }
     }
 
     private void DrawSelectedPresetInfo()
@@ -499,18 +525,10 @@ public class DiNeMaterialTool : EditorWindow
             { fontSize = 13, fontStyle = FontStyle.Bold, normal = { textColor = Color.white }, hover = { textColor = Color.white } };
         var prev = GUI.backgroundColor;
 
-        GUI.enabled = _targetObject != null;
-        GUI.backgroundColor = ColAction;
-        if (GUILayout.Button(T(13), btn, GUILayout.Height(34))) PresetScanMaterials();
-        GUI.backgroundColor = prev;
-        GUI.enabled = true;
-
-        GUILayout.Space(4);
-
         bool canApply = _presetScanned && _selPreset != null && _presetMats.Any(m => m.Selected);
         GUI.enabled = canApply;
         GUI.backgroundColor = !canApply ? new Color(0.35f, 0.35f, 0.38f) : _previewOnly ? ColWarn : ColApply;
-        if (GUILayout.Button(_previewOnly ? T(28) : T(14), btn, GUILayout.Height(34)))
+        if (GUILayout.Button(_previewOnly ? T(28) : T(14), btn, GUILayout.Height(38)))
             ApplyPreset();
         GUI.backgroundColor = prev;
         GUI.enabled = true;
@@ -555,14 +573,6 @@ public class DiNeMaterialTool : EditorWindow
         var btn = new GUIStyle(GUI.skin.button)
             { fontSize = 15, fontStyle = FontStyle.Bold, normal = { textColor = Color.white }, hover = { textColor = Color.white } };
         var prev = GUI.backgroundColor;
-
-        GUI.enabled = _targetObject != null;
-        GUI.backgroundColor = ColAction;
-        if (GUILayout.Button(T(33), btn, GUILayout.Height(38))) AOScanMaterials();
-        GUI.backgroundColor = prev;
-        GUI.enabled = true;
-
-        GUILayout.Space(5);
 
         bool canRemove = _aoScanned && _aoMats.Any(m => m.Selected && m.HasAO);
         GUI.enabled = canRemove;

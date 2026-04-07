@@ -116,6 +116,17 @@ namespace DiNeScreenSaver
             GUILayout.FlexibleSpace();
             EditorGUILayout.EndHorizontal();
 
+            GUILayout.Space(4);
+            string desc = "";
+            switch (language)
+            {
+                case LanguagePreset.Korean: desc = "유니티 에디터 화면 보호기 기능과 바탕화면 위젯 기능을 제공합니다."; break;
+                case LanguagePreset.Japanese: desc = "Unityエディターのスクリーンセーバーおよびウィジェット機能を提供します。"; break;
+                default: desc = "Provides Unity Editor screen saver and desktop widget features."; break;
+            }
+            GUILayout.Label(desc, new GUIStyle(EditorStyles.wordWrappedLabel) 
+                { alignment = TextAnchor.MiddleCenter, fontSize = 12, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } });
+
             GUILayout.Space(5);
             EditorGUILayout.EndVertical();
 
@@ -159,7 +170,7 @@ namespace DiNeScreenSaver
             
             EditorGUI.BeginDisabledGroup(captureTarget == CaptureTarget.GameView && camera == null);
 
-            GUI.backgroundColor = new Color(0.5f, 0.5f, 0.5f, 1f);
+            GUI.backgroundColor = new Color(0.15f, 0.68f, 0.58f);
             GUIStyle buttonStyle = new GUIStyle(GUI.skin.button);
             buttonStyle.fontSize = 20;
             buttonStyle.fontStyle = FontStyle.Bold;

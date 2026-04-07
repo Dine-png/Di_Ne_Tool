@@ -55,6 +55,18 @@ public class DiNeAnimationPoseFreezer : EditorWindow
         GUILayout.Label("Pose Freezer", titleStyle, GUILayout.Height(iconSize));
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
+
+        GUILayout.Space(4);
+        string desc = "";
+        switch (language)
+        {
+            case LanguagePreset.Korean: desc = "특정 애니메이션 포즈를 프리팹 형태로 고정시켜 저장합니다."; break;
+            case LanguagePreset.Japanese: desc = "特定のアニメーションポーズを固定してプレハブとして保存します。"; break;
+            default: desc = "Freeze and save a specific animation pose as a static prefab."; break;
+        }
+        GUILayout.Label(desc, new GUIStyle(EditorStyles.wordWrappedLabel) 
+            { alignment = TextAnchor.MiddleCenter, fontSize = 12, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } });
+
         GUILayout.Space(5);
         EditorGUILayout.EndVertical();
 
@@ -111,11 +123,14 @@ public class DiNeAnimationPoseFreezer : EditorWindow
 
         GUILayout.Space(5);
 
-        if (GUILayout.Button(UI_TEXT[4], GUILayout.Height(38)))
+        var prevBg = GUI.backgroundColor;
+        GUI.backgroundColor = new Color(0.18f, 0.76f, 0.64f);
+        if (GUILayout.Button(UI_TEXT[4], new GUIStyle(GUI.skin.button) { fontStyle = FontStyle.Bold, normal = { textColor = Color.white } }, GUILayout.Height(38)))
         {
             SampleBlendShapesOnly();
             Debug.Log($"[DiNe Pose Freezer] {targetObject.name} — {UI_TEXT[5]}");
         }
+        GUI.backgroundColor = prevBg;
 
         EditorGUI.EndDisabledGroup();
 

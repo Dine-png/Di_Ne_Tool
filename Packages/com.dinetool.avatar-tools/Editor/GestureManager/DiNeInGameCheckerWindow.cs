@@ -53,10 +53,10 @@ namespace DiNeTool.GestureManager
         // ─── Colors ───────────────────────────────────────────────────────────────
         private static readonly Color ColBg      = new Color(0.17f, 0.17f, 0.19f);
         private static readonly Color ColCard    = new Color(0.21f, 0.21f, 0.24f);
-        private static readonly Color ColAccent  = new Color(0.35f, 0.65f, 1.00f);
-        private static readonly Color ColGreen   = new Color(0.25f, 0.60f, 0.30f);
-        private static readonly Color ColRed     = new Color(0.60f, 0.20f, 0.20f);
-        private static readonly Color ColBlue    = new Color(0.28f, 0.42f, 0.65f);
+        private static readonly Color ColAccent  = new Color(0.18f, 0.76f, 0.64f);
+        private static readonly Color ColGreen   = new Color(0.15f, 0.68f, 0.58f);
+        private static readonly Color ColRed     = new Color(0.60f, 0.25f, 0.25f);
+        private static readonly Color ColBlue    = new Color(0.20f, 0.60f, 0.55f);
         private static readonly Color ColText    = new Color(0.88f, 0.88f, 0.92f);
         private static readonly Color ColSubText = new Color(0.58f, 0.58f, 0.63f);
         private static readonly Color ColLine    = new Color(0.30f, 0.30f, 0.35f, 0.8f);
@@ -243,6 +243,17 @@ namespace DiNeTool.GestureManager
 
             GUILayout.FlexibleSpace();
             EditorGUILayout.EndHorizontal();
+
+            GUILayout.Space(4);
+            string desc = "";
+            switch (CurrentLang)
+            {
+                case Language.Korean: desc = "인게임에서 시점과 포즈가 어떻게 보이는지 에디터 환경에서 미리 검증합니다."; break;
+                case Language.Japanese: desc = "ゲーム内での視点やポーズがどう見えるかをエディター上で事前確認します。"; break;
+                default: desc = "Verify how viewports and poses will look in-game directly within the Editor."; break;
+            }
+            GUILayout.Label(desc, new GUIStyle(EditorStyles.wordWrappedLabel) 
+                { alignment = TextAnchor.MiddleCenter, fontSize = 12, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } });
 
             GUILayout.Space(5);
             EditorGUILayout.EndVertical();

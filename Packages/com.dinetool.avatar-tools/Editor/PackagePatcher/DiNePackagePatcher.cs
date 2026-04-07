@@ -76,6 +76,18 @@ public class DiNePackagePatcher : EditorWindow
         GUILayout.Label("Package Patcher", titleStyle, GUILayout.Height(iconSize));
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
+
+        GUILayout.Space(4);
+        string desc = "";
+        switch (language)
+        {
+            case LanguagePreset.Korean: desc = "DiNe 툴의 최신 업데이트를 일괄 설치하고, 지정된 폴더로 정리합니다."; break;
+            case LanguagePreset.Japanese: desc = "DiNeツールの最新アップデートを一括インストールし、指定フォルダに整理します。"; break;
+            default: desc = "Batch install the latest DiNe tool updates and organize them into the specified folder."; break;
+        }
+        GUILayout.Label(desc, new GUIStyle(EditorStyles.wordWrappedLabel) 
+            { alignment = TextAnchor.MiddleCenter, fontSize = 12, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } });
+
         GUILayout.Space(5);
         EditorGUILayout.EndVertical();
 
@@ -209,10 +221,15 @@ public class DiNePackagePatcher : EditorWindow
             importBtnStyle.normal.background = selectedButtonTex;
             importBtnStyle.normal.textColor = Color.white;
         }
+        var prevBg = GUI.backgroundColor;
+        if (!isImporting) GUI.backgroundColor = new Color(0.18f, 0.76f, 0.64f); // Mint Green
+        
         if (GUILayout.Button(isImporting ? UI_TEXT[9] : UI_TEXT[10], importBtnStyle, GUILayout.Height(40))) // 임포트 중... / 임포트 시작
         {
             StartImport();
         }
+        
+        GUI.backgroundColor = prevBg;
         EditorGUI.EndDisabledGroup();
     }
 

@@ -192,7 +192,7 @@ public class DiNeMultiSupporter : Editor
         if (selectedLayerIndex >= layers.arraySize) selectedLayerIndex = layers.arraySize - 1;
         selectedLayerIndex = GUILayout.Toolbar(selectedLayerIndex, tabNames.ToArray(), GUILayout.Height(35));
 
-        GUI.backgroundColor = new Color(0.6f, 1f, 0.6f);
+        GUI.backgroundColor = new Color(0.20f, 0.76f, 0.64f);
         if (GUILayout.Button("+", GUILayout.Width(40), GUILayout.Height(35)))
         {
             layers.InsertArrayElementAtIndex(layers.arraySize);
@@ -218,17 +218,22 @@ public class DiNeMultiSupporter : Editor
         EditorGUILayout.Space(20);
         
         // [생성 버튼]
-        if (GUILayout.Button(lang["generate"], new GUIStyle(GUI.skin.button) { fontSize = 18, fontStyle = FontStyle.Bold, fixedHeight = 50 }))
+        var genPrevCol = GUI.backgroundColor;
+        GUI.backgroundColor = new Color(0.15f, 0.68f, 0.58f);
+        var genBtnStyle = new GUIStyle(GUI.skin.button) { fontSize = 18, fontStyle = FontStyle.Bold, fixedHeight = 50, normal = { textColor = Color.white } };
+        if (GUILayout.Button(lang["generate"], genBtnStyle))
         {
             DiNeMultiIconGenerator.GenerateIcons(gen);
             gen.Generate();
         }
+        GUI.backgroundColor = genPrevCol;
 
         GUILayout.Space(5);
 
         // [삭제 버튼] - 붉은색 경고 느낌
-        GUI.backgroundColor = new Color(1f, 0.6f, 0.6f);
-        if (GUILayout.Button(lang["cleanup"], new GUIStyle(GUI.skin.button) { fixedHeight = 30 }))
+        GUI.backgroundColor = new Color(0.60f, 0.25f, 0.25f);
+        var cleanBtnStyle = new GUIStyle(GUI.skin.button) { fixedHeight = 30, fontStyle = FontStyle.Bold, normal = { textColor = Color.white } };
+        if (GUILayout.Button(lang["cleanup"], cleanBtnStyle))
         {
             if (EditorUtility.DisplayDialog("Clean Up", "정말로 생성된 모든 데이터(파라미터, 레이어, 메뉴)를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.", "삭제 (Yes)", "취소 (No)"))
             {
@@ -557,6 +562,19 @@ public class DiNeMultiSupporter : Editor
         GUILayout.Label(titleText, titleStyle, GUILayout.Height(iconSize));
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
+
+        GUILayout.Space(4);
+        string desc = "";
+        switch (currentLanguage)
+        {
+            case Language.Korean: desc = "여러 개의 의상과 액세서리를 손쉽게 켜고 끌 수 있는 FX 토글을 생성합니다."; break;
+            case Language.Japanese: desc = "複数の衣装やアクセサリーを簡単に切り替えるFXトグルを生成します。"; break;
+            default: desc = "Generates FX toggles to easily turn multiple clothing and accessories on/off."; break;
+        }
+        GUILayout.Label(desc, new GUIStyle(EditorStyles.wordWrappedLabel) 
+            { alignment = TextAnchor.MiddleCenter, fontSize = 12, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } });
+
+        GUILayout.Space(5);
         EditorGUILayout.EndVertical();
     }
 }
