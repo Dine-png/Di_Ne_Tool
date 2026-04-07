@@ -13,43 +13,35 @@ public class DiNeLilToonPreset : EditorWindow
     private string[] UI_TEXT;
 
     // ──────────────────────────────────────────────
-    //  렌더링 모드 enum
-    // ──────────────────────────────────────────────
-    private enum LilRenderingMode
-    {
-        Opaque             = 0,
-        Cutout             = 1,
-        Transparent        = 2,
-        OnePassTransparent = 3,
-        TwoPassTransparent = 4,
-    }
-
-    // Outline 처리 옵션
-    private enum OutlineMode { KeepAsIs, ForceAdd, ForceRemove }
-
-    // ──────────────────────────────────────────────
     //  설정
     // ──────────────────────────────────────────────
-    private GameObject   _targetObject;
-    private bool         _includeChildren = true;
-    private bool         _includeInactive = true;
-    private LilRenderingMode _targetMode  = LilRenderingMode.Opaque;
-    private OutlineMode  _outlineMode     = OutlineMode.KeepAsIs;
-    private bool         _previewOnly     = false;
+    private ScriptableObject _preset;
+    private GameObject       _targetObject;
+    private bool             _includeChildren = true;
+    private bool             _includeInactive = true;
+    private bool             _previewOnly     = false;
+
+    // ──────────────────────────────────────────────
+    //  프리셋 정보 (파싱 결과)
+    // ──────────────────────────────────────────────
+    private string _presetName;
+    private string _presetCategory;
+    private int    _presetColorCount;
+    private int    _presetFloatCount;
+    private int    _presetVectorCount;
+    private int    _presetTextureCount;
+    private bool   _presetValid;
 
     // ──────────────────────────────────────────────
     //  스캔 결과
     // ──────────────────────────────────────────────
     private class MatInfo
     {
-        public Material        Mat;
-        public string          Path;
-        public LilRenderingMode CurrentMode;
-        public bool            HasOutline;
-        public string          BaseName;   // "lilToon" or "lilToonLite" etc.
-        public bool            IsSpecial;  // Fur / Gem / Refraction 등 특수 셰이더
-        public bool            Selected;
-        public bool            Foldout = true;
+        public Material Mat;
+        public string   Path;
+        public string   ShaderName;
+        public bool     Selected;
+        public bool     Foldout = true;
     }
 
     private List<MatInfo> _mats    = new List<MatInfo>();
@@ -64,21 +56,26 @@ public class DiNeLilToonPreset : EditorWindow
     private Texture2D _windowIcon;
 
     // ──────────────────────────────────────────────
-    //  렌더링 모드별 색상
+    //  카테고리 이름 매핑
     // ──────────────────────────────────────────────
-    private static readonly Dictionary<LilRenderingMode, Color> ModeColors = new Dictionary<LilRenderingMode, Color>
+    private static readonly string[] CategoryNames =
+        { "Skin", "Hair", "Cloth", "Nature", "Inorganic", "Effect", "Other" };
+
+    private static readonly Color[] CategoryColors =
     {
-        { LilRenderingMode.Opaque,             new Color(0.4f, 0.85f, 0.4f)  },
-        { LilRenderingMode.Cutout,             new Color(0.9f, 0.7f,  0.2f)  },
-        { LilRenderingMode.Transparent,        new Color(0.3f, 0.65f, 1f)    },
-        { LilRenderingMode.OnePassTransparent, new Color(0.5f, 0.3f,  1f)    },
-        { LilRenderingMode.TwoPassTransparent, new Color(0.8f, 0.35f, 0.8f)  },
+        new Color(0.95f, 0.7f, 0.6f),   // Skin
+        new Color(0.6f, 0.5f, 0.85f),   // Hair
+        new Color(0.4f, 0.75f, 0.9f),   // Cloth
+        new Color(0.5f, 0.85f, 0.5f),   // Nature
+        new Color(0.7f, 0.7f, 0.7f),    // Inorganic
+        new Color(0.9f, 0.6f, 0.9f),    // Effect
+        new Color(0.8f, 0.8f, 0.5f),    // Other
     };
 
     // ──────────────────────────────────────────────
     //  메뉴
     // ──────────────────────────────────────────────
-    [MenuItem("DiNe/LilToon Preset")]
+    [MenuItem("DiNe/Shading/LilToon Preset")]
     public static void ShowWindow()
     {
         var w = GetWindow<DiNeLilToonPreset>("LilToon Preset");
@@ -130,16 +127,16 @@ public class DiNeLilToonPreset : EditorWindow
 
         GUILayout.Space(10);
 
-        // ── 설정 섹션 ──
+        // ── 프리셋 파일 ──
         EditorGUILayout.BeginVertical("box");
-        DrawSettings();
+        DrawPresetSection();
         EditorGUILayout.EndVertical();
 
         GUILayout.Space(8);
 
-        // ── 프리셋 (적용할 렌더링 모드) ──
+        // ── 타겟 설정 ──
         EditorGUILayout.BeginVertical("box");
-        DrawPresetSection();
+        DrawTargetSection();
         EditorGUILayout.EndVertical();
 
         GUILayout.Space(8);
@@ -164,82 +161,91 @@ public class DiNeLilToonPreset : EditorWindow
     }
 
     // ──────────────────────────────────────────────
-    //  설정 섹션
+    //  프리셋 파일 섹션
     // ──────────────────────────────────────────────
-    private void DrawSettings()
+    private void DrawPresetSection()
     {
         EditorGUILayout.LabelField(UI_TEXT[0], new GUIStyle(EditorStyles.boldLabel) { fontSize = 11 });
         GUILayout.Space(4);
 
-        _targetObject = (GameObject)EditorGUILayout.ObjectField(
-            new GUIContent(UI_TEXT[1]), _targetObject, typeof(GameObject), true);
+        EditorGUI.BeginChangeCheck();
+        _preset = (ScriptableObject)EditorGUILayout.ObjectField(
+            new GUIContent(UI_TEXT[1]), _preset, typeof(ScriptableObject), false);
+        if (EditorGUI.EndChangeCheck())
+            ParsePresetInfo();
 
-        GUILayout.Space(4);
-        GuiLine(1, 3);
+        if (_preset != null && _presetValid)
+        {
+            GUILayout.Space(4);
+            GuiLine(1, 2);
 
-        _includeChildren = EditorGUILayout.Toggle(UI_TEXT[2], _includeChildren);
-        _includeInactive = EditorGUILayout.Toggle(UI_TEXT[3], _includeInactive);
+            // 프리셋 정보 표시
+            Color catColor = Color.white;
+            int catIdx = GetPresetCategoryIndex();
+            if (catIdx >= 0 && catIdx < CategoryColors.Length)
+                catColor = CategoryColors[catIdx];
+
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Space(8);
+
+            // 카테고리 배지
+            GUIStyle badgeStyle = new GUIStyle(EditorStyles.miniLabel)
+            {
+                fontStyle = FontStyle.Bold,
+                fontSize  = 10,
+                alignment = TextAnchor.MiddleCenter,
+                normal    = new GUIStyleState() { textColor = catColor }
+            };
+            GUILayout.Label($"[{_presetCategory}]", badgeStyle, GUILayout.Width(70));
+
+            // 프리셋 이름
+            GUIStyle nameStyle = new GUIStyle(EditorStyles.label)
+            {
+                fontStyle = FontStyle.Bold,
+                fontSize  = 12,
+                normal    = new GUIStyleState() { textColor = Color.white }
+            };
+            GUILayout.Label(_presetName, nameStyle);
+            EditorGUILayout.EndHorizontal();
+
+            // 프로퍼티 카운트
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Space(8);
+            GUIStyle countStyle = new GUIStyle(EditorStyles.miniLabel)
+            {
+                normal = new GUIStyleState() { textColor = new Color(0.6f, 0.6f, 0.6f) }
+            };
+            string countText = $"Colors: {_presetColorCount}  |  Floats: {_presetFloatCount}  |  Vectors: {_presetVectorCount}";
+            if (_presetTextureCount > 0)
+                countText += $"  |  Textures: {_presetTextureCount}";
+            GUILayout.Label(countText, countStyle);
+            EditorGUILayout.EndHorizontal();
+        }
+        else if (_preset != null && !_presetValid)
+        {
+            GUILayout.Space(2);
+            EditorGUILayout.HelpBox(UI_TEXT[15], MessageType.Error);
+        }
     }
 
     // ──────────────────────────────────────────────
-    //  프리셋 섹션
+    //  타겟 설정 섹션
     // ──────────────────────────────────────────────
-    private void DrawPresetSection()
+    private void DrawTargetSection()
     {
-        EditorGUILayout.LabelField(UI_TEXT[4], new GUIStyle(EditorStyles.boldLabel) { fontSize = 11 });
-        GUILayout.Space(6);
-
-        // 렌더링 모드 선택 버튼 (5개)
-        string[] modeLabels = { UI_TEXT[10], UI_TEXT[11], UI_TEXT[12], UI_TEXT[13], UI_TEXT[14] };
-        EditorGUILayout.BeginHorizontal();
-        for (int i = 0; i < modeLabels.Length; i++)
-        {
-            var mode = (LilRenderingMode)i;
-            bool selected = _targetMode == mode;
-            Color modeCol = ModeColors[mode];
-
-            GUIStyle btnStyle = new GUIStyle(GUI.skin.button)
-            {
-                fontStyle = FontStyle.Bold,
-                fontSize  = 10,
-                normal    = new GUIStyleState() { textColor = selected ? Color.white : new Color(0.7f, 0.7f, 0.7f) },
-                hover     = new GUIStyleState() { textColor = Color.white },
-            };
-
-            GUI.backgroundColor = selected ? modeCol : new Color(0.25f, 0.25f, 0.25f, 1f);
-            if (GUILayout.Button(modeLabels[i], btnStyle, GUILayout.Height(30)))
-                _targetMode = mode;
-        }
-        GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
-        EditorGUILayout.EndHorizontal();
-
-        GUILayout.Space(8);
-        GuiLine(1, 3);
-
-        // Outline 처리
-        EditorGUILayout.LabelField(UI_TEXT[5], new GUIStyle(EditorStyles.boldLabel) { fontSize = 11 });
+        EditorGUILayout.LabelField(UI_TEXT[2], new GUIStyle(EditorStyles.boldLabel) { fontSize = 11 });
         GUILayout.Space(4);
 
-        string[] outlineLabels = { UI_TEXT[15], UI_TEXT[16], UI_TEXT[17] };
-        EditorGUILayout.BeginHorizontal();
-        for (int i = 0; i < outlineLabels.Length; i++)
-        {
-            var opt = (OutlineMode)i;
-            bool sel = _outlineMode == opt;
-            GUIStyle s = new GUIStyle(GUI.skin.button)
-            {
-                fontStyle = FontStyle.Bold,
-                fontSize  = 10,
-                normal    = new GUIStyleState() { textColor = sel ? Color.white : new Color(0.7f, 0.7f, 0.7f) },
-            };
-            GUI.backgroundColor = sel ? new Color(0.4f, 0.5f, 0.7f) : new Color(0.25f, 0.25f, 0.25f, 1f);
-            if (GUILayout.Button(outlineLabels[i], s, GUILayout.Height(26)))
-                _outlineMode = opt;
-        }
-        GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
-        EditorGUILayout.EndHorizontal();
+        _targetObject = (GameObject)EditorGUILayout.ObjectField(
+            new GUIContent(UI_TEXT[3]), _targetObject, typeof(GameObject), true);
 
-        GUILayout.Space(6);
+        GUILayout.Space(4);
+        GuiLine(1, 3);
+
+        _includeChildren = EditorGUILayout.Toggle(UI_TEXT[4], _includeChildren);
+        _includeInactive = EditorGUILayout.Toggle(UI_TEXT[5], _includeInactive);
+
+        GUILayout.Space(4);
         GuiLine(1, 3);
 
         // 미리보기 모드 토글
@@ -280,13 +286,13 @@ public class DiNeLilToonPreset : EditorWindow
         GUILayout.Space(5);
 
         // 적용
-        bool canApply = _scanned && _mats.Any(m => m.Selected && !m.IsSpecial);
+        bool canApply = _scanned && _presetValid && _preset != null
+                        && _mats.Any(m => m.Selected);
         GUI.enabled = canApply;
-        Color applyCol = _previewOnly
-            ? new Color(0.75f, 0.6f, 0.2f)
-            : ModeColors[_targetMode];
-        GUI.backgroundColor = applyCol;
-        if (GUILayout.Button(_previewOnly ? UI_TEXT[18] : UI_TEXT[9], btn, GUILayout.Height(36)))
+        GUI.backgroundColor = canApply
+            ? (_previewOnly ? new Color(0.75f, 0.6f, 0.2f) : new Color(0.35f, 0.75f, 0.45f))
+            : new Color(0.4f, 0.4f, 0.4f);
+        if (GUILayout.Button(_previewOnly ? UI_TEXT[16] : UI_TEXT[9], btn, GUILayout.Height(36)))
             ApplyPreset();
         GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
         GUI.enabled = true;
@@ -299,16 +305,14 @@ public class DiNeLilToonPreset : EditorWindow
     {
         EditorGUILayout.BeginVertical("box");
 
-        // 헤더
         int total    = _mats.Count;
         int selected = _mats.Count(m => m.Selected);
         EditorGUILayout.LabelField(
-            string.Format(UI_TEXT[19], total, selected),
+            string.Format(UI_TEXT[10], total, selected),
             new GUIStyle(EditorStyles.boldLabel) { fontSize = 11 });
 
         GUILayout.Space(4);
 
-        // 전체 선택 / 해제
         GUIStyle selBtn = new GUIStyle(GUI.skin.button)
         {
             fontSize  = 11,
@@ -318,10 +322,10 @@ public class DiNeLilToonPreset : EditorWindow
         };
         EditorGUILayout.BeginHorizontal();
         GUI.backgroundColor = new Color(0.35f, 0.55f, 0.35f, 1f);
-        if (GUILayout.Button(UI_TEXT[20], selBtn, GUILayout.Height(26)))
-            _mats.ForEach(m => m.Selected = !m.IsSpecial);
+        if (GUILayout.Button(UI_TEXT[11], selBtn, GUILayout.Height(26)))
+            _mats.ForEach(m => m.Selected = true);
         GUI.backgroundColor = new Color(0.55f, 0.35f, 0.35f, 1f);
-        if (GUILayout.Button(UI_TEXT[21], selBtn, GUILayout.Height(26)))
+        if (GUILayout.Button(UI_TEXT[12], selBtn, GUILayout.Height(26)))
             _mats.ForEach(m => m.Selected = false);
         GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
         EditorGUILayout.EndHorizontal();
@@ -344,38 +348,15 @@ public class DiNeLilToonPreset : EditorWindow
         EditorGUILayout.BeginVertical("box");
         EditorGUILayout.BeginHorizontal();
 
-        // 체크박스
-        GUI.enabled   = !info.IsSpecial;
         info.Selected = GUILayout.Toggle(info.Selected, "", GUILayout.Width(20), GUILayout.Height(20));
-        GUI.enabled   = true;
-
         GUILayout.Space(2);
 
-        // 현재 렌더링 모드 배지
-        Color badgeCol = info.IsSpecial
-            ? new Color(0.6f, 0.6f, 0.6f)
-            : ModeColors.ContainsKey(info.CurrentMode) ? ModeColors[info.CurrentMode] : Color.gray;
-
-        GUIStyle badge = new GUIStyle(EditorStyles.miniLabel)
-        {
-            fontStyle = FontStyle.Bold,
-            fontSize  = 9,
-            alignment = TextAnchor.MiddleCenter,
-            normal    = new GUIStyleState() { textColor = badgeCol }
-        };
-
-        string badgeText = info.IsSpecial ? "Special" : GetModeShortLabel(info.CurrentMode);
-        if (info.HasOutline && !info.IsSpecial) badgeText += "+OL";
-        GUILayout.Label(badgeText, badge, GUILayout.Width(62), GUILayout.Height(20));
-
-        // 폴드아웃
         info.Foldout = EditorGUILayout.Foldout(info.Foldout, info.Mat.name, true,
             new GUIStyle(EditorStyles.foldout) { fontStyle = FontStyle.Bold, fontSize = 12 });
 
         GUILayout.FlexibleSpace();
 
-        // Ping
-        if (GUILayout.Button(UI_TEXT[22],
+        if (GUILayout.Button(UI_TEXT[13],
             new GUIStyle(EditorStyles.miniButton) { fontSize = 11, fontStyle = FontStyle.Bold },
             GUILayout.Width(46), GUILayout.Height(22)))
             EditorGUIUtility.PingObject(info.Mat);
@@ -388,40 +369,13 @@ public class DiNeLilToonPreset : EditorWindow
             GuiLine(1, 2);
             EditorGUI.indentLevel++;
 
-            // 경로
             EditorGUILayout.LabelField(TruncatePath(info.Path, 54),
                 new GUIStyle(EditorStyles.miniLabel)
                     { normal = new GUIStyleState() { textColor = new Color(0.6f, 0.6f, 0.6f) } });
 
-            // 현재 셰이더명
-            EditorGUILayout.LabelField(info.Mat.shader.name,
+            EditorGUILayout.LabelField(info.ShaderName,
                 new GUIStyle(EditorStyles.miniLabel)
                     { normal = new GUIStyleState() { textColor = new Color(0.5f, 0.75f, 1f) } });
-
-            if (info.IsSpecial)
-            {
-                EditorGUILayout.LabelField(UI_TEXT[23],
-                    new GUIStyle(EditorStyles.miniLabel)
-                        { normal = new GUIStyleState() { textColor = new Color(0.9f, 0.5f, 0.2f) } });
-            }
-            else
-            {
-                // 적용 후 셰이더 미리보기
-                string preview = GetTargetShaderName(info, _targetMode, _outlineMode);
-                string previewLabel = preview != null
-                    ? $"→  {preview}"
-                    : UI_TEXT[24];
-                EditorGUILayout.LabelField(previewLabel,
-                    new GUIStyle(EditorStyles.miniLabel)
-                    {
-                        normal = new GUIStyleState()
-                        {
-                            textColor = preview != null
-                                ? new Color(0.4f, 0.9f, 0.5f)
-                                : new Color(0.9f, 0.4f, 0.4f)
-                        }
-                    });
-            }
 
             EditorGUI.indentLevel--;
             GUILayout.Space(2);
@@ -432,6 +386,64 @@ public class DiNeLilToonPreset : EditorWindow
     }
 
     // ──────────────────────────────────────────────
+    //  프리셋 파싱
+    // ──────────────────────────────────────────────
+    private void ParsePresetInfo()
+    {
+        _presetValid = false;
+        _presetName  = "";
+        _presetCategory = "";
+        _presetColorCount = _presetFloatCount = _presetVectorCount = _presetTextureCount = 0;
+
+        if (_preset == null) return;
+
+        var so = new SerializedObject(_preset);
+
+        // bases 배열에서 이름 가져오기
+        var bases = so.FindProperty("bases");
+        if (bases == null || !bases.isArray) return; // lilToon preset 이 아닌 경우
+
+        _presetValid = true;
+
+        if (bases.arraySize > 0)
+        {
+            var firstBase = bases.GetArrayElementAtIndex(0);
+            _presetName = firstBase.FindPropertyRelative("name")?.stringValue ?? _preset.name;
+        }
+        if (string.IsNullOrEmpty(_presetName))
+            _presetName = _preset.name;
+
+        // 카테고리
+        var categoryProp = so.FindProperty("category");
+        if (categoryProp != null)
+        {
+            int catIdx = categoryProp.enumValueIndex;
+            _presetCategory = catIdx >= 0 && catIdx < CategoryNames.Length
+                ? CategoryNames[catIdx]
+                : "Unknown";
+        }
+
+        // 프로퍼티 카운트
+        var colors   = so.FindProperty("colors");
+        var floats   = so.FindProperty("floats");
+        var vectors  = so.FindProperty("vectors");
+        var textures = so.FindProperty("textures");
+
+        _presetColorCount   = colors   != null && colors.isArray   ? colors.arraySize   : 0;
+        _presetFloatCount   = floats   != null && floats.isArray   ? floats.arraySize   : 0;
+        _presetVectorCount  = vectors  != null && vectors.isArray  ? vectors.arraySize  : 0;
+        _presetTextureCount = textures != null && textures.isArray ? textures.arraySize : 0;
+    }
+
+    private int GetPresetCategoryIndex()
+    {
+        if (_preset == null) return -1;
+        var so = new SerializedObject(_preset);
+        var categoryProp = so.FindProperty("category");
+        return categoryProp?.enumValueIndex ?? -1;
+    }
+
+    // ──────────────────────────────────────────────
     //  스캔
     // ──────────────────────────────────────────────
     private void ScanMaterials()
@@ -439,7 +451,7 @@ public class DiNeLilToonPreset : EditorWindow
         _mats.Clear();
         _scanned = false;
 
-        if (_targetObject == null) { SetStatus(UI_TEXT[25], true); return; }
+        if (_targetObject == null) { SetStatus(UI_TEXT[17], true); return; }
 
         Renderer[] renderers = _includeChildren
             ? _targetObject.GetComponentsInChildren<Renderer>(_includeInactive)
@@ -454,102 +466,20 @@ public class DiNeLilToonPreset : EditorWindow
                 if (!seen.Add(mat.GetInstanceID())) continue;
                 if (!IsLilToon(mat)) continue;
 
-                var info = BuildMatInfo(mat);
-                _mats.Add(info);
+                _mats.Add(new MatInfo
+                {
+                    Mat        = mat,
+                    Path       = AssetDatabase.GetAssetPath(mat),
+                    ShaderName = mat.shader.name,
+                    Selected   = true,
+                });
             }
         }
 
-        // 정렬: 현재 모드가 타겟과 다른 것 먼저, Special 마지막
-        _mats = _mats
-            .OrderBy(m => m.IsSpecial ? 1 : 0)
-            .ThenBy(m => m.CurrentMode == _targetMode ? 1 : 0)
-            .ToList();
-
+        _mats = _mats.OrderBy(m => m.Mat.name).ToList();
         _scanned = true;
-        int special = _mats.Count(m => m.IsSpecial);
-        SetStatus(string.Format(UI_TEXT[26], _mats.Count, special), special > 0);
+        SetStatus(string.Format(UI_TEXT[18], _mats.Count), _mats.Count == 0);
         Repaint();
-    }
-
-    private MatInfo BuildMatInfo(Material mat)
-    {
-        string sn = mat.shader.name;
-
-        var info = new MatInfo
-        {
-            Mat        = mat,
-            Path       = AssetDatabase.GetAssetPath(mat),
-            HasOutline = sn.Contains("Outline"),
-        };
-
-        // 베이스 이름 판별
-        if (sn.StartsWith("lilToonLite"))
-            info.BaseName = "lilToonLite";
-        else if (sn.StartsWith("lilToon"))
-            info.BaseName = "lilToon";
-        else
-            info.BaseName = sn;
-
-        // 특수 셰이더 (Fur / Gem / Refraction / FakeShadow 등)
-        info.IsSpecial = sn.Contains("Fur") || sn.Contains("Gem") ||
-                         sn.Contains("Refraction") || sn.Contains("FakeShadow") ||
-                         sn.Contains("Tessellation");
-
-        // 현재 렌더링 모드
-        info.CurrentMode = DetectMode(sn);
-
-        // 기본 선택: 현재 모드가 타겟과 다를 때만 선택
-        info.Selected = !info.IsSpecial && info.CurrentMode != _targetMode;
-
-        return info;
-    }
-
-    private LilRenderingMode DetectMode(string shaderName)
-    {
-        if (shaderName.Contains("Two Pass Transparent")) return LilRenderingMode.TwoPassTransparent;
-        if (shaderName.Contains("One Pass Transparent")) return LilRenderingMode.OnePassTransparent;
-        if (shaderName.Contains("Cutout"))               return LilRenderingMode.Cutout;
-        if (shaderName.Contains("Transparent"))          return LilRenderingMode.Transparent;
-        return LilRenderingMode.Opaque;
-    }
-
-    // ──────────────────────────────────────────────
-    //  타겟 셰이더 이름 계산
-    // ──────────────────────────────────────────────
-    private string GetTargetShaderName(MatInfo info, LilRenderingMode mode, OutlineMode outlineOpt)
-    {
-        if (info.IsSpecial) return null;
-
-        bool outline;
-        switch (outlineOpt)
-        {
-            case OutlineMode.ForceAdd:    outline = true;  break;
-            case OutlineMode.ForceRemove: outline = false; break;
-            default:                     outline = info.HasOutline; break;
-        }
-
-        // lilToonLite 는 One Pass / Two Pass 없음
-        if (info.BaseName == "lilToonLite" &&
-            (mode == LilRenderingMode.OnePassTransparent || mode == LilRenderingMode.TwoPassTransparent))
-            return null;
-
-        string outlineSuffix = outline ? " Outline" : "";
-
-        switch (mode)
-        {
-            case LilRenderingMode.Opaque:
-                return info.BaseName + outlineSuffix;
-            case LilRenderingMode.Cutout:
-                return info.BaseName + " Cutout" + outlineSuffix;
-            case LilRenderingMode.Transparent:
-                return info.BaseName + " Transparent" + outlineSuffix;
-            case LilRenderingMode.OnePassTransparent:
-                return info.BaseName + " One Pass Transparent" + outlineSuffix;
-            case LilRenderingMode.TwoPassTransparent:
-                return info.BaseName + " Two Pass Transparent" + outlineSuffix;
-            default:
-                return null;
-        }
     }
 
     // ──────────────────────────────────────────────
@@ -557,55 +487,101 @@ public class DiNeLilToonPreset : EditorWindow
     // ──────────────────────────────────────────────
     private void ApplyPreset()
     {
-        var targets = _mats.Where(m => m.Selected && !m.IsSpecial).ToList();
-        if (targets.Count == 0) { SetStatus(UI_TEXT[27], false); return; }
+        var targets = _mats.Where(m => m.Selected).ToList();
+        if (targets.Count == 0) { SetStatus(UI_TEXT[19], false); return; }
+        if (_preset == null || !_presetValid) return;
 
         if (_previewOnly)
         {
-            int changeable = targets.Count(m => GetTargetShaderName(m, _targetMode, _outlineMode) != null);
-            SetStatus(string.Format(UI_TEXT[28], changeable, targets.Count), true);
+            SetStatus(string.Format(UI_TEXT[20], targets.Count), true);
             return;
         }
 
         // 확인 다이얼로그
         bool ok = EditorUtility.DisplayDialog(
             UI_TEXT[9],
-            string.Format(UI_TEXT[29], targets.Count, GetModeLabel(_targetMode)),
-            UI_TEXT[30], UI_TEXT[31]);
+            string.Format(UI_TEXT[21], targets.Count, _presetName),
+            UI_TEXT[22], UI_TEXT[23]);
         if (!ok) return;
 
-        Undo.RecordObjects(targets.Select(m => (Object)m.Mat).ToArray(), "DiNe LilToon Preset");
+        var so = new SerializedObject(_preset);
+        var colors   = so.FindProperty("colors");
+        var floats   = so.FindProperty("floats");
+        var vectors  = so.FindProperty("vectors");
+        var textures = so.FindProperty("textures");
 
-        int success = 0, failed = 0;
+        Undo.RecordObjects(targets.Select(m => (Object)m.Mat).ToArray(), "DiNe LilToon Preset Apply");
+
+        int success = 0;
         foreach (var info in targets)
         {
-            string targetShaderName = GetTargetShaderName(info, _targetMode, _outlineMode);
-            if (targetShaderName == null) { failed++; continue; }
+            var mat = info.Mat;
 
-            Shader sh = Shader.Find(targetShaderName);
-            if (sh == null)
+            // Colors 적용
+            if (colors != null)
             {
-                Debug.LogWarning($"[DiNe LilToon Preset] 셰이더를 찾을 수 없음: {targetShaderName}");
-                failed++;
-                continue;
+                for (int i = 0; i < colors.arraySize; i++)
+                {
+                    var elem = colors.GetArrayElementAtIndex(i);
+                    string propName = elem.FindPropertyRelative("name").stringValue;
+                    Color  value    = elem.FindPropertyRelative("value").colorValue;
+                    if (mat.HasProperty(propName))
+                        mat.SetColor(propName, value);
+                }
             }
 
-            info.Mat.shader = sh;
+            // Floats 적용
+            if (floats != null)
+            {
+                for (int i = 0; i < floats.arraySize; i++)
+                {
+                    var elem = floats.GetArrayElementAtIndex(i);
+                    string propName = elem.FindPropertyRelative("name").stringValue;
+                    float  value    = elem.FindPropertyRelative("value").floatValue;
+                    if (mat.HasProperty(propName))
+                        mat.SetFloat(propName, value);
+                }
+            }
 
-            // _TransparentMode 프로퍼티 동기화 (있을 경우)
-            if (info.Mat.HasProperty("_TransparentMode"))
-                info.Mat.SetFloat("_TransparentMode", (float)_targetMode);
+            // Vectors 적용
+            if (vectors != null)
+            {
+                for (int i = 0; i < vectors.arraySize; i++)
+                {
+                    var elem = vectors.GetArrayElementAtIndex(i);
+                    string propName = elem.FindPropertyRelative("name").stringValue;
+                    Vector4 value   = elem.FindPropertyRelative("value").vector4Value;
+                    if (mat.HasProperty(propName))
+                        mat.SetVector(propName, value);
+                }
+            }
 
-            EditorUtility.SetDirty(info.Mat);
+            // Textures 적용
+            if (textures != null)
+            {
+                for (int i = 0; i < textures.arraySize; i++)
+                {
+                    var elem = textures.GetArrayElementAtIndex(i);
+                    string  propName = elem.FindPropertyRelative("name").stringValue;
+                    Texture value    = elem.FindPropertyRelative("value").objectReferenceValue as Texture;
+                    Vector2 offset   = elem.FindPropertyRelative("offset").vector2Value;
+                    Vector2 scale    = elem.FindPropertyRelative("scale").vector2Value;
+                    if (mat.HasProperty(propName))
+                    {
+                        mat.SetTexture(propName, value);
+                        mat.SetTextureOffset(propName, offset);
+                        mat.SetTextureScale(propName, scale);
+                    }
+                }
+            }
+
+            EditorUtility.SetDirty(mat);
             success++;
         }
 
         AssetDatabase.SaveAssets();
-
-        SetStatus(string.Format(UI_TEXT[32], success, failed), failed > 0);
-
-        // 재스캔
-        ScanMaterials();
+        SetStatus(string.Format(UI_TEXT[24], success), false);
+        Repaint();
     }
 
     // ──────────────────────────────────────────────
@@ -616,49 +592,6 @@ public class DiNeLilToonPreset : EditorWindow
         if (mat?.shader == null) return false;
         string sn = mat.shader.name.ToLower();
         return sn.Contains("liltoon") || sn.Contains("lil_toon");
-    }
-
-    private string GetModeShortLabel(LilRenderingMode mode)
-    {
-        switch (mode)
-        {
-            case LilRenderingMode.Opaque:             return "Opaque";
-            case LilRenderingMode.Cutout:             return "Cutout";
-            case LilRenderingMode.Transparent:        return "Trans";
-            case LilRenderingMode.OnePassTransparent: return "1P Trans";
-            case LilRenderingMode.TwoPassTransparent: return "2P Trans";
-            default: return "?";
-        }
-    }
-
-    private string GetModeLabel(LilRenderingMode mode)
-    {
-        switch (_language)
-        {
-            case LanguagePreset.Korean:
-                switch (mode)
-                {
-                    case LilRenderingMode.Opaque:             return "불투명 (Opaque)";
-                    case LilRenderingMode.Cutout:             return "컷아웃 (Cutout)";
-                    case LilRenderingMode.Transparent:        return "반투명 (Transparent)";
-                    case LilRenderingMode.OnePassTransparent: return "1패스 반투명";
-                    case LilRenderingMode.TwoPassTransparent: return "2패스 반투명";
-                }
-                break;
-            case LanguagePreset.Japanese:
-                switch (mode)
-                {
-                    case LilRenderingMode.Opaque:             return "不透明 (Opaque)";
-                    case LilRenderingMode.Cutout:             return "カットアウト (Cutout)";
-                    case LilRenderingMode.Transparent:        return "半透明 (Transparent)";
-                    case LilRenderingMode.OnePassTransparent: return "1パス半透明";
-                    case LilRenderingMode.TwoPassTransparent: return "2パス半透明";
-                }
-                break;
-            default:
-                return mode.ToString();
-        }
-        return mode.ToString();
     }
 
     private void SetStatus(string msg, bool warn)
@@ -687,22 +620,16 @@ public class DiNeLilToonPreset : EditorWindow
     // ──────────────────────────────────────────────
     private void SaveSettings()
     {
-        EditorPrefs.SetInt("DiNeLilPreset_Language",    (int)_language);
-        EditorPrefs.SetInt("DiNeLilPreset_TargetMode",  (int)_targetMode);
-        EditorPrefs.SetInt("DiNeLilPreset_OutlineMode", (int)_outlineMode);
-        EditorPrefs.SetBool("DiNeLilPreset_Children",   _includeChildren);
-        EditorPrefs.SetBool("DiNeLilPreset_Inactive",   _includeInactive);
-        EditorPrefs.SetBool("DiNeLilPreset_Preview",    _previewOnly);
+        EditorPrefs.SetInt("DiNeLilPreset_Language",  (int)_language);
+        EditorPrefs.SetBool("DiNeLilPreset_Children", _includeChildren);
+        EditorPrefs.SetBool("DiNeLilPreset_Inactive", _includeInactive);
+        EditorPrefs.SetBool("DiNeLilPreset_Preview",  _previewOnly);
     }
 
     private void LoadSettings()
     {
         if (EditorPrefs.HasKey("DiNeLilPreset_Language"))
             _language        = (LanguagePreset)EditorPrefs.GetInt("DiNeLilPreset_Language");
-        if (EditorPrefs.HasKey("DiNeLilPreset_TargetMode"))
-            _targetMode      = (LilRenderingMode)EditorPrefs.GetInt("DiNeLilPreset_TargetMode");
-        if (EditorPrefs.HasKey("DiNeLilPreset_OutlineMode"))
-            _outlineMode     = (OutlineMode)EditorPrefs.GetInt("DiNeLilPreset_OutlineMode");
         if (EditorPrefs.HasKey("DiNeLilPreset_Children"))
             _includeChildren = EditorPrefs.GetBool("DiNeLilPreset_Children");
         if (EditorPrefs.HasKey("DiNeLilPreset_Inactive"))
@@ -721,117 +648,93 @@ public class DiNeLilToonPreset : EditorWindow
             case LanguagePreset.Korean:
                 UI_TEXT = new string[]
                 {
-                    /* 00 */ "설정",
-                    /* 01 */ "대상 오브젝트",
-                    /* 02 */ "자식 오브젝트 포함",
-                    /* 03 */ "비활성 오브젝트 포함",
-                    /* 04 */ "적용할 렌더링 모드",
-                    /* 05 */ "아웃라인 처리",
+                    /* 00 */ "프리셋 파일",
+                    /* 01 */ "릴툰 프리셋 (.asset)",
+                    /* 02 */ "대상 설정",
+                    /* 03 */ "대상 오브젝트",
+                    /* 04 */ "자식 오브젝트 포함",
+                    /* 05 */ "비활성 오브젝트 포함",
                     /* 06 */ "[ 미리보기 모드 ]  실제로 적용되지 않습니다",
-                    /* 07 */ "[ 적용 모드 ]  셰이더가 실제로 교체됩니다",
+                    /* 07 */ "[ 적용 모드 ]  마테리얼에 프리셋이 적용됩니다",
                     /* 08 */ "스캔",
                     /* 09 */ "프리셋 적용",
-                    /* 10 */ "Opaque",
-                    /* 11 */ "Cutout",
-                    /* 12 */ "Trans",
-                    /* 13 */ "1P Trans",
-                    /* 14 */ "2P Trans",
-                    /* 15 */ "유지",
-                    /* 16 */ "아웃라인 추가",
-                    /* 17 */ "아웃라인 제거",
-                    /* 18 */ "미리보기 확인",
-                    /* 19 */ "LilToon 마테리얼: {0}개 / 선택됨: {1}개",
-                    /* 20 */ "전체 선택",
-                    /* 21 */ "전체 해제",
-                    /* 22 */ "선택",
-                    /* 23 */ "특수 셰이더 — 자동 변경 불가",
-                    /* 24 */ "해당 셰이더 variant 없음",
-                    /* 25 */ "대상 오브젝트를 먼저 지정해주세요.",
-                    /* 26 */ "스캔 완료 — 총 {0}개 (특수 셰이더 {1}개는 변경 불가)",
-                    /* 27 */ "선택된 마테리얼이 없습니다.",
-                    /* 28 */ "[미리보기] {0}/{1}개 마테리얼에 프리셋 적용 예정",
-                    /* 29 */ "{0}개 마테리얼의 렌더링 모드를 [{1}](으)로 변경합니다.\nUndo로 되돌릴 수 있습니다.",
-                    /* 30 */ "적용",
-                    /* 31 */ "취소",
-                    /* 32 */ "완료 — {0}개 성공 / {1}개 실패",
+                    /* 10 */ "LilToon 마테리얼: {0}개 / 선택됨: {1}개",
+                    /* 11 */ "전체 선택",
+                    /* 12 */ "전체 해제",
+                    /* 13 */ "선택",
+                    /* 14 */ "Ping",
+                    /* 15 */ "릴툰 프리셋 파일이 아닙니다.",
+                    /* 16 */ "미리보기 확인",
+                    /* 17 */ "대상 오브젝트를 먼저 지정해주세요.",
+                    /* 18 */ "스캔 완료 — LilToon 마테리얼 {0}개 발견",
+                    /* 19 */ "선택된 마테리얼이 없습니다.",
+                    /* 20 */ "[미리보기] {0}개 마테리얼에 프리셋 적용 예정",
+                    /* 21 */ "{0}개 마테리얼에 프리셋 [{1}]을(를) 적용합니다.\nUndo로 되돌릴 수 있습니다.",
+                    /* 22 */ "적용",
+                    /* 23 */ "취소",
+                    /* 24 */ "완료 — {0}개 마테리얼에 프리셋 적용됨",
                 };
                 break;
 
             case LanguagePreset.Japanese:
                 UI_TEXT = new string[]
                 {
-                    /* 00 */ "設定",
-                    /* 01 */ "対象オブジェクト",
-                    /* 02 */ "子オブジェクトを含む",
-                    /* 03 */ "非アクティブを含む",
-                    /* 04 */ "適用するレンダリングモード",
-                    /* 05 */ "アウトライン処理",
+                    /* 00 */ "プリセットファイル",
+                    /* 01 */ "lilToonプリセット (.asset)",
+                    /* 02 */ "対象設定",
+                    /* 03 */ "対象オブジェクト",
+                    /* 04 */ "子オブジェクトを含む",
+                    /* 05 */ "非アクティブを含む",
                     /* 06 */ "[ プレビューモード ]  実際には変更されません",
-                    /* 07 */ "[ 適用モード ]  シェーダーが実際に変更されます",
+                    /* 07 */ "[ 適用モード ]  マテリアルにプリセットが適用されます",
                     /* 08 */ "スキャン",
                     /* 09 */ "プリセット適用",
-                    /* 10 */ "Opaque",
-                    /* 11 */ "Cutout",
-                    /* 12 */ "Trans",
-                    /* 13 */ "1P Trans",
-                    /* 14 */ "2P Trans",
-                    /* 15 */ "維持",
-                    /* 16 */ "アウトライン追加",
-                    /* 17 */ "アウトライン削除",
-                    /* 18 */ "プレビュー確認",
-                    /* 19 */ "LilToonマテリアル: {0}個 / 選択中: {1}個",
-                    /* 20 */ "全て選択",
-                    /* 21 */ "全て解除",
-                    /* 22 */ "選択",
-                    /* 23 */ "特殊シェーダー — 自動変更不可",
-                    /* 24 */ "対応するシェーダーバリアントなし",
-                    /* 25 */ "対象オブジェクトを先に指定してください。",
-                    /* 26 */ "スキャン完了 — 計 {0}個 (特殊シェーダー {1}個は変更不可)",
-                    /* 27 */ "選択されたマテリアルがありません。",
-                    /* 28 */ "[プレビュー] {0}/{1}個のマテリアルにプリセットを適用予定",
-                    /* 29 */ "{0}個のマテリアルのレンダリングモードを [{1}] に変更します。\nUndoで元に戻せます。",
-                    /* 30 */ "適用",
-                    /* 31 */ "キャンセル",
-                    /* 32 */ "完了 — {0}個成功 / {1}個失敗",
+                    /* 10 */ "LilToonマテリアル: {0}個 / 選択中: {1}個",
+                    /* 11 */ "全て選択",
+                    /* 12 */ "全て解除",
+                    /* 13 */ "選択",
+                    /* 14 */ "Ping",
+                    /* 15 */ "lilToonプリセットファイルではありません。",
+                    /* 16 */ "プレビュー確認",
+                    /* 17 */ "対象オブジェクトを先に指定してください。",
+                    /* 18 */ "スキャン完了 — LilToonマテリアル {0}個を発見",
+                    /* 19 */ "選択されたマテリアルがありません。",
+                    /* 20 */ "[プレビュー] {0}個のマテリアルにプリセットを適用予定",
+                    /* 21 */ "{0}個のマテリアルにプリセット [{1}] を適用します。\nUndoで元に戻せます。",
+                    /* 22 */ "適用",
+                    /* 23 */ "キャンセル",
+                    /* 24 */ "完了 — {0}個のマテリアルにプリセットを適用しました",
                 };
                 break;
 
             default: // English
                 UI_TEXT = new string[]
                 {
-                    /* 00 */ "Settings",
-                    /* 01 */ "Target Object",
-                    /* 02 */ "Include Children",
-                    /* 03 */ "Include Inactive",
-                    /* 04 */ "Target Rendering Mode",
-                    /* 05 */ "Outline Handling",
+                    /* 00 */ "Preset File",
+                    /* 01 */ "lilToon Preset (.asset)",
+                    /* 02 */ "Target Settings",
+                    /* 03 */ "Target Object",
+                    /* 04 */ "Include Children",
+                    /* 05 */ "Include Inactive",
                     /* 06 */ "[ Preview Mode ]  No changes will be saved",
-                    /* 07 */ "[ Apply Mode ]  Shaders will actually be swapped",
+                    /* 07 */ "[ Apply Mode ]  Preset will be applied to materials",
                     /* 08 */ "Scan",
                     /* 09 */ "Apply Preset",
-                    /* 10 */ "Opaque",
-                    /* 11 */ "Cutout",
-                    /* 12 */ "Trans",
-                    /* 13 */ "1P Trans",
-                    /* 14 */ "2P Trans",
-                    /* 15 */ "Keep",
-                    /* 16 */ "Add Outline",
-                    /* 17 */ "Remove Outline",
-                    /* 18 */ "Preview Check",
-                    /* 19 */ "LilToon materials: {0} / Selected: {1}",
-                    /* 20 */ "Select All",
-                    /* 21 */ "Deselect All",
-                    /* 22 */ "Ping",
-                    /* 23 */ "Special shader — cannot auto-change",
-                    /* 24 */ "No matching shader variant found",
-                    /* 25 */ "Please assign a Target Object first.",
-                    /* 26 */ "Scan complete — {0} total ({1} special shader(s) skipped)",
-                    /* 27 */ "No materials selected.",
-                    /* 28 */ "[Preview] {0}/{1} material(s) will have preset applied",
-                    /* 29 */ "Change rendering mode of {0} material(s) to [{1}].\nSupports Undo.",
-                    /* 30 */ "Apply",
-                    /* 31 */ "Cancel",
-                    /* 32 */ "Done — {0} succeeded / {1} failed",
+                    /* 10 */ "LilToon materials: {0} / Selected: {1}",
+                    /* 11 */ "Select All",
+                    /* 12 */ "Deselect All",
+                    /* 13 */ "Ping",
+                    /* 14 */ "Ping",
+                    /* 15 */ "This is not a valid lilToon preset file.",
+                    /* 16 */ "Preview Check",
+                    /* 17 */ "Please assign a Target Object first.",
+                    /* 18 */ "Scan complete — {0} LilToon material(s) found",
+                    /* 19 */ "No materials selected.",
+                    /* 20 */ "[Preview] {0} material(s) will have preset applied",
+                    /* 21 */ "Apply preset [{1}] to {0} material(s).\nSupports Undo.",
+                    /* 22 */ "Apply",
+                    /* 23 */ "Cancel",
+                    /* 24 */ "Done — Preset applied to {0} material(s)",
                 };
                 break;
         }

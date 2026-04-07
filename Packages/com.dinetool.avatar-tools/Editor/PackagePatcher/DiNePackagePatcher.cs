@@ -28,7 +28,7 @@ public class DiNePackagePatcher : EditorWindow
     private static string pendingTargetFolderName = "_1_ImportedPackages";
     private static DiNePackagePatcher activeWindow;
 
-    [MenuItem("DiNe/Package Patcher")]
+    [MenuItem("DiNe/EX/Package Patcher")]
     public static void ShowWindow()
     {
         EditorWindow window = GetWindow<DiNePackagePatcher>("Package Patcher");

@@ -54,7 +54,7 @@ namespace DiNeScreenSaver
         // 경로 관리를 위한 상수 추가
         private const string RELATIVE_PATH = "Assets/Di Ne/ScreenSaver/ScreenShot/";
 
-        [MenuItem("DiNe/Screen Saver")]
+        [MenuItem("DiNe/EX/Screen Saver")]
         public static void ShowWindow()
         {
             EditorWindow window = GetWindow<DiNeScreenSaver>("DiNe Screen Saver");

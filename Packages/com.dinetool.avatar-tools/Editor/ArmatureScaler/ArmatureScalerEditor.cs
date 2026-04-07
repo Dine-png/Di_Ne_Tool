@@ -45,7 +45,7 @@ public class ArmatureScalerEditor : EditorWindow
         LeftBreast, RightBreast, LeftButt, RightButt
     }
 
-    [MenuItem("DiNe/Armature Scaler")]
+    [MenuItem("DiNe/Avatar/Armature Scaler")]
     public static void ShowWindow()
     {
         EditorWindow window = GetWindow<ArmatureScalerEditor>("Armature Scaler");

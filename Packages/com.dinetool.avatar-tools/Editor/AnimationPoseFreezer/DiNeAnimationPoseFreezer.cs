@@ -14,7 +14,7 @@ public class DiNeAnimationPoseFreezer : EditorWindow
     private string[] UI_TEXT;
     private Texture2D windowIcon;
 
-    [MenuItem("DiNe/Animation Pose Freezer")]
+    [MenuItem("DiNe/Avatar/Animation Pose Freezer")]
     public static void ShowWindow()
     {
         EditorWindow window = GetWindow<DiNeAnimationPoseFreezer>("Pose Freezer");

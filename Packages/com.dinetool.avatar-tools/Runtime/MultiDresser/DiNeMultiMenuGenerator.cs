@@ -12,10 +12,11 @@ public static class DiNeMultiMenuGenerator
         var descriptor = context.rootTransform?.GetComponent<VRCAvatarDescriptor>();
         if (descriptor == null) return;
 
-        var mainMenu = descriptor.expressionsMenu;
+        // 수동 지정된 메뉴가 있으면 우선 사용, 없으면 descriptor에서 가져옴
+        var mainMenu = context.expressionsMenu != null ? context.expressionsMenu : descriptor.expressionsMenu;
         if (mainMenu == null)
         {
-            Debug.LogWarning("⚠ 아바타에 Expression Menu가 없습니다.");
+            Debug.LogWarning("⚠ Expression Menu가 없습니다. 아바타에 설정하거나 Multi Dresser에서 직접 지정해주세요.");
             return;
         }
 

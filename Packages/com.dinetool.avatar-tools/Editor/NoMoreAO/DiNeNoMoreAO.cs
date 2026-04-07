@@ -67,7 +67,7 @@ public class DiNeNoMoreAO : EditorWindow
     // ──────────────────────────────────────────────
     //  메뉴
     // ──────────────────────────────────────────────
-    [MenuItem("DiNe/No More AO")]
+    [MenuItem("DiNe/Shading/No More AO")]
     public static void ShowWindow()
     {
         var window = GetWindow<DiNeNoMoreAO>("DiNe No More AO");

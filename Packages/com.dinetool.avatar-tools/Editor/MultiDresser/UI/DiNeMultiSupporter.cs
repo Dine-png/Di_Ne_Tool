@@ -29,7 +29,7 @@ public class DiNeMultiSupporter : Editor
             Language.Korean, new Dictionary<string, string>
             {
                 { "title", "🌸 DiNe Multi Dresser 🌸" },
-                { "globalSettings", "기본 설정 (아바타 & FX)" },
+                { "globalSettings", "기본 설정 (아바타 & FX & 메뉴)" },
                 { "avatarRoot", "아바타 Root" },
                 { "refreshTooltip", "아바타 다시 찾기 & 저장된 설정 불러오기 (새로고침)" },
                 { "shapeKeyTargets", "쉐이프키 타겟 (바디/얼굴 메쉬) 🦋" },
@@ -54,7 +54,7 @@ public class DiNeMultiSupporter : Editor
             Language.English, new Dictionary<string, string>
             {
                 { "title", "🌸 DiNe Multi Dresser 🌸" },
-                { "globalSettings", "Global Settings (Avatar & FX)" },
+                { "globalSettings", "Global Settings (Avatar & FX & Menu)" },
                 { "avatarRoot", "Avatar Root" },
                 { "refreshTooltip", "Reload Avatar & Restore Settings (Refresh)" },
                 { "shapeKeyTargets", "Shape Key Targets (Body/Face Meshes) 🦋" },
@@ -79,7 +79,7 @@ public class DiNeMultiSupporter : Editor
             Language.Japanese, new Dictionary<string, string>
             {
                 { "title", "🌸 DiNe Multi Dresser 🌸" },
-                { "globalSettings", "基本設定 (アバター & FX)" },
+                { "globalSettings", "基本設定 (アバター & FX & メニュー)" },
                 { "avatarRoot", "アバター Root" },
                 { "refreshTooltip", "アバター再検索 & 設定復元 (更新)" },
                 { "shapeKeyTargets", "シェイプキー対象 (体/顔メッシュ) 🦋" },
@@ -116,6 +116,7 @@ public class DiNeMultiSupporter : Editor
         DiNeMultiDresser gen = (DiNeMultiDresser)target;
         SerializedProperty root = serializedObject.FindProperty("rootTransform");
         SerializedProperty controller = serializedObject.FindProperty("animatorController");
+        SerializedProperty exMenu = serializedObject.FindProperty("expressionsMenu");
         SerializedProperty shapeKeyTargets = serializedObject.FindProperty("shapeKeyTargets");
         SerializedProperty layers = serializedObject.FindProperty("layers");
 
@@ -152,8 +153,13 @@ public class DiNeMultiSupporter : Editor
         }
 
         EditorGUILayout.BeginHorizontal();
-        GUILayout.Label("FX Controller", GUILayout.Width(100)); 
+        GUILayout.Label("FX Controller", GUILayout.Width(100));
         controller.objectReferenceValue = EditorGUILayout.ObjectField(controller.objectReferenceValue, typeof(RuntimeAnimatorController), false);
+        EditorGUILayout.EndHorizontal();
+
+        EditorGUILayout.BeginHorizontal();
+        GUILayout.Label("Expression Menu", GUILayout.Width(100));
+        exMenu.objectReferenceValue = EditorGUILayout.ObjectField(exMenu.objectReferenceValue, typeof(VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionsMenu), false);
         EditorGUILayout.EndHorizontal();
         
         EditorGUILayout.Space(5);
