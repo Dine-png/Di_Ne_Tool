@@ -1,4 +1,4 @@
-#if UNITY_EDITOR
+﻿#if UNITY_EDITOR
 using UnityEditor;
 using UnityEngine;
 using System.Collections.Generic;
@@ -519,8 +519,8 @@ public class DiNeMultiSupporter : Editor
         EditorGUILayout.BeginVertical("box");
         EditorGUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
-        GUIStyle titleStyle = new GUIStyle(EditorStyles.label) { font = titleFont, alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold, fontSize = 36 };\r
-        float iconSize = windowIcon != null ? windowIcon.height * 2f / 3f : 48;\r
+        GUIStyle titleStyle = new GUIStyle(EditorStyles.label) { font = titleFont, alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold, fontSize = 36 };
+        float iconSize = windowIcon != null ? windowIcon.height * 2f / 3f : 48;
         GUILayout.Label(windowIcon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
         GUILayout.Space(6);
         GUILayout.Label(titleText, titleStyle);
