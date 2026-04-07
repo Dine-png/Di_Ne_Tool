@@ -511,8 +511,6 @@ namespace DiNeScreenSaver
             DestroyImmediate(screenShot);
             DestroyImmediate(tempRT);
         }
-    }
-
         private int DrawCustomToolbar(int selected, string[] options, float height)
         {
             EditorGUILayout.BeginHorizontal();
