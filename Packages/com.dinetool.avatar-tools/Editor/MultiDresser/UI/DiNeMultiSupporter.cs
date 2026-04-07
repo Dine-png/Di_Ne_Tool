@@ -1,4 +1,4 @@
-﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using UnityEditor;
 using UnityEngine;
 using System.Collections.Generic;
@@ -302,18 +302,15 @@ public class DiNeMultiSupporter : Editor
 
         HandleDragDrop(dropArea, (objs) => {
             foreach(var go in objs) {
-                int idx = targets.arraySize;
-                targets.InsertArrayElementAtIndex(idx);
-                targets.GetArrayElementAtIndex(idx).objectReferenceValue = go;
-                labels.InsertArrayElementAtIndex(idx);
-                labels.GetArrayElementAtIndex(idx).stringValue = go.name;
-                icons.InsertArrayElementAtIndex(idx);
-                icons.GetArrayElementAtIndex(idx).objectReferenceValue = null;
+                currentLayerData.targets.Add(go);
+                currentLayerData.labels.Add(go.name);
+                currentLayerData.icons.Add(null);
                 currentLayerData.linkedObjects.Add(new DiNeMultiDresser.LinkedGroup());
                 currentLayerData.perButtonShapeKeyStates.Add(new DiNeMultiDresser.ShapeKeyMeshList());
             }
-            serializedObject.ApplyModifiedProperties();
             SyncShapeKeyData(gen, currentLayerData);
+            EditorUtility.SetDirty(target);
+            serializedObject.Update();
         });
 
         EditorGUILayout.Space(5);
@@ -329,13 +326,34 @@ public class DiNeMultiSupporter : Editor
             EditorGUILayout.BeginHorizontal();
             string headerLabel = (i == 0) ? lang["defaultState"] : $"{lang["menuButton"]} {i}";
             EditorGUILayout.LabelField(headerLabel, EditorStyles.boldLabel);
-            if (GUILayout.Button("X", GUILayout.Width(30), GUILayout.Height(20)))
+
+            // ▲ Move Up
+            EditorGUI.BeginDisabledGroup(i <= 0);
+            if (GUILayout.Button("▲", GUILayout.Width(24), GUILayout.Height(20)))
             {
-                targets.DeleteArrayElementAtIndex(i);
-                labels.DeleteArrayElementAtIndex(i);
-                icons.DeleteArrayElementAtIndex(i);
+                SwapItems(currentLayerData, i, i - 1);
+                EditorUtility.SetDirty(target);
+                serializedObject.Update();
+                break;
+            }
+            EditorGUI.EndDisabledGroup();
+
+            // ▼ Move Down
+            EditorGUI.BeginDisabledGroup(i >= targets.arraySize - 1);
+            if (GUILayout.Button("▼", GUILayout.Width(24), GUILayout.Height(20)))
+            {
+                SwapItems(currentLayerData, i, i + 1);
+                EditorUtility.SetDirty(target);
+                serializedObject.Update();
+                break;
+            }
+            EditorGUI.EndDisabledGroup();
+
+            if (GUILayout.Button("X", GUILayout.Width(24), GUILayout.Height(20)))
+            {
                 currentLayerData.RemoveAt(i);
-                serializedObject.ApplyModifiedProperties();
+                EditorUtility.SetDirty(target);
+                serializedObject.Update();
                 break;
             }
             EditorGUILayout.EndHorizontal();
@@ -523,7 +541,7 @@ public class DiNeMultiSupporter : Editor
         float iconSize = windowIcon != null ? windowIcon.height * 2f / 3f : 48;
         GUILayout.Label(windowIcon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
         GUILayout.Space(6);
-        GUILayout.Label(titleText, titleStyle);
+        GUILayout.Label(titleText, titleStyle, GUILayout.Height(iconSize));
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
         EditorGUILayout.EndVertical();

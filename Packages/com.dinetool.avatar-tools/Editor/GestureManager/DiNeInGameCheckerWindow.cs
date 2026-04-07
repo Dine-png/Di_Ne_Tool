@@ -239,7 +239,7 @@ namespace DiNeTool.GestureManager
             float iconSize = _icon != null ? _icon.height * 2f / 3f : 48;
             GUILayout.Label(_icon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
             GUILayout.Space(6);
-            GUILayout.Label("In-Game Checker", titleStyle);
+            GUILayout.Label("In-Game Checker", titleStyle, GUILayout.Height(iconSize));
 
             GUILayout.FlexibleSpace();
             EditorGUILayout.EndHorizontal();

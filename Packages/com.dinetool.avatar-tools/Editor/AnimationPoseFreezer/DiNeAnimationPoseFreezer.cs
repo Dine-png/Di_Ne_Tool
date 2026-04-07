@@ -52,7 +52,7 @@ public class DiNeAnimationPoseFreezer : EditorWindow
         float iconSize = windowIcon != null ? windowIcon.height * 2f / 3f : 48;
         GUILayout.Label(windowIcon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
         GUILayout.Space(6);
-        GUILayout.Label("Pose Freezer", titleStyle);
+        GUILayout.Label("Pose Freezer", titleStyle, GUILayout.Height(iconSize));
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
         GUILayout.Space(5);

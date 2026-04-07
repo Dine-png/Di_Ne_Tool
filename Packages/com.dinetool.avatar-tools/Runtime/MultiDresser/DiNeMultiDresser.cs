@@ -587,18 +587,26 @@ public class DiNeMultiDresser : MonoBehaviour
                     new AnimationCurve(new Keyframe(0, i == j ? 1 : 0)));
             }
 
-            // (2) Linked Objects
+            // (2) Linked Objects — collect all linked objects across all buttons,
+            //     then determine on/off: if the object is linked to the CURRENT state (i), it's ON.
+            var linkedMap = new Dictionary<GameObject, float>();
             for (int j = 0; j < layerData.linkedObjects.Count; j++)
             {
                 if (layerData.linkedObjects[j] == null) continue;
                 foreach (var linkObj in layerData.linkedObjects[j].objects)
                 {
                     if (linkObj == null) continue;
-                    float targetVal = (i == j) ? 1f : 0f;
-                    AnimationUtility.SetEditorCurve(clip,
-                        EditorCurveBinding.FloatCurve(AnimationUtility.CalculateTransformPath(linkObj.transform, rootTransform), typeof(GameObject), "m_IsActive"),
-                        new AnimationCurve(new Keyframe(0, targetVal)));
+                    if (i == j)
+                        linkedMap[linkObj] = 1f;              // this button is active → ON
+                    else if (!linkedMap.ContainsKey(linkObj))
+                        linkedMap[linkObj] = 0f;              // not yet set → OFF (may be overridden later)
                 }
+            }
+            foreach (var kvp in linkedMap)
+            {
+                AnimationUtility.SetEditorCurve(clip,
+                    EditorCurveBinding.FloatCurve(AnimationUtility.CalculateTransformPath(kvp.Key.transform, rootTransform), typeof(GameObject), "m_IsActive"),
+                    new AnimationCurve(new Keyframe(0, kvp.Value)));
             }
 
             // (3) ShapeKeys

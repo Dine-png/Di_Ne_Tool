@@ -122,6 +122,7 @@ public class DiNeMaterialTool : EditorWindow
     private bool _previewOnly     = false;
     private string _status = "";
     private bool   _statusWarn;
+    private GameObject _prevTargetObject;
 
     // ══════════════════════════════════════════════════════════════════════════
     //  State — Preset Mode
@@ -232,7 +233,7 @@ public class DiNeMaterialTool : EditorWindow
         float iconSize = _windowIcon != null ? _windowIcon.height * 2f / 3f : 48;
         GUILayout.Label(_windowIcon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
         GUILayout.Space(6);
-        GUILayout.Label("Material Tool", style);
+        GUILayout.Label("Material Tool", style, GUILayout.Height(iconSize));
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
         GUILayout.Space(5);
@@ -257,6 +258,7 @@ public class DiNeMaterialTool : EditorWindow
         {
             _mode = (ToolMode)next;
             _status = "";
+            AutoScan();
         }
     }
 
@@ -264,11 +266,31 @@ public class DiNeMaterialTool : EditorWindow
     {
         SectionLabel(T(2));
         GUILayout.Space(4);
+
+        EditorGUILayout.BeginHorizontal();
         _targetObject = (GameObject)EditorGUILayout.ObjectField(T(3), _targetObject, typeof(GameObject), true);
+        var prev = GUI.backgroundColor;
+        GUI.backgroundColor = ColAction;
+        if (GUILayout.Button("↺", GUILayout.Width(28), GUILayout.Height(18)))
+            AutoScan();
+        GUI.backgroundColor = prev;
+        EditorGUILayout.EndHorizontal();
+
+        // Auto-scan on target change
+        if (_targetObject != _prevTargetObject)
+        {
+            _prevTargetObject = _targetObject;
+            AutoScan();
+        }
+
         GUILayout.Space(4);
         GuiLine(1, 2);
+        bool prevChildren = _includeChildren;
+        bool prevInactive = _includeInactive;
         _includeChildren = EditorGUILayout.Toggle(T(4), _includeChildren);
         _includeInactive = EditorGUILayout.Toggle(T(5), _includeInactive);
+        if (_includeChildren != prevChildren || _includeInactive != prevInactive)
+            AutoScan();
         GUILayout.Space(4);
         GuiLine(1, 2);
 
@@ -280,6 +302,13 @@ public class DiNeMaterialTool : EditorWindow
             normal = { textColor = _previewOnly ? new Color(1f, 0.75f, 0.2f) : new Color(0.45f, 0.75f, 1f) }
         });
         EditorGUILayout.EndHorizontal();
+    }
+
+    private void AutoScan()
+    {
+        if (_targetObject == null) { _presetMats.Clear(); _presetScanned = false; _aoMats.Clear(); _aoScanned = false; _status = ""; return; }
+        if (_mode == ToolMode.PresetApply) PresetScanMaterials();
+        else AOScanMaterials();
     }
 
     // ══════════════════════════════════════════════════════════════════════════
