@@ -60,7 +60,7 @@ public class ArmatureScalerEditor : EditorWindow
         windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
         tabIcon    = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
         titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
-        titleContent = new GUIContent("DiNe Armature Scaler", tabIcon);
+        titleContent = new GUIContent("Armature Scaler", tabIcon);
         selectedButtonTex = MakeTex(1, 1, new Color(0.2f, 0.4f, 1f, 1f));
         SetLanguage(language);
         InitializeValues();
@@ -186,7 +186,7 @@ public class ArmatureScalerEditor : EditorWindow
             fontSize  = 28,
             normal    = new GUIStyleState() { textColor = Color.white }
         };
-        GUIContent titleContent = new GUIContent("Armature Scaler", windowIcon);
+        GUIContent titleContent = new GUIContent("DiNe Armature Scaler", windowIcon);
         GUILayout.Label(titleContent, titleStyle);
         
         GUILayout.FlexibleSpace();

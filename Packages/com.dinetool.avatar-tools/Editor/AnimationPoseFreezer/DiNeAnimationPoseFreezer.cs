@@ -49,7 +49,7 @@ public class DiNeAnimationPoseFreezer : EditorWindow
             fontSize  = 28,
             normal    = new GUIStyleState() { textColor = Color.white }
         };
-        GUIContent titleContent = new GUIContent("Pose Freezer", windowIcon);
+        GUIContent titleContent = new GUIContent("DiNe Pose Freezer", windowIcon);
         GUILayout.Label(titleContent, titleStyle);
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();

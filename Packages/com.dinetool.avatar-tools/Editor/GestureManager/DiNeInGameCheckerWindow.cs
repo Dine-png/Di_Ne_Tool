@@ -89,7 +89,7 @@ namespace DiNeTool.GestureManager
             _icon       = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
             _headerIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
             _titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
-            titleContent = new GUIContent("DiNe In-Game Checker", _headerIcon);
+            titleContent = new GUIContent("In-Game Checker", _headerIcon);
 
             EditorApplication.playModeStateChanged += OnPlayModeChanged;
             EditorApplication.hierarchyChanged     += OnHierarchyChanged;
@@ -236,7 +236,7 @@ namespace DiNeTool.GestureManager
                 fontSize  = 28,
                 normal    = { textColor = Color.white }
             };
-            GUILayout.Label(new GUIContent("In-Game Checker", _icon), titleStyle);
+            GUILayout.Label(new GUIContent("DiNe In-Game Checker", _icon), titleStyle);
 
             GUILayout.FlexibleSpace();
             EditorGUILayout.EndHorizontal();

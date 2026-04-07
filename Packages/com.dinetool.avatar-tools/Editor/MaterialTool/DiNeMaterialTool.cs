@@ -185,7 +185,7 @@ public class DiNeMaterialTool : EditorWindow
         _windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
         _tabIcon    = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
         _titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
-        titleContent = new GUIContent("DiNe Material Tool", _tabIcon);
+        titleContent = new GUIContent("Material Tool", _tabIcon);
         LoadSettings();
         ScanLibrary();
     }
@@ -229,7 +229,7 @@ public class DiNeMaterialTool : EditorWindow
             fontStyle = FontStyle.Bold, fontSize = 28,
             normal = { textColor = Color.white }
         };
-        GUILayout.Label(new GUIContent("Material Tool", _windowIcon), style);
+        GUILayout.Label(new GUIContent("DiNe Material Tool", _windowIcon), style);
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
         GUILayout.Space(5);

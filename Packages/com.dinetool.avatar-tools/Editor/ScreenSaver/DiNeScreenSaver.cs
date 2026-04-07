@@ -71,7 +71,7 @@ namespace DiNeScreenSaver
             windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
             tabIcon    = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
             titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
-            titleContent = new GUIContent("DiNe Screen Saver", tabIcon);
+            titleContent = new GUIContent("Screen Saver", tabIcon);
         }
 
         void OnDisable()
@@ -108,7 +108,7 @@ namespace DiNeScreenSaver
                 fontSize  = 28,
                 normal    = new GUIStyleState() { textColor = Color.white }
             };
-            GUIContent titleContent = new GUIContent("Screen Saver", windowIcon);
+            GUIContent titleContent = new GUIContent("DiNe Screen Saver", windowIcon);
             GUILayout.Label(titleContent, titleStyle);
             
             GUILayout.FlexibleSpace();
