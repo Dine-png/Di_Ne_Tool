@@ -242,8 +242,8 @@ public class DiNeMaterialTool : EditorWindow
         string desc = "";
         switch (_lang)
         {
-            case Lang.KO: desc = "빠르고 간편하게 마테리얼과 릴툰 프리셋을 일괄 적용/수정하는 도구입니다."; break;
-            case Lang.JA: desc = "マテリアルとlilToonプリセットを素早く適用・変更するためのツールです。"; break;
+            case Lang.Korean: desc = "빠르고 간편하게 마테리얼과 릴툰 프리셋을 일괄 적용/수정하는 도구입니다."; break;
+            case Lang.Japanese: desc = "マテリアルとlilToonプリセットを素早く適用・変更するためのツールです。"; break;
             default:      desc = "A tool to quickly apply and modify materials and lilToon presets."; break;
         }
         GUILayout.Label(desc, new GUIStyle(EditorStyles.wordWrappedLabel) 
