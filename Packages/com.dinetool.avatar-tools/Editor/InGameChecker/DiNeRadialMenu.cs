@@ -318,7 +318,13 @@ namespace DiNeTool.InGameChecker
             // 진행 아크
             float progressAngle = _puppetRadialValue * 360f;
             if (progressAngle > 0.5f)
-                DrawArcFilled(center, InnerRadius + 2, MenuRadius - 2, -90f, -90f + progressAngle, ColSelected);
+            {
+                using (new Handles.DrawingScope(ColSelected))
+                {
+                    Handles.DrawSolidArc(center, Vector3.forward, AngleToVector(-90f), progressAngle, MenuRadius - 2);
+                }
+                DrawFilledCircle(center, InnerRadius + 2, ColBg);
+            }
 
             // 화살표 (현재 위치)
             float arrowAngle = -90f + progressAngle;
