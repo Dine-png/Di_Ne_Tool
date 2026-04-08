@@ -8,7 +8,7 @@ public class DiNeMaterialTool : EditorWindow
     // ══════════════════════════════════════════════════════════════════════════
     //  Enums
     // ══════════════════════════════════════════════════════════════════════════
-    private enum ToolMode { PresetApply, AORemove }
+    private enum ToolMode { PresetApply, AORemove, VRAMOptimize }
     private enum Lang { English, Korean, Japanese }
 
     private ToolMode _mode = ToolMode.PresetApply;
@@ -70,6 +70,19 @@ public class DiNeMaterialTool : EditorWindow
         /* 44 */ new[] { "Remove",   "제거",   "削除"     },
         /* 45 */ new[] { "Done — Removed {1} AO texture(s) from {0} material(s).", "완료 — {0}개 마테리얼에서 {1}개 AO 텍스처를 제거했습니다.", "完了 — {0}個のマテリアルから {1}個のAOテクスチャを削除しました。" },
         /* 46 */ new[] { "Preview Result", "미리보기 결과 확인", "プレビュー結果を確認" },
+        // ── VRAM ──
+        /* 47 */ new[] { "VRAM Optimize",      "VRAM 최적화",        "VRAM最適化"               },
+        /* 48 */ new[] { "Total VRAM",         "총 VRAM 사용량",      "VRAM合計"                 },
+        /* 49 */ new[] { "Textures: {0}  |  Total: {1}", "텍스처: {0}개  |  합계: {1}", "テクスチャ: {0}個  |  合計: {1}" },
+        /* 50 */ new[] { "Optimize All",       "전체 최적화",         "全て最適化"                },
+        /* 51 */ new[] { "This will change compression and/or max size for {0} texture(s).\nThis action is NOT undo-able.\n\nContinue?",
+                         "{0}개 텍스처의 압축 포맷 및/또는 최대 해상도를 변경합니다.\n이 작업은 실행취소(Undo)가 불가능합니다.\n\n계속하시겠습니까?",
+                         "{0}個のテクスチャの圧縮フォーマットや最大解像度を変更します。\nこの操作は元に戻せません。\n\n続けますか？" },
+        /* 52 */ new[] { "Done — Optimized {0} texture(s), saved {1}", "완료 — {0}개 텍스처 최적화, {1} 절약", "完了 — {0}個のテクスチャを最適化、{1}削減" },
+        /* 53 */ new[] { "No textures found.",  "텍스처를 찾을 수 없습니다.",  "テクスチャが見つかりません。" },
+        /* 54 */ new[] { "No optimizable textures.", "최적화 가능한 텍스처가 없습니다.", "最適化可能なテクスチャがありません。" },
+        /* 55 */ new[] { "Format",             "포맷",               "フォーマット"              },
+        /* 56 */ new[] { "Size",               "해상도",             "解像度"                   },
     };
     private string T(int i) => UI[i][L];
     private string Tf(int i, params object[] a) => string.Format(UI[i][L], a);
@@ -156,6 +169,60 @@ public class DiNeMaterialTool : EditorWindow
     private Vector2            _aoMatScroll;
 
     // ══════════════════════════════════════════════════════════════════════════
+    //  State — VRAM Mode
+    // ══════════════════════════════════════════════════════════════════════════
+    private class TextureVRAMInfo
+    {
+        public Texture   Texture;
+        public string    AssetPath;
+        public long      VRAMBytes;
+        public float     BPP;
+        public string    FormatString;
+        public TextureFormat Format;
+        public bool      HasAlpha;
+        public float     MinBPP;
+        public int       MaxDimension;
+        public bool      CanOptimizeFormat;
+        public bool      CanOptimizeSize;
+        public long      FormatSavings;
+        public long      SizeSavings;
+        public TextureImporterFormat SuggestedFormat;
+        public List<Material> UsedByMaterials = new List<Material>();
+        public bool      MaterialDropdown;
+    }
+
+    private List<TextureVRAMInfo> _vramTextures = new List<TextureVRAMInfo>();
+    private bool _vramScanned = false;
+    private Vector2 _vramScroll;
+    private long _vramTotal;
+
+    private static readonly Dictionary<TextureFormat, float> TEX_BPP = new Dictionary<TextureFormat, float>()
+    {
+        { TextureFormat.Alpha8, 8 }, { TextureFormat.ARGB4444, 16 }, { TextureFormat.RGB24, 24 },
+        { TextureFormat.RGBA32, 32 }, { TextureFormat.ARGB32, 32 }, { TextureFormat.RGB565, 16 },
+        { TextureFormat.R16, 16 }, { TextureFormat.DXT1, 4 }, { TextureFormat.DXT5, 8 },
+        { TextureFormat.RGBA4444, 16 }, { TextureFormat.BGRA32, 32 },
+        { TextureFormat.RHalf, 16 }, { TextureFormat.RGHalf, 32 }, { TextureFormat.RGBAHalf, 64 },
+        { TextureFormat.RFloat, 32 }, { TextureFormat.RGFloat, 64 }, { TextureFormat.RGBAFloat, 128 },
+        { TextureFormat.YUY2, 16 }, { TextureFormat.RGB9e5Float, 32 },
+        { TextureFormat.BC6H, 8 }, { TextureFormat.BC7, 8 }, { TextureFormat.BC4, 4 }, { TextureFormat.BC5, 8 },
+        { TextureFormat.DXT1Crunched, 4 }, { TextureFormat.DXT5Crunched, 8 },
+        { TextureFormat.PVRTC_RGB2, 6 }, { TextureFormat.PVRTC_RGBA2, 8 },
+        { TextureFormat.PVRTC_RGB4, 12 }, { TextureFormat.PVRTC_RGBA4, 16 },
+        { TextureFormat.ETC_RGB4, 4 }, { TextureFormat.EAC_R, 4 }, { TextureFormat.EAC_R_SIGNED, 4 },
+        { TextureFormat.EAC_RG, 8 }, { TextureFormat.EAC_RG_SIGNED, 8 },
+        { TextureFormat.ETC2_RGB, 4 }, { TextureFormat.ETC2_RGBA1, 4 }, { TextureFormat.ETC2_RGBA8, 8 },
+        { TextureFormat.ASTC_4x4, 8 }, { TextureFormat.ASTC_5x5, 5.12f }, { TextureFormat.ASTC_6x6, 3.56f },
+        { TextureFormat.ASTC_8x8, 2 }, { TextureFormat.ASTC_10x10, 1.28f }, { TextureFormat.ASTC_12x12, 0.89f },
+        { TextureFormat.RG16, 16 }, { TextureFormat.R8, 8 },
+        { TextureFormat.ETC_RGB4Crunched, 4 }, { TextureFormat.ETC2_RGBA8Crunched, 8 },
+        { TextureFormat.ASTC_HDR_4x4, 8 }, { TextureFormat.ASTC_HDR_5x5, 5.12f },
+        { TextureFormat.ASTC_HDR_6x6, 3.56f }, { TextureFormat.ASTC_HDR_8x8, 2 },
+        { TextureFormat.ASTC_HDR_10x10, 1.28f }, { TextureFormat.ASTC_HDR_12x12, 0.89f },
+        { TextureFormat.RG32, 32 }, { TextureFormat.RGB48, 48 }, { TextureFormat.RGBA64, 64 },
+    };
+
+    // ══════════════════════════════════════════════════════════════════════════
     //  Shared Material Info
     // ══════════════════════════════════════════════════════════════════════════
     private class MaterialInfo
@@ -173,7 +240,7 @@ public class DiNeMaterialTool : EditorWindow
     // ══════════════════════════════════════════════════════════════════════════
     //  Menu / Lifecycle
     // ══════════════════════════════════════════════════════════════════════════
-    [MenuItem("DiNe/Material Tool")]
+    [MenuItem("DiNe/Material Tool", false, 2)]
     public static void ShowWindow()
     {
         var w = GetWindow<DiNeMaterialTool>("DiNe Material Tool");
@@ -186,7 +253,7 @@ public class DiNeMaterialTool : EditorWindow
         _windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
         _tabIcon    = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
         _titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
-        titleContent = new GUIContent("Material Tool", _tabIcon);
+        titleContent = new GUIContent("Material", _tabIcon);
         LoadSettings();
         ScanLibrary();
     }
@@ -208,8 +275,10 @@ public class DiNeMaterialTool : EditorWindow
 
         if (_mode == ToolMode.PresetApply)
             DrawPresetMode();
-        else
+        else if (_mode == ToolMode.AORemove)
             DrawAOMode();
+        else
+            DrawVRAMMode();
 
         if (!string.IsNullOrEmpty(_status))
             EditorGUILayout.HelpBox(_status, _statusWarn ? MessageType.Warning : MessageType.Info);
@@ -263,7 +332,7 @@ public class DiNeMaterialTool : EditorWindow
     private void DrawModeSelector()
     {
         int idx = (int)_mode;
-        int next = DrawCustomToolbar(idx, new[] { T(0), T(1) }, 30);
+        int next = DrawCustomToolbar(idx, new[] { T(0), T(1), T(47) }, 30);
         if (next != idx)
         {
             _mode = (ToolMode)next;
@@ -329,9 +398,10 @@ public class DiNeMaterialTool : EditorWindow
 
     private void AutoScan()
     {
-        if (_targetObject == null) { _presetMats.Clear(); _presetScanned = false; _aoMats.Clear(); _aoScanned = false; _status = ""; return; }
+        if (_targetObject == null) { _presetMats.Clear(); _presetScanned = false; _aoMats.Clear(); _aoScanned = false; _vramTextures.Clear(); _vramScanned = false; _status = ""; return; }
         if (_mode == ToolMode.PresetApply) PresetScanMaterials();
-        else AOScanMaterials();
+        else if (_mode == ToolMode.AORemove) AOScanMaterials();
+        else VRAMScanTextures();
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -907,6 +977,361 @@ public class DiNeMaterialTool : EditorWindow
         AssetDatabase.Refresh();
         SetStatus(Tf(45, targets.Count, removed), false);
         AOScanMaterials();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  VRAM MODE
+    // ══════════════════════════════════════════════════════════════════════════
+    private void DrawVRAMMode()
+    {
+        if (!_vramScanned) { EditorGUILayout.HelpBox(T(53), MessageType.Info); return; }
+        if (_vramTextures.Count == 0) { EditorGUILayout.HelpBox(T(53), MessageType.Info); return; }
+
+        // ── 총합 표시 ──
+        var prev = GUI.backgroundColor;
+        GUI.backgroundColor = ColCard;
+        EditorGUILayout.BeginVertical("box");
+        GUI.backgroundColor = prev;
+
+        EditorGUILayout.LabelField(Tf(49, _vramTextures.Count, FormatBytes(_vramTotal)),
+            new GUIStyle(EditorStyles.boldLabel) { fontSize = 12 });
+        EditorGUILayout.EndVertical();
+
+        GUILayout.Space(4);
+
+        // ── 전체 최적화 버튼 ──
+        var optimizable = _vramTextures.Where(t => t.CanOptimizeFormat || t.CanOptimizeSize).ToList();
+        long totalSavings = optimizable.Sum(t => t.FormatSavings + t.SizeSavings);
+
+        GUI.enabled = optimizable.Count > 0;
+        prev = GUI.backgroundColor;
+        GUI.backgroundColor = optimizable.Count > 0 ? ColApply : new Color(0.35f, 0.35f, 0.38f);
+        var btnStyle = new GUIStyle(GUI.skin.button)
+            { fontSize = 13, fontStyle = FontStyle.Bold, normal = { textColor = Color.white }, hover = { textColor = Color.white } };
+        string btnLabel = optimizable.Count > 0
+            ? $"{T(50)}  ({optimizable.Count})  → -{FormatBytes(totalSavings)}"
+            : T(54);
+        if (GUILayout.Button(btnLabel, btnStyle, GUILayout.Height(38)))
+            VRAMOptimizeAll(optimizable);
+        GUI.backgroundColor = prev;
+        GUI.enabled = true;
+
+        HLine();
+
+        // ── 개별 텍스처 리스트 ──
+        _vramScroll = EditorGUILayout.BeginScrollView(_vramScroll);
+        foreach (var info in _vramTextures)
+            DrawVRAMTextureCard(info);
+        EditorGUILayout.EndScrollView();
+    }
+
+    private void DrawVRAMTextureCard(TextureVRAMInfo info)
+    {
+        var prev = GUI.backgroundColor;
+        GUI.backgroundColor = ColCard;
+        EditorGUILayout.BeginVertical("box");
+        GUI.backgroundColor = prev;
+
+        // ── 상단: 텍스처 정보 ──
+        EditorGUILayout.BeginHorizontal();
+
+        // 썸네일
+        Rect thumbRect = GUILayoutUtility.GetRect(40, 40, GUILayout.Width(40), GUILayout.Height(40));
+        if (info.Texture is Texture2D t2d)
+        {
+            Texture2D thumb = AssetPreview.GetAssetPreview(info.Texture);
+            if (thumb != null) GUI.DrawTexture(thumbRect, thumb, ScaleMode.ScaleToFit);
+            else { EditorGUI.DrawPreviewTexture(thumbRect, t2d); Repaint(); }
+        }
+        else GUI.Box(thumbRect, "?");
+
+        GUILayout.Space(6);
+        EditorGUILayout.BeginVertical();
+
+        // 이름 + VRAM
+        EditorGUILayout.BeginHorizontal();
+        GUILayout.Label(info.Texture.name, new GUIStyle(EditorStyles.boldLabel) { fontSize = 11 }, GUILayout.ExpandWidth(true));
+        GUILayout.FlexibleSpace();
+        GUILayout.Label(FormatBytes(info.VRAMBytes), new GUIStyle(EditorStyles.boldLabel)
+            { fontSize = 11, alignment = TextAnchor.MiddleRight, normal = { textColor = GetVRAMColor(info.VRAMBytes) } },
+            GUILayout.Width(70));
+        EditorGUILayout.EndHorizontal();
+
+        // 포맷 + 해상도
+        EditorGUILayout.LabelField($"{info.FormatString}  |  {info.Texture.width}×{info.Texture.height}  |  {info.BPP} BPP",
+            new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = ColSubText } });
+
+        EditorGUILayout.EndVertical();
+        EditorGUILayout.EndHorizontal();
+
+        GUILayout.Space(3);
+
+        // ── 최적화 버튼들 ──
+        EditorGUILayout.BeginHorizontal();
+
+        // 포맷 변경 버튼
+        if (info.CanOptimizeFormat)
+        {
+            string newFmtName = info.SuggestedFormat == TextureImporterFormat.BC7 ? "BC7" : "DXT1";
+            prev = GUI.backgroundColor;
+            GUI.backgroundColor = new Color(0.35f, 0.65f, 0.90f);
+            if (GUILayout.Button($"{T(55)}: {newFmtName}  → -{FormatBytes(info.FormatSavings)}",
+                new GUIStyle(GUI.skin.button) { fontSize = 10, fontStyle = FontStyle.Bold, normal = { textColor = Color.white } },
+                GUILayout.Height(22)))
+            {
+                VRAMChangeCompression(info);
+            }
+            GUI.backgroundColor = prev;
+        }
+
+        // 해상도 축소 버튼
+        if (info.CanOptimizeSize)
+        {
+            prev = GUI.backgroundColor;
+            GUI.backgroundColor = new Color(0.90f, 0.65f, 0.35f);
+            if (GUILayout.Button($"{T(56)}: 2048  → -{FormatBytes(info.SizeSavings)}",
+                new GUIStyle(GUI.skin.button) { fontSize = 10, fontStyle = FontStyle.Bold, normal = { textColor = Color.white } },
+                GUILayout.Height(22)))
+            {
+                VRAMChangeSize(info, 2048);
+            }
+            GUI.backgroundColor = prev;
+        }
+
+        if (!info.CanOptimizeFormat && !info.CanOptimizeSize)
+        {
+            GUILayout.Label("✓", new GUIStyle(EditorStyles.miniLabel)
+                { normal = { textColor = new Color(0.4f, 0.85f, 0.4f) }, fontStyle = FontStyle.Bold, fontSize = 12 });
+        }
+
+        GUILayout.FlexibleSpace();
+
+        // 머티리얼 드롭다운 버튼
+        if (info.UsedByMaterials.Count > 0)
+        {
+            if (GUILayout.Button($"Mat ×{info.UsedByMaterials.Count}", EditorStyles.miniButton,
+                GUILayout.Width(60), GUILayout.Height(22)))
+                info.MaterialDropdown = !info.MaterialDropdown;
+        }
+
+        EditorGUILayout.EndHorizontal();
+
+        // 머티리얼 리스트
+        if (info.MaterialDropdown && info.UsedByMaterials.Count > 0)
+        {
+            GUILayout.Space(2);
+            EditorGUI.indentLevel++;
+            foreach (var mat in info.UsedByMaterials)
+                EditorGUILayout.ObjectField(mat, typeof(Material), false, GUILayout.Height(18));
+            EditorGUI.indentLevel--;
+        }
+
+        EditorGUILayout.EndVertical();
+        GUILayout.Space(3);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  VRAM Logic
+    // ══════════════════════════════════════════════════════════════════════════
+    private void VRAMScanTextures()
+    {
+        _vramTextures.Clear(); _vramScanned = false; _vramTotal = 0;
+        if (_targetObject == null) { SetStatus(T(19), true); return; }
+
+        Renderer[] renderers = _includeChildren
+            ? _targetObject.GetComponentsInChildren<Renderer>(_includeInactive)
+            : _targetObject.GetComponents<Renderer>();
+
+        var textureMap = new Dictionary<Texture, TextureVRAMInfo>();
+        var allMaterials = new List<Material>();
+
+        foreach (var r in renderers)
+        {
+            foreach (var mat in r.sharedMaterials)
+            {
+                if (mat == null) continue;
+                allMaterials.Add(mat);
+                foreach (string propName in mat.GetTexturePropertyNames())
+                {
+                    Texture tex = mat.GetTexture(propName);
+                    if (tex == null) continue;
+                    if (!textureMap.ContainsKey(tex))
+                    {
+                        var info = CalculateVRAMInfo(tex);
+                        if (info != null) textureMap[tex] = info;
+                    }
+                    if (textureMap.ContainsKey(tex) && !textureMap[tex].UsedByMaterials.Contains(mat))
+                        textureMap[tex].UsedByMaterials.Add(mat);
+                }
+            }
+        }
+
+        _vramTextures = textureMap.Values.OrderByDescending(t => t.VRAMBytes).ToList();
+        _vramTotal = _vramTextures.Sum(t => t.VRAMBytes);
+        _vramScanned = true;
+        SetStatus(Tf(49, _vramTextures.Count, FormatBytes(_vramTotal)), false);
+        Repaint();
+    }
+
+    private TextureVRAMInfo CalculateVRAMInfo(Texture tex)
+    {
+        var info = new TextureVRAMInfo { Texture = tex, AssetPath = AssetDatabase.GetAssetPath(tex) };
+        info.MaxDimension = Mathf.Max(tex.width, tex.height);
+
+        if (tex is Texture2D t2d)
+        {
+            info.Format = t2d.format;
+            info.FormatString = t2d.format.ToString();
+            if (!TEX_BPP.TryGetValue(t2d.format, out info.BPP)) info.BPP = 16;
+            info.VRAMBytes = CalcVRAMBytes(tex, info.BPP);
+
+            if (!string.IsNullOrEmpty(info.AssetPath))
+            {
+                var importer = AssetImporter.GetAtPath(info.AssetPath) as TextureImporter;
+                if (importer != null)
+                {
+                    info.HasAlpha = importer.DoesSourceTextureHaveAlpha();
+                    info.MinBPP = (info.HasAlpha || importer.textureType == TextureImporterType.NormalMap) ? 8 : 4;
+
+                    // 포맷 최적화 가능 여부
+                    if (info.BPP > info.MinBPP)
+                    {
+                        info.CanOptimizeFormat = true;
+                        info.SuggestedFormat = (info.HasAlpha || importer.textureType == TextureImporterType.NormalMap)
+                            ? TextureImporterFormat.BC7 : TextureImporterFormat.DXT1;
+                        TextureFormat newFmt = info.SuggestedFormat == TextureImporterFormat.BC7 ? TextureFormat.BC7 : TextureFormat.DXT1;
+                        float newBpp = TEX_BPP[newFmt];
+                        info.FormatSavings = info.VRAMBytes - CalcVRAMBytes(tex, newBpp);
+                    }
+
+                    // 해상도 축소 가능 여부
+                    if (info.MaxDimension > 2048)
+                    {
+                        info.CanOptimizeSize = true;
+                        float scale = 2048f / info.MaxDimension;
+                        info.SizeSavings = info.VRAMBytes - CalcVRAMBytes(tex, info.BPP, scale);
+                    }
+                }
+            }
+        }
+        else
+        {
+            info.FormatString = tex.GetType().Name;
+            info.BPP = 32;
+            info.VRAMBytes = CalcVRAMBytes(tex, info.BPP);
+        }
+
+        return info;
+    }
+
+    private static long CalcVRAMBytes(Texture tex, float bpp, float resolutionScale = 1f)
+    {
+        int w = (int)(tex.width * resolutionScale);
+        int h = (int)(tex.height * resolutionScale);
+        long bytes = 0;
+        for (int i = 0; i < tex.mipmapCount; i++)
+        {
+            int mw = Mathf.Max(1, w >> i);
+            int mh = Mathf.Max(1, h >> i);
+            bytes += (long)Mathf.RoundToInt(mw * mh * bpp / 8f);
+        }
+        return bytes;
+    }
+
+    private void VRAMChangeCompression(TextureVRAMInfo info)
+    {
+        var importer = AssetImporter.GetAtPath(info.AssetPath) as TextureImporter;
+        if (importer == null) return;
+        importer.SetPlatformTextureSettings(new TextureImporterPlatformSettings()
+        {
+            name = "PC",
+            overridden = true,
+            format = info.SuggestedFormat,
+            maxTextureSize = importer.maxTextureSize,
+            compressionQuality = 100
+        });
+        importer.SaveAndReimport();
+        VRAMScanTextures();
+    }
+
+    private void VRAMChangeSize(TextureVRAMInfo info, int maxSize)
+    {
+        var importer = AssetImporter.GetAtPath(info.AssetPath) as TextureImporter;
+        if (importer == null) return;
+        importer.maxTextureSize = maxSize;
+        var settings = importer.GetPlatformTextureSettings("PC");
+        settings.maxTextureSize = maxSize;
+        importer.SetPlatformTextureSettings(settings);
+        importer.SaveAndReimport();
+        VRAMScanTextures();
+    }
+
+    private void VRAMOptimizeAll(List<TextureVRAMInfo> targets)
+    {
+        if (!EditorUtility.DisplayDialog(T(50), Tf(51, targets.Count), T(24), T(25))) return;
+
+        long savedTotal = 0;
+        int count = 0;
+
+        for (int i = 0; i < targets.Count; i++)
+        {
+            var info = targets[i];
+            var importer = AssetImporter.GetAtPath(info.AssetPath) as TextureImporter;
+            if (importer == null) continue;
+
+            EditorUtility.DisplayProgressBar(T(50), info.Texture.name, (float)i / targets.Count);
+            long before = info.VRAMBytes;
+            bool changed = false;
+
+            if (info.CanOptimizeFormat)
+            {
+                importer.SetPlatformTextureSettings(new TextureImporterPlatformSettings()
+                {
+                    name = "PC",
+                    overridden = true,
+                    format = info.SuggestedFormat,
+                    maxTextureSize = importer.maxTextureSize,
+                    compressionQuality = 100
+                });
+                changed = true;
+            }
+
+            if (info.CanOptimizeSize)
+            {
+                importer.maxTextureSize = 2048;
+                var settings = importer.GetPlatformTextureSettings("PC");
+                settings.maxTextureSize = 2048;
+                importer.SetPlatformTextureSettings(settings);
+                changed = true;
+            }
+
+            if (changed)
+            {
+                importer.SaveAndReimport();
+                savedTotal += info.FormatSavings + info.SizeSavings;
+                count++;
+            }
+        }
+
+        EditorUtility.ClearProgressBar();
+        SetStatus(Tf(52, count, FormatBytes(savedTotal)), false);
+        VRAMScanTextures();
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024f:F1} KB";
+        return $"{bytes / (1024f * 1024f):F2} MiB";
+    }
+
+    private static Color GetVRAMColor(long bytes)
+    {
+        float mib = bytes / (1024f * 1024f);
+        if (mib < 1f)  return new Color(0.4f, 0.85f, 0.4f);
+        if (mib < 5f)  return new Color(0.9f, 0.85f, 0.4f);
+        if (mib < 10f) return new Color(0.95f, 0.6f, 0.3f);
+        return new Color(0.95f, 0.35f, 0.35f);
     }
 
     // ══════════════════════════════════════════════════════════════════════════

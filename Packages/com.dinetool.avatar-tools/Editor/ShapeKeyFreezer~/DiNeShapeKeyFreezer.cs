@@ -29,7 +29,7 @@ public class DiNeShapeKeyFreezer : EditorWindow
         windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
         tabIcon    = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
         titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
-        titleContent = new GUIContent("ShapeKey Freezer", tabIcon);
+        titleContent = new GUIContent("ShapeKey", tabIcon);
         SetLanguage(language);
     }
 

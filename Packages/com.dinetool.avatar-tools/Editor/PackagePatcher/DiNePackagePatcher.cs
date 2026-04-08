@@ -30,7 +30,7 @@ public class DiNePackagePatcher : EditorWindow
     private static string pendingTargetFolderName = "_1_ImportedPackages";
     private static DiNePackagePatcher activeWindow;
 
-    [MenuItem("DiNe/EX/Package Patcher")]
+    [MenuItem("DiNe/EX/Package Patcher", false, 100)]
     public static void ShowWindow()
     {
         EditorWindow window = GetWindow<DiNePackagePatcher>("Package Patcher");
@@ -43,7 +43,7 @@ public class DiNePackagePatcher : EditorWindow
         windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
         tabIcon    = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
         titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
-        titleContent = new GUIContent("Package Patcher", tabIcon);
+        titleContent = new GUIContent("Package", tabIcon);
         selectedButtonTex = MakeTex(1, 1, new Color(0.2f, 0.4f, 1f, 1f));
         SetLanguage(language);
         activeWindow = this;

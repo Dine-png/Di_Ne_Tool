@@ -9,32 +9,41 @@ public class ArmatureScalerEditor : EditorWindow
     private enum LanguagePreset { English, Korean, Japanese }
     private LanguagePreset language = LanguagePreset.Korean;
 
+    // ─── 에디터 모드 ───
+    private enum EditorMode { Armature, ShapeKey }
+    private EditorMode currentMode = EditorMode.Armature;
+
     private GameObject targetAvatarRoot;
-    
+
     private HumanoidBodyPart selectedPart = HumanoidBodyPart.None;
-    
+
     private Dictionary<HumanoidBodyPart, Vector3> scaleValues = new Dictionary<HumanoidBodyPart, Vector3>();
     private Dictionary<HumanoidBodyPart, Quaternion> rotationValues = new Dictionary<HumanoidBodyPart, Quaternion>();
     // 추가: 포지션 값 딕셔너리
     private Dictionary<HumanoidBodyPart, Vector3> positionValues = new Dictionary<HumanoidBodyPart, Vector3>();
-    
+
     private string[] UI_TEXT;
     private Texture2D windowIcon;
     private Texture2D tabIcon;
     private Font      titleFont;
     private Vector2 scrollPosition;
     private Texture2D selectedButtonTex;
-    
+
     private Dictionary<HumanBodyBones, Transform> boneMapping;
-    
+
     private Vector3 lastKnownScale = Vector3.one;
     private Quaternion lastKnownRotation = Quaternion.identity;
     private Vector3 lastKnownPosition = Vector3.zero; // 추가
-    
+
     private string[] presetFiles;
     private int selectedPresetIndex = -1;
     private string selectedPresetName = "";
     private Vector2 presetScrollPosition;
+
+    // ─── ShapeKey Freezer 필드 ───
+    private AnimationClip animationClip;
+    private float clipTime = 0.0f;
+    private string[] SK_TEXT;
 
     private enum HumanoidBodyPart
     {
@@ -47,11 +56,11 @@ public class ArmatureScalerEditor : EditorWindow
         LeftBreast, RightBreast, LeftButt, RightButt
     }
 
-    [MenuItem("DiNe/Avatar/Armature Scaler")]
+    [MenuItem("DiNe/Avi Editor", false, 1)]
     public static void ShowWindow()
     {
-        EditorWindow window = GetWindow<ArmatureScalerEditor>("DiNe Armature Scaler");
-        window.minSize = new Vector2(300, 400); 
+        EditorWindow window = GetWindow<ArmatureScalerEditor>("DiNe Avi Editor");
+        window.minSize = new Vector2(300, 400);
         window.position = new Rect(window.position.x, window.position.y, 420, 850);
     }
 
@@ -60,9 +69,10 @@ public class ArmatureScalerEditor : EditorWindow
         windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
         tabIcon    = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
         titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
-        titleContent = new GUIContent("Armature Scaler", tabIcon);
+        titleContent = new GUIContent("Avi Editor", tabIcon);
         selectedButtonTex = MakeTex(1, 1, new Color(0.2f, 0.4f, 1f, 1f));
         SetLanguage(language);
+        SetShapeKeyLanguage(language);
         InitializeValues();
         if (targetAvatarRoot != null)
         {
@@ -172,12 +182,13 @@ public class ArmatureScalerEditor : EditorWindow
     void OnGUI()
     {
         GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
-        
+
+        // ─── 타이틀 바 ───
         EditorGUILayout.BeginVertical("box");
-        
+
         EditorGUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
-        
+
         GUIStyle titleStyle = new GUIStyle(EditorStyles.label)
         {
             font      = titleFont,
@@ -189,8 +200,8 @@ public class ArmatureScalerEditor : EditorWindow
         float iconSize = windowIcon != null ? windowIcon.height * 2f / 3f : 48;
         GUILayout.Label(windowIcon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
         GUILayout.Space(6);
-        GUILayout.Label("Armature Scaler", titleStyle, GUILayout.Height(iconSize));
-        
+        GUILayout.Label("Avi Editor", titleStyle, GUILayout.Height(iconSize));
+
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
 
@@ -198,17 +209,19 @@ public class ArmatureScalerEditor : EditorWindow
         string desc = "";
         switch (language)
         {
-            case LanguagePreset.Korean: desc = "아바타의 아마추어 비율을 쉽고 안전하게 조절합니다."; break;
-            case LanguagePreset.Japanese: desc = "アバターのアーマチュアの比率を簡単かつ安全に調整します。"; break;
-            default: desc = "Easily and safely scale your avatar's armature proportions."; break;
+            case LanguagePreset.Korean: desc = "아바타의 아마추어와 쉐이프키를 쉽고 안전하게 편집합니다."; break;
+            case LanguagePreset.Japanese: desc = "アバターのアーマチュアとシェイプキーを簡単かつ安全に編集します。"; break;
+            default: desc = "Easily and safely edit your avatar's armature and shapekeys."; break;
         }
-        GUILayout.Label(desc, new GUIStyle(EditorStyles.wordWrappedLabel) 
+        GUILayout.Label(desc, new GUIStyle(EditorStyles.wordWrappedLabel)
             { alignment = TextAnchor.MiddleCenter, fontSize = 12, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } });
 
         GUILayout.Space(5);
         EditorGUILayout.EndVertical();
 
         GUILayout.Space(5);
+
+        // ─── 언어 선택 ───
         int currentLanguageIndex = (int)language;
         string[] languageButtons = { "English", "한국어", "日本語" };
         int newLanguageIndex = DrawCustomToolbar(currentLanguageIndex, languageButtons, 30);
@@ -216,8 +229,34 @@ public class ArmatureScalerEditor : EditorWindow
         {
             language = (LanguagePreset)newLanguageIndex;
             SetLanguage(language);
+            SetShapeKeyLanguage(language);
+        }
+        GUILayout.Space(5);
+
+        // ─── 모드 탭 ───
+        string[] modeLabels = language == LanguagePreset.Korean ? new[] { "아마추어", "쉐이프키" }
+                            : language == LanguagePreset.Japanese ? new[] { "アーマチュア", "シェイプキー" }
+                            : new[] { "Armature", "ShapeKey" };
+        int newMode = DrawCustomToolbar((int)currentMode, modeLabels, 30);
+        if (newMode != (int)currentMode)
+        {
+            currentMode = (EditorMode)newMode;
         }
         GUILayout.Space(10);
+
+        if (currentMode == EditorMode.Armature)
+        {
+            DrawArmatureGUI();
+        }
+        else
+        {
+            DrawShapeKeyGUI();
+        }
+    }
+
+    // ─── 아마추어 모드 GUI ───
+    private void DrawArmatureGUI()
+    {
         
         EditorGUI.BeginChangeCheck();
         targetAvatarRoot = (GameObject)EditorGUILayout.ObjectField(UI_TEXT[0], targetAvatarRoot, typeof(GameObject), true);
@@ -419,7 +458,147 @@ public class ArmatureScalerEditor : EditorWindow
         
         EditorGUILayout.EndVertical();
     }
-    
+
+    // ─── 쉐이프키 모드 GUI ───
+    private void DrawShapeKeyGUI()
+    {
+        // ─── 오브젝트 / 클립 선택 ───
+        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.LabelField(SK_TEXT[0], EditorStyles.boldLabel);
+        GUILayout.Space(3);
+        targetAvatarRoot = (GameObject)EditorGUILayout.ObjectField(SK_TEXT[1], targetAvatarRoot, typeof(GameObject), true);
+        animationClip = (AnimationClip)EditorGUILayout.ObjectField(SK_TEXT[2], animationClip, typeof(AnimationClip), false);
+        EditorGUILayout.EndVertical();
+
+        GUILayout.Space(5);
+
+        // ─── 슬라이더 + 버튼 ───
+        EditorGUI.BeginDisabledGroup(targetAvatarRoot == null || animationClip == null);
+
+        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.LabelField(SK_TEXT[3], EditorStyles.boldLabel);
+        GUILayout.Space(3);
+
+        if (animationClip != null)
+        {
+            GUIStyle timeStyle = new GUIStyle(EditorStyles.miniLabel)
+            {
+                alignment = TextAnchor.MiddleRight,
+                normal = { textColor = new Color(0.6f, 0.6f, 0.6f) }
+            };
+            GUILayout.Label($"{clipTime:F3}s / {animationClip.length:F3}s", timeStyle);
+        }
+
+        EditorGUI.BeginChangeCheck();
+        float maxTime = animationClip != null ? animationClip.length : 1f;
+        clipTime = EditorGUILayout.Slider(clipTime, 0f, maxTime);
+        if (EditorGUI.EndChangeCheck())
+        {
+            SampleBlendShapesOnly();
+        }
+
+        EditorGUILayout.EndVertical();
+
+        GUILayout.Space(5);
+
+        var prevBg = GUI.backgroundColor;
+        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+        if (GUILayout.Button(SK_TEXT[4], new GUIStyle(GUI.skin.button) { fontStyle = FontStyle.Bold, normal = { textColor = Color.white } }, GUILayout.Height(38)))
+        {
+            SampleBlendShapesOnly();
+            Debug.Log($"[Avi Editor] {targetAvatarRoot.name} — {SK_TEXT[5]}");
+        }
+        GUI.backgroundColor = prevBg;
+
+        EditorGUI.EndDisabledGroup();
+
+        GUILayout.Space(5);
+
+        // ─── 안내 메시지 ───
+        EditorGUILayout.HelpBox(SK_TEXT[6], MessageType.Info);
+    }
+
+    /// <summary>
+    /// 애니메이션 클립에서 blendShape 커브만 골라서 SkinnedMeshRenderer에 적용합니다.
+    /// </summary>
+    private void SampleBlendShapesOnly()
+    {
+        if (targetAvatarRoot == null || animationClip == null) return;
+
+        EditorCurveBinding[] bindings = AnimationUtility.GetCurveBindings(animationClip);
+
+        foreach (var binding in bindings)
+        {
+            if (!binding.propertyName.StartsWith("blendShape.")) continue;
+
+            AnimationCurve curve = AnimationUtility.GetEditorCurve(animationClip, binding);
+            if (curve == null) continue;
+
+            float value = curve.Evaluate(clipTime);
+
+            Transform targetTransform;
+            if (string.IsNullOrEmpty(binding.path))
+                targetTransform = targetAvatarRoot.transform;
+            else
+                targetTransform = targetAvatarRoot.transform.Find(binding.path);
+
+            if (targetTransform == null) continue;
+
+            SkinnedMeshRenderer smr = targetTransform.GetComponent<SkinnedMeshRenderer>();
+            if (smr == null || smr.sharedMesh == null) continue;
+
+            string shapeName = binding.propertyName.Substring("blendShape.".Length);
+            int index = smr.sharedMesh.GetBlendShapeIndex(shapeName);
+            if (index < 0) continue;
+
+            Undo.RecordObject(smr, "Sample BlendShape Pose");
+            smr.SetBlendShapeWeight(index, value);
+        }
+    }
+
+    private void SetShapeKeyLanguage(LanguagePreset lang)
+    {
+        switch (lang)
+        {
+            case LanguagePreset.Korean:
+                SK_TEXT = new string[]
+                {
+                    "대상 설정",
+                    "대상 오브젝트 (Root)",
+                    "애니메이션 클립",
+                    "시점 조절",
+                    "이 포즈로 쉐이프키 저장 (Save Pose)",
+                    "쉐이프키 포즈 고정 완료!",
+                    "본(Transform) 위치는 변경되지 않습니다.\n애니메이션 클립 내 쉐이프키 값만 적용됩니다.",
+                };
+                break;
+            case LanguagePreset.Japanese:
+                SK_TEXT = new string[]
+                {
+                    "対象設定",
+                    "対象オブジェクト (Root)",
+                    "アニメーションクリップ",
+                    "タイミング調整",
+                    "このポーズでシェイプキーを保存 (Save Pose)",
+                    "シェイプキーポーズを保存しました！",
+                    "ボーン(Transform)は変更されません。\nアニメーションクリップ内のシェイプキー値のみ適用されます。",
+                };
+                break;
+            default:
+                SK_TEXT = new string[]
+                {
+                    "Target Settings",
+                    "Target Object (Root)",
+                    "Animation Clip",
+                    "Time Adjustment",
+                    "Save BlendShape Pose",
+                    "BlendShape pose saved!",
+                    "Bone (Transform) positions are NOT changed.\nOnly BlendShape values from the animation clip are applied.",
+                };
+                break;
+        }
+    }
+
     private void DrawBoneButton(HumanoidBodyPart part, string buttonText, float width, float height)
     {
         HumanoidBodyPart previousSelectedPart = selectedPart;
