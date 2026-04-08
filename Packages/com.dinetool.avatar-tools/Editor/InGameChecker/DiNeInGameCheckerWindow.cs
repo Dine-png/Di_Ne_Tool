@@ -6,7 +6,6 @@ using BlackStartX.GestureManager.Data;
 using BlackStartX.GestureManager.Editor.Modules;
 using UnityEditor;
 using UnityEngine;
-using UnityEngine.UIElements;
 using VRC.SDKBase;
 
 namespace DiNeTool.InGameChecker
@@ -82,7 +81,6 @@ namespace DiNeTool.InGameChecker
         // GestureManager references
         private DiNeInGameChecker                    _wrapper;
         private BlackStartX.GestureManager.GestureManager _gm;
-        private Editor                                _gmEditor; // for Module.EditorContent()
 
         // ─── Entry ───────────────────────────────────────────────────────────────
         [MenuItem("DiNe/Avatar/In-Game Checker")]
@@ -110,7 +108,6 @@ namespace DiNeTool.InGameChecker
         {
             EditorApplication.playModeStateChanged -= OnPlayModeChanged;
             EditorApplication.hierarchyChanged     -= OnHierarchyChanged;
-            DestroyGMEditor();
         }
 
         private void OnDestroy()
@@ -137,7 +134,6 @@ namespace DiNeTool.InGameChecker
             if (state == PlayModeStateChange.ExitingPlayMode)
             {
                 _statsDirty = true;
-                DestroyGMEditor();
             }
             Repaint();
         }
@@ -160,19 +156,6 @@ namespace DiNeTool.InGameChecker
             }
 
             _gm = _wrapper.Core;
-            RefreshGMEditor();
-        }
-
-        private void RefreshGMEditor()
-        {
-            DestroyGMEditor();
-            if (_gm != null)
-                _gmEditor = Editor.CreateEditor(_gm);
-        }
-
-        private void DestroyGMEditor()
-        {
-            if (_gmEditor != null) { DestroyImmediate(_gmEditor); _gmEditor = null; }
         }
 
         private void TryAutoInit()
@@ -411,8 +394,9 @@ namespace DiNeTool.InGameChecker
         // ═════════════════════════════════════════════════════════════════════════
         // ACTIVE MODULE
         // ═════════════════════════════════════════════════════════════════════════
-        // 제스처 이름 목록 (UI_TEXT 25~31에 대응)
-        private static readonly string[] GestureNames = { "Fist", "Open", "FingerPoint", "Victory", "Rock&Roll", "Gun", "ThumbsUp" };
+        // 제스처 인덱스: 0=Idle, 1=Fist, 2=Open, 3=FingerPoint, 4=Victory, 5=Rock&Roll, 6=Gun, 7=ThumbsUp
+        private int _leftGesture;
+        private int _rightGesture;
 
         private void DrawActiveModule()
         {
@@ -433,6 +417,7 @@ namespace DiNeTool.InGameChecker
                     if (GUILayout.Button(T(8), GUILayout.Width(70), GUILayout.Height(20)))
                     {
                         _gm.UnlinkModule();
+                        _leftGesture = _rightGesture = 0;
                         _statsDirty = true;
                     }
                 }
@@ -441,20 +426,11 @@ namespace DiNeTool.InGameChecker
 
             GUILayout.Space(4);
 
-            // ─── 제스처 리스트 (번역 + 테두리) ───
-            DrawGestureList();
-
-            GUILayout.Space(4);
-
-            // 원본 모듈에 UI 위임 (라디알 메뉴, 툴, 디버그 등)
-            if (_gmEditor != null)
-            {
-                _gm.Module.EditorHeader();
-                _gm.Module.EditorContent(_gmEditor, rootVisualElement);
-            }
+            // ─── 제스처 컨트롤 패널 ───
+            DrawGesturePanel();
         }
 
-        private void DrawGestureList()
+        private void DrawGesturePanel()
         {
             using (new BgColor(ColCard))
             {
@@ -465,6 +441,7 @@ namespace DiNeTool.InGameChecker
                 GUILayout.Label(T(23), new GUIStyle(EditorStyles.boldLabel)
                     { alignment = TextAnchor.MiddleCenter, fontSize = 11, normal = { textColor = ColAccent } },
                     GUILayout.ExpandWidth(true));
+                GUILayout.Space(4);
                 GUILayout.Label(T(24), new GUIStyle(EditorStyles.boldLabel)
                     { alignment = TextAnchor.MiddleCenter, fontSize = 11, normal = { textColor = ColAccent } },
                     GUILayout.ExpandWidth(true));
@@ -472,37 +449,46 @@ namespace DiNeTool.InGameChecker
 
                 GUILayout.Space(2);
 
-                // 제스처 항목
-                for (int i = 0; i < GestureNames.Length; i++)
+                // 제스처 버튼 (1~7, 0=Idle)
+                for (int i = 1; i <= 7; i++)
                 {
-                    string translated = T(25 + i);
-                    string original   = GestureNames[i];
-                    string label      = (L == 0) ? original : $"{translated}  ({original})";
+                    string translated = T(24 + i); // 25~31
+                    string label = (L == 0) ? _gm.Module.GetGestureTextNameByIndex(i) : translated;
 
                     EditorGUILayout.BeginHorizontal();
 
-                    // 왼손
-                    using (new BgColor(new Color(0.25f, 0.25f, 0.28f)))
+                    // 왼손 버튼
+                    bool leftActive = (_leftGesture == i);
+                    using (new BgColor(leftActive ? ColAccent : new Color(0.28f, 0.28f, 0.31f)))
                     {
-                        EditorGUILayout.BeginVertical("box");
-                        GUILayout.Label(label, new GUIStyle(EditorStyles.label)
-                            { alignment = TextAnchor.MiddleCenter, fontSize = 11,
-                              normal = { textColor = ColText } },
-                            GUILayout.Height(20), GUILayout.ExpandWidth(true));
-                        EditorGUILayout.EndVertical();
+                        var style = new GUIStyle(GUI.skin.button)
+                        {
+                            fontSize = 11, fontStyle = leftActive ? FontStyle.Bold : FontStyle.Normal,
+                            normal = { textColor = leftActive ? Color.white : ColText }
+                        };
+                        if (GUILayout.Button(label, style, GUILayout.Height(24)))
+                        {
+                            _leftGesture = leftActive ? 0 : i;
+                            _gm.Module.OnNewHand(GestureHand.Left, _leftGesture);
+                        }
                     }
 
                     GUILayout.Space(2);
 
-                    // 오른손
-                    using (new BgColor(new Color(0.25f, 0.25f, 0.28f)))
+                    // 오른손 버튼
+                    bool rightActive = (_rightGesture == i);
+                    using (new BgColor(rightActive ? ColAccent : new Color(0.28f, 0.28f, 0.31f)))
                     {
-                        EditorGUILayout.BeginVertical("box");
-                        GUILayout.Label(label, new GUIStyle(EditorStyles.label)
-                            { alignment = TextAnchor.MiddleCenter, fontSize = 11,
-                              normal = { textColor = ColText } },
-                            GUILayout.Height(20), GUILayout.ExpandWidth(true));
-                        EditorGUILayout.EndVertical();
+                        var style = new GUIStyle(GUI.skin.button)
+                        {
+                            fontSize = 11, fontStyle = rightActive ? FontStyle.Bold : FontStyle.Normal,
+                            normal = { textColor = rightActive ? Color.white : ColText }
+                        };
+                        if (GUILayout.Button(label, style, GUILayout.Height(24)))
+                        {
+                            _rightGesture = rightActive ? 0 : i;
+                            _gm.Module.OnNewHand(GestureHand.Right, _rightGesture);
+                        }
                     }
 
                     EditorGUILayout.EndHorizontal();

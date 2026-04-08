@@ -15,7 +15,14 @@
       "Bash(mv Runtime/AnimationPoseFreezer Runtime/ShapeKeyFreezer)",
       "Bash(mv Runtime/GestureManager/DiNeGestureManager.cs Runtime/GestureManager/DiNeInGameChecker.cs)",
       "Bash(mv Runtime/GestureManager/DiNeGestureManager.cs.meta Runtime/GestureManager/DiNeInGameChecker.cs.meta)",
-      "Bash(mv Runtime/GestureManager Runtime/InGameChecker)"
+      "Bash(mv Runtime/GestureManager Runtime/InGameChecker)",
+      "Bash(find . -name \"*.asmdef\" -exec cat {} \\\\;)",
+      "Bash(find . -name \"package.json\" -exec grep -l \"gesture-manager\\\\|blackstartx\" {} \\\\;)",
+      "Bash(xargs cat:*)",
+      "Bash(grep -rn \"SetModule\\\\|_gm\\\\\\\\..*\\(\" ./com.dinetool.avatar-tools --include=\"*.cs\")",
+      "Read(//c/tmp/**)",
+      "Bash(cp \"C:/Users/butei/AppData/Local/VRChatCreatorCompanion/Repos/vrchat.blackstartx.gesture-manager/vrc-get-vrchat.blackstartx.gesture-manager-3.9.8.zip\" .)",
+      "Bash(unzip -l vrc-get-vrchat.blackstartx.gesture-manager-3.9.8.zip)"
     ]
   }
 }
