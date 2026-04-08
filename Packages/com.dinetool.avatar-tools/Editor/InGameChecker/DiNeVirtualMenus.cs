@@ -46,7 +46,7 @@ namespace DiNeTool.InGameChecker
             locomotion.name = "Locomotion";
             locomotion.controls.Add(CreateToggle("Grounded", "BSX_GM_Grounded"));
             locomotion.controls.Add(CreateRadial("Falling Speed", "VelocityY", "BSX_GM_FallingSpeed"));
-            locomotion.controls.Add(CreateRadial("Upright", "BSX_GM_Upright"));
+            locomotion.controls.Add(CreateRadial("Upright", "Upright", "BSX_GM_Upright"));
             
             // X and Z velocity as a TwoAxis Puppet?
             var velocityPuppet = new VRCExpressionsMenu.Control
