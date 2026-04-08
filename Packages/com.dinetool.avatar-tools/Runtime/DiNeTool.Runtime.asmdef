@@ -2,8 +2,7 @@
     "name": "DiNeTool.Runtime",
     "references": [
         "com.vrchat.base",
-        "com.vrchat.avatars",
-        "vrchat.blackstartx.gesture-manager"
+        "com.vrchat.avatars"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
