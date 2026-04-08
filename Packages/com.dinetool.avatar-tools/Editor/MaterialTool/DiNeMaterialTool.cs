@@ -1025,6 +1025,18 @@ public class DiNeMaterialTool : EditorWindow
         EditorGUILayout.EndScrollView();
     }
 
+    private static readonly TextureImporterFormat[] _formatOptions =
+    {
+        TextureImporterFormat.DXT1, TextureImporterFormat.DXT1Crunched,
+        TextureImporterFormat.DXT5, TextureImporterFormat.DXT5Crunched,
+        TextureImporterFormat.BC7, TextureImporterFormat.BC4, TextureImporterFormat.BC5, TextureImporterFormat.BC6H,
+        TextureImporterFormat.RGBA32, TextureImporterFormat.RGB24, TextureImporterFormat.Alpha8,
+        TextureImporterFormat.ASTC_4x4, TextureImporterFormat.ASTC_6x6, TextureImporterFormat.ASTC_8x8, TextureImporterFormat.ASTC_12x12,
+    };
+    private static readonly string[] _formatNames = _formatOptions.Select(f => f.ToString()).ToArray();
+    private static readonly int[] _sizeOptions = { 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192 };
+    private static readonly string[] _sizeNames = _sizeOptions.Select(s => s.ToString()).ToArray();
+
     private void DrawVRAMTextureCard(TextureVRAMInfo info)
     {
         var prev = GUI.backgroundColor;
@@ -1032,10 +1044,10 @@ public class DiNeMaterialTool : EditorWindow
         EditorGUILayout.BeginVertical("box");
         GUI.backgroundColor = prev;
 
-        // ── 상단: 텍스처 정보 ──
+        // ── 상단: 썸네일 + 이름 + VRAM ──
         EditorGUILayout.BeginHorizontal();
 
-        // 썸네일
+        // 썸네일 (클릭 시 프로젝트에서 선택)
         Rect thumbRect = GUILayoutUtility.GetRect(40, 40, GUILayout.Width(40), GUILayout.Height(40));
         if (info.Texture is Texture2D t2d)
         {
@@ -1044,6 +1056,14 @@ public class DiNeMaterialTool : EditorWindow
             else { EditorGUI.DrawPreviewTexture(thumbRect, t2d); Repaint(); }
         }
         else GUI.Box(thumbRect, "?");
+
+        if (Event.current.type == EventType.MouseDown && Event.current.button == 0 && thumbRect.Contains(Event.current.mousePosition))
+        {
+            EditorGUIUtility.PingObject(info.Texture);
+            Selection.activeObject = info.Texture;
+            Event.current.Use();
+        }
+        EditorGUIUtility.AddCursorRect(thumbRect, MouseCursor.Link);
 
         GUILayout.Space(6);
         EditorGUILayout.BeginVertical();
@@ -1057,8 +1077,8 @@ public class DiNeMaterialTool : EditorWindow
             GUILayout.Width(70));
         EditorGUILayout.EndHorizontal();
 
-        // 포맷 + 해상도
-        EditorGUILayout.LabelField($"{info.FormatString}  |  {info.Texture.width}×{info.Texture.height}  |  {info.BPP} BPP",
+        // BPP 정보
+        EditorGUILayout.LabelField($"{info.BPP} BPP  |  {info.Texture.width}×{info.Texture.height}",
             new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = ColSubText } });
 
         EditorGUILayout.EndVertical();
@@ -1066,55 +1086,86 @@ public class DiNeMaterialTool : EditorWindow
 
         GUILayout.Space(3);
 
-        // ── 최적화 버튼들 ──
-        EditorGUILayout.BeginHorizontal();
+        // ── 포맷 / 해상도 드롭다운 ──
+        var importer = !string.IsNullOrEmpty(info.AssetPath) ? AssetImporter.GetAtPath(info.AssetPath) as TextureImporter : null;
 
-        // 포맷 변경 버튼
-        if (info.CanOptimizeFormat)
+        if (importer != null && info.Texture is Texture2D)
         {
-            string newFmtName = info.SuggestedFormat == TextureImporterFormat.BC7 ? "BC7" : "DXT1";
-            prev = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0.35f, 0.65f, 0.90f);
-            if (GUILayout.Button($"{T(55)}: {newFmtName}  → -{FormatBytes(info.FormatSavings)}",
-                new GUIStyle(GUI.skin.button) { fontSize = 10, fontStyle = FontStyle.Bold, normal = { textColor = Color.white } },
-                GUILayout.Height(22)))
+            EditorGUILayout.BeginHorizontal();
+
+            // 포맷 드롭다운
+            int curFmtIdx = System.Array.IndexOf(_formatOptions, (TextureImporterFormat)info.Format);
+            if (curFmtIdx < 0) curFmtIdx = 0;
+            GUILayout.Label(T(55), GUILayout.Width(36));
+            int newFmtIdx = EditorGUILayout.Popup(curFmtIdx, _formatNames, GUILayout.MinWidth(80));
+            if (newFmtIdx != curFmtIdx)
             {
+                info.SuggestedFormat = _formatOptions[newFmtIdx];
                 VRAMChangeCompression(info);
             }
-            GUI.backgroundColor = prev;
-        }
 
-        // 해상도 축소 버튼
-        if (info.CanOptimizeSize)
-        {
-            prev = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0.90f, 0.65f, 0.35f);
-            if (GUILayout.Button($"{T(56)}: 2048  → -{FormatBytes(info.SizeSavings)}",
-                new GUIStyle(GUI.skin.button) { fontSize = 10, fontStyle = FontStyle.Bold, normal = { textColor = Color.white } },
-                GUILayout.Height(22)))
+            GUILayout.Space(8);
+
+            // 해상도 드롭다운
+            int curMaxSize = importer.maxTextureSize;
+            int curSizeIdx = System.Array.IndexOf(_sizeOptions, curMaxSize);
+            if (curSizeIdx < 0) curSizeIdx = _sizeOptions.Length - 1;
+            GUILayout.Label(T(56), GUILayout.Width(36));
+            int newSizeIdx = EditorGUILayout.Popup(curSizeIdx, _sizeNames, GUILayout.Width(60));
+            if (newSizeIdx != curSizeIdx)
             {
-                VRAMChangeSize(info, 2048);
+                VRAMChangeSize(info, _sizeOptions[newSizeIdx]);
             }
-            GUI.backgroundColor = prev;
+
+            GUILayout.FlexibleSpace();
+
+            // 머티리얼 드롭다운 버튼
+            if (info.UsedByMaterials.Count > 0)
+            {
+                if (GUILayout.Button($"Mat ×{info.UsedByMaterials.Count}", EditorStyles.miniButton,
+                    GUILayout.Width(60), GUILayout.Height(18)))
+                    info.MaterialDropdown = !info.MaterialDropdown;
+            }
+
+            EditorGUILayout.EndHorizontal();
         }
 
-        if (!info.CanOptimizeFormat && !info.CanOptimizeSize)
+        // ── 최적화 제안 버튼 ──
+        if (info.CanOptimizeFormat || info.CanOptimizeSize)
         {
-            GUILayout.Label("✓", new GUIStyle(EditorStyles.miniLabel)
-                { normal = { textColor = new Color(0.4f, 0.85f, 0.4f) }, fontStyle = FontStyle.Bold, fontSize = 12 });
+            GUILayout.Space(2);
+            EditorGUILayout.BeginHorizontal();
+
+            if (info.CanOptimizeFormat)
+            {
+                string newFmtName = info.SuggestedFormat == TextureImporterFormat.BC7 ? "BC7" : "DXT1";
+                prev = GUI.backgroundColor;
+                GUI.backgroundColor = new Color(0.35f, 0.65f, 0.90f);
+                if (GUILayout.Button($"→ {newFmtName}  -{FormatBytes(info.FormatSavings)}",
+                    new GUIStyle(GUI.skin.button) { fontSize = 10, fontStyle = FontStyle.Bold, normal = { textColor = Color.white } },
+                    GUILayout.Height(20)))
+                {
+                    VRAMChangeCompression(info);
+                }
+                GUI.backgroundColor = prev;
+            }
+
+            if (info.CanOptimizeSize)
+            {
+                prev = GUI.backgroundColor;
+                GUI.backgroundColor = new Color(0.90f, 0.65f, 0.35f);
+                if (GUILayout.Button($"→ 2048  -{FormatBytes(info.SizeSavings)}",
+                    new GUIStyle(GUI.skin.button) { fontSize = 10, fontStyle = FontStyle.Bold, normal = { textColor = Color.white } },
+                    GUILayout.Height(20)))
+                {
+                    VRAMChangeSize(info, 2048);
+                }
+                GUI.backgroundColor = prev;
+            }
+
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.EndHorizontal();
         }
-
-        GUILayout.FlexibleSpace();
-
-        // 머티리얼 드롭다운 버튼
-        if (info.UsedByMaterials.Count > 0)
-        {
-            if (GUILayout.Button($"Mat ×{info.UsedByMaterials.Count}", EditorStyles.miniButton,
-                GUILayout.Width(60), GUILayout.Height(22)))
-                info.MaterialDropdown = !info.MaterialDropdown;
-        }
-
-        EditorGUILayout.EndHorizontal();
 
         // 머티리얼 리스트
         if (info.MaterialDropdown && info.UsedByMaterials.Count > 0)
