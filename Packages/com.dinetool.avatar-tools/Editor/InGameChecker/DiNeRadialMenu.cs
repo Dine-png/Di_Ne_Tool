@@ -35,17 +35,26 @@ namespace DiNeTool.InGameChecker
         private static Texture2D _iconFourAxis;
         private static Texture2D _iconSubMenu;
 
+        private static Texture2D LoadIconFallback(string tName)
+        {
+            string prefix = "Packages/com.dine.tool/Assets/RadialMenuIcons/";
+            var tex = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(prefix + tName);
+            if (tex != null) return tex;
+            var guids = UnityEditor.AssetDatabase.FindAssets(tName.Replace(".png", "") + " t:Texture2D");
+            if (guids.Length > 0) return UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(UnityEditor.AssetDatabase.GUIDToAssetPath(guids[0]));
+            return null;
+        }
+
         private void LoadIconsIfNeeded()
         {
             if (_iconBack != null) return;
-            string prefix = "Packages/com.dine.tool/Assets/RadialMenuIcons/";
-            _iconBack = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(prefix + "BSX_GM_Back.png");
-            _iconBackHome = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(prefix + "BSX_GM_BackHome.png");
-            _iconToggle = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(prefix + "BSX_GM_Toggle.png");
-            _iconRadial = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(prefix + "BSX_GM_Radial.png");
-            _iconTwoAxis = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(prefix + "BSX_GM_2_Axis.png");
-            _iconFourAxis = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(prefix + "BSX_GM_4_Axis.png");
-            _iconSubMenu = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(prefix + "BSX_GM_Expressions.png");
+            _iconBack = LoadIconFallback("BSX_GM_Back.png");
+            _iconBackHome = LoadIconFallback("BSX_GM_BackHome.png");
+            _iconToggle = LoadIconFallback("BSX_GM_Toggle.png");
+            _iconRadial = LoadIconFallback("BSX_GM_Radial.png");
+            _iconTwoAxis = LoadIconFallback("BSX_GM_2_Axis.png");
+            _iconFourAxis = LoadIconFallback("BSX_GM_4_Axis.png");
+            _iconSubMenu = LoadIconFallback("BSX_GM_Expressions.png");
         }
         private static readonly Color ColText     = new(0.92f, 0.92f, 0.95f, 1f);
         private static readonly Color ColTextDim  = new(0.55f, 0.55f, 0.60f, 1f);
@@ -132,15 +141,25 @@ namespace DiNeTool.InGameChecker
             else
                 _hoverIndex = -1;
 
-            // 슬라이스 그리기
+            // 슬라이스 그리기 (DrawSolidArc 사용)
             for (int i = 0; i < count; i++)
             {
                 bool isHover = (i == _hoverIndex);
                 DrawSlice(center, i, count, controls[i], isHover);
             }
 
-            // 구분선
+            // 도넛 구멍 뚫기 (안쪽 부분 가리기)
+            DrawFilledCircle(center, InnerRadius + SliceGap, ColBg);
+
+            // 구분선 / 테두리선
             DrawSliceBorders(center, count);
+
+            // 문자열 / 아이콘 패스 (도넛 구멍을 뚫은 뒤 그리기 위함)
+            for (int i = 0; i < count; i++)
+            {
+                bool isHover = (i == _hoverIndex);
+                DrawSliceContent(center, i, count, controls[i], isHover);
+            }
 
             // 중앙 원 (Back 버튼)
             bool centerHover = (_hoverIndex == -2);
@@ -176,19 +195,25 @@ namespace DiNeTool.InGameChecker
         private void DrawSlice(Vector2 center, int index, int total, VRCExpressionsMenu.Control control, bool hover)
         {
             float anglePerSlice = 360f / total;
-            float startAngle = -90f + index * anglePerSlice + 1.2f; // 조각 사이의 물리적 공백 추가 (VRChat 동일)
+            float startAngle = -90f + index * anglePerSlice + 1.2f;
             float endAngle = -90f + (index + 1) * anglePerSlice - 1.2f;
 
-            // 슬라이스 채우기
             Color fillColor = hover ? ColSelected : ColBg;
+            if (IsControlActive(control)) fillColor = hover ? ColSelected : new Color(0.10f, 0.40f, 0.42f, 0.95f);
 
-            // 활성 상태 체크 (Toggle)
-            if (IsControlActive(control))
-                fillColor = hover ? ColSelected : new Color(0.10f, 0.40f, 0.42f, 0.95f);
+            // 무결점 안티앨리어싱 원호 렌더링. 중앙 구멍은 루프 밖에서 뚫음.
+            using (new Handles.DrawingScope(fillColor))
+            {
+                Handles.DrawSolidArc(center, Vector3.forward, AngleToVector(startAngle), endAngle - startAngle, MenuRadius);
+            }
+        }
 
-            DrawArcFilled(center, InnerRadius + SliceGap, MenuRadius, startAngle, endAngle, fillColor);
+        private void DrawSliceContent(Vector2 center, int index, int total, VRCExpressionsMenu.Control control, bool hover)
+        {
+            float anglePerSlice = 360f / total;
+            float startAngle = -90f + index * anglePerSlice + 1.2f;
+            float endAngle = -90f + (index + 1) * anglePerSlice - 1.2f;
 
-            // 아이콘 + 텍스트 위치
             float midAngle = (startAngle + endAngle) / 2f;
             float textDist = (InnerRadius + MenuRadius) / 2f;
             var textPos = center + AngleToVector(midAngle) * textDist;
@@ -223,10 +248,7 @@ namespace DiNeTool.InGameChecker
                 textPos.y += 10;
             }
 
-            // 컨트롤 이름
             DrawCenteredText(textPos, control.name, hover ? ColText : ColTextDim, 10);
-
-            // 서브 아이콘 (타입 표시)
             DrawControlTypeIndicator(textPos, control);
         }
 
@@ -590,35 +612,6 @@ namespace DiNeTool.InGameChecker
             Handles.BeginGUI();
             Handles.color = color;
             Handles.DrawWireDisc(center, Vector3.forward, radius, thickness);
-            Handles.EndGUI();
-        }
-
-        private static void DrawArcFilled(Vector2 center, float innerR, float outerR,
-            float startDeg, float endDeg, Color color)
-        {
-            Handles.BeginGUI();
-            Handles.color = color;
-
-            int steps = Mathf.Max(8, Mathf.CeilToInt(Mathf.Abs(endDeg - startDeg) / 3f));
-            var verts = new Vector3[(steps + 1) * 2];
-
-            for (int i = 0; i <= steps; i++)
-            {
-                float t = (float)i / steps;
-                float angle = Mathf.Lerp(startDeg, endDeg, t) * Mathf.Deg2Rad;
-                float cos = Mathf.Cos(angle);
-                float sin = Mathf.Sin(angle);
-                verts[i * 2]     = center + new Vector2(cos * innerR, sin * innerR);
-                verts[i * 2 + 1] = center + new Vector2(cos * outerR, sin * outerR);
-            }
-
-            for (int i = 0; i < steps; i++)
-            {
-                int a = i * 2;
-                Handles.DrawAAConvexPolygon(
-                    verts[a], verts[a + 1], verts[a + 3], verts[a + 2]);
-            }
-
             Handles.EndGUI();
         }
 
