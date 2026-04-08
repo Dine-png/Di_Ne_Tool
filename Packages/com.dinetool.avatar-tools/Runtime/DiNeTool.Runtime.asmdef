@@ -1,8 +1,8 @@
 {
     "name": "DiNeTool.Runtime",
     "references": [
-        "com.vrchat.base",
-        "com.vrchat.avatars"
+        "VRC.SDKBase",
+        "VRC.SDK3A"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
