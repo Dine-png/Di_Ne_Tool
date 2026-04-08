@@ -88,6 +88,7 @@ namespace DiNeTool.InGameChecker
 
         // 모듈 — GestureManager 대신 자체 모듈 사용
         private DiNeAvatarModule _module;
+        private DiNeRadialMenu _radialMenu;
         private List<VRCAvatarDescriptor> _sceneAvatars = new();
 
         // ─── Entry ───────────────────────────────────────────────────────────
@@ -143,6 +144,7 @@ namespace DiNeTool.InGameChecker
         {
             _module?.Disconnect();
             _module = null;
+            _radialMenu = null;
         }
 
         private void RefreshAvatarList()
@@ -167,6 +169,8 @@ namespace DiNeTool.InGameChecker
             if (_module is { Active: true })
             {
                 DrawActiveModule();
+                HLine();
+                DrawExpressionMenuSection();
                 HLine();
                 DrawGestureControl();
                 HLine();
@@ -317,6 +321,8 @@ namespace DiNeTool.InGameChecker
                                 _module = new DiNeAvatarModule(desc);
                                 _module.Connect();
                                 _statsDirty = true;
+                                _radialMenu = new DiNeRadialMenu();
+                                _radialMenu.Init(_module);
                             }
                         }
                         GUI.enabled = true;
@@ -365,6 +371,31 @@ namespace DiNeTool.InGameChecker
                 }
                 EditorGUILayout.EndHorizontal();
             }
+        }
+
+        // ═════════════════════════════════════════════════════════════════════
+        // RADIAL MENU
+        // ═════════════════════════════════════════════════════════════════════
+        private void DrawExpressionMenuSection()
+        {
+            if (_radialMenu == null || !_radialMenu.HasMenu) return;
+
+            GUILayout.Space(8);
+            SectionLabel("Expression Menu");
+            GUILayout.Space(8);
+
+            // 메뉴를 위한 높이 300 확보
+            Rect area = GUILayoutUtility.GetRect(0, 300, GUILayout.ExpandWidth(true));
+            // 중앙에 300x300 Rect 만들기
+            Rect centerRect = new Rect(area.x + (area.width - 300) / 2f, area.y, 300, 300);
+
+            using (new BgColor(ColCard))
+            {
+                GUI.Box(new Rect(area.x, area.y - 5, area.width, 310), "", "box");
+            }
+
+            _radialMenu.Draw(centerRect);
+            GUILayout.Space(10);
         }
 
         // ═════════════════════════════════════════════════════════════════════
