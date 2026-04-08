@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
@@ -306,8 +305,6 @@ namespace DiNeTool.InGameChecker
                 _avatarAnimators.Add(anim);
 
             VRC_AvatarParameterDriver.OnApplySettings += OnParameterDriverApply;
-            VRC_AnimatorLayerControl.Initialize        += OnAnimatorLayerControl;
-            VRC_PlayableLayerControl.Initialize         += OnPlayableLayerControl;
         }
 
         private void StopVrcHooks()
@@ -316,8 +313,6 @@ namespace DiNeTool.InGameChecker
             _hooked = false;
 
             VRC_AvatarParameterDriver.OnApplySettings -= OnParameterDriverApply;
-            VRC_AnimatorLayerControl.Initialize        -= OnAnimatorLayerControl;
-            VRC_PlayableLayerControl.Initialize         -= OnPlayableLayerControl;
 
             _avatarAnimators.Clear();
         }
@@ -344,16 +339,6 @@ namespace DiNeTool.InGameChecker
                         break;
                 }
             }
-        }
-
-        private void OnAnimatorLayerControl(VRC_AnimatorLayerControl control, Animator animator)
-        {
-            // 최소 구현 — 필요시 확장
-        }
-
-        private void OnPlayableLayerControl(VRC_PlayableLayerControl control, Animator animator)
-        {
-            // 최소 구현 — 필요시 확장
         }
 
         // ═════════════════════════════════════════════════════════════════════
