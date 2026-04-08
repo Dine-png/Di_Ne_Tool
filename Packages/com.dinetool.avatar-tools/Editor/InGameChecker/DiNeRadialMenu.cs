@@ -25,6 +25,28 @@ namespace DiNeTool.InGameChecker
         private static readonly Color ColSelected = new(0.07f, 0.55f, 0.58f, 1f);
         private static readonly Color ColCenter   = new(0.06f, 0.27f, 0.29f, 1f);
         private static readonly Color ColCenterSel= new(0.06f, 0.20f, 0.22f, 1f);
+
+        // ─── Default Icons ───────────────────────────────────────────────────
+        private static Texture2D _iconBack;
+        private static Texture2D _iconBackHome;
+        private static Texture2D _iconToggle;
+        private static Texture2D _iconRadial;
+        private static Texture2D _iconTwoAxis;
+        private static Texture2D _iconFourAxis;
+        private static Texture2D _iconSubMenu;
+
+        private void LoadIconsIfNeeded()
+        {
+            if (_iconBack != null) return;
+            string prefix = "Packages/com.dine.tool/Assets/RadialMenuIcons/";
+            _iconBack = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(prefix + "BSX_GM_Back.png");
+            _iconBackHome = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(prefix + "BSX_GM_BackHome.png");
+            _iconToggle = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(prefix + "BSX_GM_Toggle.png");
+            _iconRadial = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(prefix + "BSX_GM_Radial.png");
+            _iconTwoAxis = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(prefix + "BSX_GM_2_Axis.png");
+            _iconFourAxis = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(prefix + "BSX_GM_4_Axis.png");
+            _iconSubMenu = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(prefix + "BSX_GM_Expressions.png");
+        }
         private static readonly Color ColText     = new(0.92f, 0.92f, 0.95f, 1f);
         private static readonly Color ColTextDim  = new(0.55f, 0.55f, 0.60f, 1f);
         private static readonly Color ColActive   = new(0.20f, 0.75f, 0.70f, 1f);
@@ -78,6 +100,8 @@ namespace DiNeTool.InGameChecker
         {
             if (_currentMenu == null || _module == null) return;
 
+            LoadIconsIfNeeded();
+
             var center = area.center;
             var evt = Event.current;
             _mousePos = evt.mousePosition - center;
@@ -123,9 +147,20 @@ namespace DiNeTool.InGameChecker
             DrawFilledCircle(center, InnerRadius, centerHover ? ColCenterSel : ColCenter);
             DrawCircleOutline(center, InnerRadius, ColBorder, 1.5f);
 
-            // 중앙 텍스트
-            string centerText = _menuStack.Count > 0 ? "Back" : "●";
-            DrawCenteredText(center, centerText, centerHover ? ColText : ColTextDim, 12);
+            var iconImg = _menuStack.Count > 0 ? _iconBack : _iconBackHome;
+            if (iconImg != null)
+            {
+                var prevColor = GUI.color;
+                GUI.color = centerHover ? new Color(1, 1, 1, 0.9f) : new Color(0.8f, 0.8f, 0.8f, 0.9f);
+                GUI.DrawTexture(new Rect(center.x - 20, center.y - 20, 40, 40), iconImg, ScaleMode.ScaleToFit);
+                GUI.color = prevColor;
+            }
+            else
+            {
+                // 중앙 텍스트 (아이콘 없을때 대비)
+                string centerText = _menuStack.Count > 0 ? "Back" : "●";
+                DrawCenteredText(center, centerText, centerHover ? ColText : ColTextDim, 12);
+            }
 
             // 커서
             if (mouseDist > 5f && area.Contains(evt.mousePosition))
@@ -158,11 +193,33 @@ namespace DiNeTool.InGameChecker
             float textDist = (InnerRadius + MenuRadius) / 2f;
             var textPos = center + AngleToVector(midAngle) * textDist;
 
+            Texture2D tex = control.icon;
+            if (tex == null)
+            {
+                switch (control.type)
+                {
+                    case VRCExpressionsMenu.Control.ControlType.Button:
+                    case VRCExpressionsMenu.Control.ControlType.Toggle:
+                        tex = _iconToggle; break;
+                    case VRCExpressionsMenu.Control.ControlType.SubMenu:
+                        tex = _iconSubMenu; break;
+                    case VRCExpressionsMenu.Control.ControlType.RadialPuppet:
+                        tex = _iconRadial; break;
+                    case VRCExpressionsMenu.Control.ControlType.TwoAxisPuppet:
+                        tex = _iconTwoAxis; break;
+                    case VRCExpressionsMenu.Control.ControlType.FourAxisPuppet:
+                        tex = _iconFourAxis; break;
+                }
+            }
+
             // 아이콘
-            if (control.icon != null)
+            if (tex != null)
             {
                 var iconRect = new Rect(textPos.x - IconSize / 2, textPos.y - IconSize / 2 - 8, IconSize, IconSize);
-                GUI.DrawTexture(iconRect, control.icon, ScaleMode.ScaleToFit);
+                var prevColor = GUI.color;
+                GUI.color = new Color(1, 1, 1, 0.9f);
+                GUI.DrawTexture(iconRect, tex, ScaleMode.ScaleToFit);
+                GUI.color = prevColor;
                 textPos.y += 10;
             }
 
