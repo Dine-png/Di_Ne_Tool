@@ -2,7 +2,7 @@
 using UnityEngine;
 using UnityEditor;
 
-public class DiNeAnimationPoseFreezer : EditorWindow
+public class DiNeShapeKeyFreezer : EditorWindow
 {
     private enum LanguagePreset { English, Korean, Japanese }
     private LanguagePreset language = LanguagePreset.Korean;
@@ -16,10 +16,10 @@ public class DiNeAnimationPoseFreezer : EditorWindow
     private Texture2D tabIcon;
     private Font      titleFont;
 
-    [MenuItem("DiNe/Avatar/Animation Pose Freezer")]
+    [MenuItem("DiNe/Avatar/ShapeKey Freezer")]
     public static void ShowWindow()
     {
-        EditorWindow window = GetWindow<DiNeAnimationPoseFreezer>("Pose Freezer");
+        EditorWindow window = GetWindow<DiNeShapeKeyFreezer>("ShapeKey Freezer");
         window.minSize = new Vector2(300, 300);
         window.position = new Rect(window.position.x, window.position.y, 420, 420);
     }
@@ -29,7 +29,7 @@ public class DiNeAnimationPoseFreezer : EditorWindow
         windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
         tabIcon    = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
         titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
-        titleContent = new GUIContent("Pose Freezer", tabIcon);
+        titleContent = new GUIContent("ShapeKey Freezer", tabIcon);
         SetLanguage(language);
     }
 
@@ -52,7 +52,7 @@ public class DiNeAnimationPoseFreezer : EditorWindow
         float iconSize = windowIcon != null ? windowIcon.height * 2f / 3f : 48;
         GUILayout.Label(windowIcon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
         GUILayout.Space(6);
-        GUILayout.Label("Pose Freezer", titleStyle, GUILayout.Height(iconSize));
+        GUILayout.Label("ShapeKey Freezer", titleStyle, GUILayout.Height(iconSize));
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
 
@@ -60,9 +60,9 @@ public class DiNeAnimationPoseFreezer : EditorWindow
         string desc = "";
         switch (language)
         {
-            case LanguagePreset.Korean: desc = "특정 애니메이션 포즈를 프리팹 형태로 고정시켜 저장합니다."; break;
-            case LanguagePreset.Japanese: desc = "特定のアニメーションポーズを固定してプレハブとして保存します。"; break;
-            default: desc = "Freeze and save a specific animation pose as a static prefab."; break;
+            case LanguagePreset.Korean: desc = "애니메이션 클립의 쉐이프키 값을 고정시켜 저장합니다."; break;
+            case LanguagePreset.Japanese: desc = "アニメーションクリップのシェイプキー値を固定して保存します。"; break;
+            default: desc = "Freeze and save BlendShape (ShapeKey) values from an animation clip."; break;
         }
         GUILayout.Label(desc, new GUIStyle(EditorStyles.wordWrappedLabel) 
             { alignment = TextAnchor.MiddleCenter, fontSize = 12, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } });
@@ -128,7 +128,7 @@ public class DiNeAnimationPoseFreezer : EditorWindow
         if (GUILayout.Button(UI_TEXT[4], new GUIStyle(GUI.skin.button) { fontStyle = FontStyle.Bold, normal = { textColor = Color.white } }, GUILayout.Height(38)))
         {
             SampleBlendShapesOnly();
-            Debug.Log($"[DiNe Pose Freezer] {targetObject.name} — {UI_TEXT[5]}");
+            Debug.Log($"[DiNe ShapeKey Freezer] {targetObject.name} — {UI_TEXT[5]}");
         }
         GUI.backgroundColor = prevBg;
 

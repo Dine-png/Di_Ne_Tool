@@ -2,21 +2,21 @@
 using UnityEngine;
 using UnityEditor;
 
-public class AnimationPoseFreezer : EditorWindow
+public class ShapeKeyFreezer : EditorWindow
 {
     private GameObject targetObject;
     private AnimationClip animationClip;
     private float clipTime = 0.0f;
 
-    [MenuItem("Tools/Animation Pose Freezer")]
+    [MenuItem("Tools/ShapeKey Freezer")]
     public static void ShowWindow()
     {
-        GetWindow<AnimationPoseFreezer>("Pose Freezer");
+        GetWindow<ShapeKeyFreezer>("ShapeKey Freezer");
     }
 
     void OnGUI()
     {
-        GUILayout.Label("애니메이션 포즈 고정 도구", EditorStyles.boldLabel);
+        GUILayout.Label("쉐이프키 고정 도구", EditorStyles.boldLabel);
         GUILayout.Space(10);
 
         targetObject = (GameObject)EditorGUILayout.ObjectField("대상 오브젝트 (Root)", targetObject, typeof(GameObject), true);
@@ -63,7 +63,7 @@ public class AnimationPoseFreezer : EditorWindow
     void ApplyPosePermanently()
     {
         SamplePose();
-        Debug.Log($"[Pose Freezer] {targetObject.name} 포즈 고정 완료!");
+        Debug.Log($"[ShapeKey Freezer] {targetObject.name} 쉐이프키 고정 완료!");
     }
 }
 #endif // [중요] 에디터 코드 끝

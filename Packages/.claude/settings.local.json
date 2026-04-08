@@ -6,7 +6,16 @@
       "Bash(tree -L 3 -I *.meta)",
       "Bash(xargs grep:*)",
       "Bash(grep -l \"ApplyPreset\" \"D:/Mew Project/Packages/jp.lilxyzw.liltoon/Editor\"/*.cs)",
-      "Bash(find /c/Users/butei/OneDrive/문서/GitHub/Di_Ne_Tool/Packages/com.dinetool.avatar-tools -type f -name *MultiDresser* -o -name *MultiMenu* -o -name *MultiIcon*)"
+      "Bash(find /c/Users/butei/OneDrive/문서/GitHub/Di_Ne_Tool/Packages/com.dinetool.avatar-tools -type f -name *MultiDresser* -o -name *MultiMenu* -o -name *MultiIcon*)",
+      "Bash(mv Editor/AnimationPoseFreezer/DiNeAnimationPoseFreezer.cs Editor/AnimationPoseFreezer/DiNeShapeKeyFreezer.cs)",
+      "Bash(mv Editor/AnimationPoseFreezer/DiNeAnimationPoseFreezer.cs.meta Editor/AnimationPoseFreezer/DiNeShapeKeyFreezer.cs.meta)",
+      "Bash(mv Editor/AnimationPoseFreezer Editor/ShapeKeyFreezer)",
+      "Bash(mv Runtime/AnimationPoseFreezer/AnimationPoseFreezer.cs Runtime/AnimationPoseFreezer/ShapeKeyFreezer.cs)",
+      "Bash(mv Runtime/AnimationPoseFreezer/AnimationPoseFreezer.cs.meta Runtime/AnimationPoseFreezer/ShapeKeyFreezer.cs.meta)",
+      "Bash(mv Runtime/AnimationPoseFreezer Runtime/ShapeKeyFreezer)",
+      "Bash(mv Runtime/GestureManager/DiNeGestureManager.cs Runtime/GestureManager/DiNeInGameChecker.cs)",
+      "Bash(mv Runtime/GestureManager/DiNeGestureManager.cs.meta Runtime/GestureManager/DiNeInGameChecker.cs.meta)",
+      "Bash(mv Runtime/GestureManager Runtime/InGameChecker)"
     ]
   }
 }

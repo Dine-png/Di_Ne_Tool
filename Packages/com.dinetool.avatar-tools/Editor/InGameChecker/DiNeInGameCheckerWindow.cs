@@ -9,7 +9,7 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using VRC.SDKBase;
 
-namespace DiNeTool.GestureManager
+namespace DiNeTool.InGameChecker
 {
     public class DiNeInGameCheckerWindow : EditorWindow
     {
@@ -24,13 +24,13 @@ namespace DiNeTool.GestureManager
 
         private static readonly string[][] UI_TEXT =
         {
-            /* 00 */ new[] { "Avatar can be controlled in Play Mode",          "플레이 모드에서 아바타를 제어할 수 있습니다",  "プレイモードでアバターを操作できます"             },
+            /* 00 */ new[] { "Avatar can be controlled in Play Mode",          "플레이 모드에서 아바타를 제어할 수 있습니다",    "プレイモードでアバターを操作できます"             },
             /* 01 */ new[] { "▶   Enter Play Mode",                            "▶   플레이 모드 시작",                          "▶   プレイモード開始"                             },
             /* 02 */ new[] { "■   Exit Play Mode",                             "■   플레이 모드 종료",                          "■   プレイモード終了"                             },
             /* 03 */ new[] { "Select Avatar",                                  "아바타 선택",                                    "アバター選択"                                     },
-            /* 04 */ new[] { "Select",                                         "설정",                                          "設定"                                             },
+            /* 04 */ new[] { "Select",                                         "선택",                                          "選択"                                             },
             /* 05 */ new[] { "Non-Eligible",                                   "비적합 아바타",                                  "非適格アバター"                                   },
-            /* 06 */ new[] { "Refresh",                                        "다시 확인",                                      "更新"                                             },
+            /* 06 */ new[] { "Refresh",                                        "새로고침",                                      "更新"                                             },
             /* 07 */ new[] { "No VRCAvatarDescriptor in scene",                "씬에 VRCAvatarDescriptor가 없습니다",            "シーンにVRCAvatarDescriptorがありません"           },
             /* 08 */ new[] { "✕  Unlink",                                      "✕  해제",                                       "✕  解除"                                          },
             /* 09 */ new[] { "Avatar Performance Info",                        "아바타 성능 정보",                               "アバターパフォーマンス情報"                       },
@@ -39,14 +39,23 @@ namespace DiNeTool.GestureManager
             /* 12 */ new[] { "Vertices",                                       "버텍스",                                        "バーテックス"                                     },
             /* 13 */ new[] { "Meshes",                                         "메쉬",                                          "メッシュ"                                         },
             /* 14 */ new[] { "Bones",                                          "본",                                            "ボーン"                                           },
-            /* 15 */ new[] { "Materials",                                      "메테리얼",                                      "マテリアル"                                       },
+            /* 15 */ new[] { "Materials",                                      "머티리얼",                                      "マテリアル"                                       },
             /* 16 */ new[] { "Textures",                                       "텍스쳐",                                        "テクスチャー"                                     },
             /* 17 */ new[] { "VRAM",                                           "VRAM",                                          "VRAM"                                             },
             /* 18 */ new[] { "Est. Upload",                                    "업로드 예상",                                   "推定アップロード"                                 },
             /* 19 */ new[] { "Refresh",                                        "새로고침",                                      "更新"                                             },
             /* 20 */ new[] { "※ May differ from actual upload size",           "※ 실제 업로드 크기와 다를 수 있습니다",         "※ 実際のアップロードサイズと異なる場合があります" },
             /* 21 */ new[] { "Component is disabled",                          "컴포넌트가 비활성화 상태입니다",                 "コンポーネントが無効です"                         },
-            /* 22 */ new[] { "Avatar",                                         "Avatar",                                        "アバター"                                         },
+            /* 22 */ new[] { "Avatar",                                         "아바타",                                        "アバター"                                         },
+            /* 23 */ new[] { "Left Hand",                                      "왼손",                                          "左手"                                             },
+            /* 24 */ new[] { "Right Hand",                                     "오른손",                                        "右手"                                             },
+            /* 25 */ new[] { "Fist",                                           "주먹",                                          "グー"                                             },
+            /* 26 */ new[] { "Open",                                           "펼치기",                                        "パー"                                             },
+            /* 27 */ new[] { "FingerPoint",                                    "검지",                                          "指差し"                                           },
+            /* 28 */ new[] { "Victory",                                        "브이",                                          "ピース"                                           },
+            /* 29 */ new[] { "Rock&Roll",                                      "락앤롤",                                        "ロック"                                           },
+            /* 30 */ new[] { "Gun",                                            "핑거건",                                        "ピストル"                                         },
+            /* 31 */ new[] { "ThumbsUp",                                       "엄지척",                                        "サムズアップ"                                     },
         };
         private string T(int i) => UI_TEXT[i][L];
 
@@ -71,7 +80,7 @@ namespace DiNeTool.GestureManager
         private DiNeAvatarStats.StatsData _stats;
 
         // GestureManager references
-        private DiNeGestureManager                    _wrapper;
+        private DiNeInGameChecker                    _wrapper;
         private BlackStartX.GestureManager.GestureManager _gm;
         private Editor                                _gmEditor; // for Module.EditorContent()
 
@@ -142,12 +151,12 @@ namespace DiNeTool.GestureManager
         // ─── Manager Lifecycle ────────────────────────────────────────────────────
         private void FindOrCreateManager()
         {
-            _wrapper = FindObjectOfType<DiNeGestureManager>();
+            _wrapper = FindObjectOfType<DiNeInGameChecker>();
 
             if (_wrapper == null)
             {
-                var go = new GameObject("DiNe Gesture Manager") { hideFlags = HideFlags.HideInHierarchy };
-                _wrapper = go.AddComponent<DiNeGestureManager>();
+                var go = new GameObject("DiNe InGame Checker") { hideFlags = HideFlags.HideInHierarchy };
+                _wrapper = go.AddComponent<DiNeInGameChecker>();
             }
 
             _gm = _wrapper.Core;
@@ -205,18 +214,26 @@ namespace DiNeTool.GestureManager
             DrawLangBar();
             HLine();
 
-            _scroll = EditorGUILayout.BeginScrollView(_scroll);
-
             if (_gm != null && _gm.Module != null)
+            {
+                // 모듈 UI는 절대 좌표를 사용하므로 ScrollView 밖에서 렌더링
                 DrawActiveModule();
+
+                HLine();
+                _scroll = EditorGUILayout.BeginScrollView(_scroll);
+                DrawStatsSection();
+                GUILayout.Space(10);
+                EditorGUILayout.EndScrollView();
+            }
             else
+            {
+                _scroll = EditorGUILayout.BeginScrollView(_scroll);
                 DrawSetup();
-
-            HLine();
-            DrawStatsSection();
-
-            GUILayout.Space(10);
-            EditorGUILayout.EndScrollView();
+                HLine();
+                DrawStatsSection();
+                GUILayout.Space(10);
+                EditorGUILayout.EndScrollView();
+            }
         }
 
         // ─── Header ───────────────────────────────────────────────────────────────
@@ -394,6 +411,9 @@ namespace DiNeTool.GestureManager
         // ═════════════════════════════════════════════════════════════════════════
         // ACTIVE MODULE
         // ═════════════════════════════════════════════════════════════════════════
+        // 제스처 이름 목록 (UI_TEXT 25~31에 대응)
+        private static readonly string[] GestureNames = { "Fist", "Open", "FingerPoint", "Victory", "Rock&Roll", "Gun", "ThumbsUp" };
+
         private void DrawActiveModule()
         {
             GUILayout.Space(4);
@@ -408,7 +428,7 @@ namespace DiNeTool.GestureManager
                     { fontSize = 12, normal = { textColor = new Color(0.80f, 0.95f, 0.70f) } },
                     GUILayout.ExpandWidth(true));
 
-                using (new BgColor(ColRed))
+                using (new BgColor(ColAccent))
                 {
                     if (GUILayout.Button(T(8), GUILayout.Width(70), GUILayout.Height(20)))
                     {
@@ -421,11 +441,74 @@ namespace DiNeTool.GestureManager
 
             GUILayout.Space(4);
 
-            // 원본 모듈에 UI 위임 (제스처, 라디알 메뉴, 툴, 디버그 전부)
+            // ─── 제스처 리스트 (번역 + 테두리) ───
+            DrawGestureList();
+
+            GUILayout.Space(4);
+
+            // 원본 모듈에 UI 위임 (라디알 메뉴, 툴, 디버그 등)
             if (_gmEditor != null)
             {
                 _gm.Module.EditorHeader();
                 _gm.Module.EditorContent(_gmEditor, rootVisualElement);
+            }
+        }
+
+        private void DrawGestureList()
+        {
+            using (new BgColor(ColCard))
+            {
+                EditorGUILayout.BeginVertical("box");
+
+                // 헤더
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Label(T(23), new GUIStyle(EditorStyles.boldLabel)
+                    { alignment = TextAnchor.MiddleCenter, fontSize = 11, normal = { textColor = ColAccent } },
+                    GUILayout.ExpandWidth(true));
+                GUILayout.Label(T(24), new GUIStyle(EditorStyles.boldLabel)
+                    { alignment = TextAnchor.MiddleCenter, fontSize = 11, normal = { textColor = ColAccent } },
+                    GUILayout.ExpandWidth(true));
+                EditorGUILayout.EndHorizontal();
+
+                GUILayout.Space(2);
+
+                // 제스처 항목
+                for (int i = 0; i < GestureNames.Length; i++)
+                {
+                    string translated = T(25 + i);
+                    string original   = GestureNames[i];
+                    string label      = (L == 0) ? original : $"{translated}  ({original})";
+
+                    EditorGUILayout.BeginHorizontal();
+
+                    // 왼손
+                    using (new BgColor(new Color(0.25f, 0.25f, 0.28f)))
+                    {
+                        EditorGUILayout.BeginVertical("box");
+                        GUILayout.Label(label, new GUIStyle(EditorStyles.label)
+                            { alignment = TextAnchor.MiddleCenter, fontSize = 11,
+                              normal = { textColor = ColText } },
+                            GUILayout.Height(20), GUILayout.ExpandWidth(true));
+                        EditorGUILayout.EndVertical();
+                    }
+
+                    GUILayout.Space(2);
+
+                    // 오른손
+                    using (new BgColor(new Color(0.25f, 0.25f, 0.28f)))
+                    {
+                        EditorGUILayout.BeginVertical("box");
+                        GUILayout.Label(label, new GUIStyle(EditorStyles.label)
+                            { alignment = TextAnchor.MiddleCenter, fontSize = 11,
+                              normal = { textColor = ColText } },
+                            GUILayout.Height(20), GUILayout.ExpandWidth(true));
+                        EditorGUILayout.EndVertical();
+                    }
+
+                    EditorGUILayout.EndHorizontal();
+                }
+
+                EditorGUILayout.EndVertical();
             }
         }
 
@@ -437,7 +520,7 @@ namespace DiNeTool.GestureManager
             bool hasAvatar = _gm?.Module?.Avatar != null;
             GUI.enabled = hasAvatar;
 
-            using (new BgColor(_showStats ? new Color(0.28f, 0.48f, 0.28f) : ColCard))
+            using (new BgColor(_showStats ? ColAccent : ColCard))
             {
                 if (GUILayout.Button((_showStats ? "▼  " : "▶  ") + T(9), GUILayout.Height(28)))
                 {

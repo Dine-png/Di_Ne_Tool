@@ -1,7 +1,7 @@
 using BlackStartX.GestureManager;
 using UnityEngine;
 
-namespace DiNeTool.GestureManager
+namespace DiNeTool.InGameChecker
 {
     /// <summary>
     /// DiNe 인게임 체커가 내부적으로 씬에 생성하는 래퍼 컴포넌트.
@@ -10,7 +10,7 @@ namespace DiNeTool.GestureManager
     [AddComponentMenu("")] // 컴포넌트 메뉴에서 숨김
     [RequireComponent(typeof(BlackStartX.GestureManager.GestureManager))]
     [DisallowMultipleComponent]
-    public class DiNeGestureManager : MonoBehaviour
+    public class DiNeInGameChecker : MonoBehaviour
     {
         private BlackStartX.GestureManager.GestureManager _gm;
 

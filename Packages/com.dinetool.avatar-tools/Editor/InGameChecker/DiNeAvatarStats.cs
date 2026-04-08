@@ -3,7 +3,7 @@ using UnityEditor;
 using UnityEngine;
 using VRC.SDK3.Avatars.Components;
 
-namespace DiNeTool.GestureManager
+namespace DiNeTool.InGameChecker
 {
     public static class DiNeAvatarStats
     {

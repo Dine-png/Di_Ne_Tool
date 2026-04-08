@@ -173,7 +173,7 @@ public class DiNeMaterialTool : EditorWindow
     // ══════════════════════════════════════════════════════════════════════════
     //  Menu / Lifecycle
     // ══════════════════════════════════════════════════════════════════════════
-    [MenuItem("DiNe/Shading/Material Tool")]
+    [MenuItem("DiNe/Material Tool")]
     public static void ShowWindow()
     {
         var w = GetWindow<DiNeMaterialTool>("DiNe Material Tool");
