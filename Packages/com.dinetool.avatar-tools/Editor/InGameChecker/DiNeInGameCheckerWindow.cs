@@ -6,6 +6,7 @@ using BlackStartX.GestureManager.Data;
 using BlackStartX.GestureManager.Editor.Modules;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.UIElements;
 using VRC.SDKBase;
 
 namespace DiNeTool.InGameChecker
@@ -81,6 +82,7 @@ namespace DiNeTool.InGameChecker
         // GestureManager references
         private DiNeInGameChecker                    _wrapper;
         private BlackStartX.GestureManager.GestureManager _gm;
+        private Editor                                _gmEditor;
 
         // ─── Entry ───────────────────────────────────────────────────────────────
         [MenuItem("DiNe/Avatar/In-Game Checker")]
@@ -108,6 +110,7 @@ namespace DiNeTool.InGameChecker
         {
             EditorApplication.playModeStateChanged -= OnPlayModeChanged;
             EditorApplication.hierarchyChanged     -= OnHierarchyChanged;
+            DestroyGMEditor();
         }
 
         private void OnDestroy()
@@ -134,6 +137,7 @@ namespace DiNeTool.InGameChecker
             if (state == PlayModeStateChange.ExitingPlayMode)
             {
                 _statsDirty = true;
+                DestroyGMEditor();
             }
             Repaint();
         }
@@ -156,6 +160,19 @@ namespace DiNeTool.InGameChecker
             }
 
             _gm = _wrapper.Core;
+            RefreshGMEditor();
+        }
+
+        private void RefreshGMEditor()
+        {
+            DestroyGMEditor();
+            if (_gm != null)
+                _gmEditor = Editor.CreateEditor(_gm);
+        }
+
+        private void DestroyGMEditor()
+        {
+            if (_gmEditor != null) { DestroyImmediate(_gmEditor); _gmEditor = null; }
         }
 
         private void TryAutoInit()
@@ -428,6 +445,15 @@ namespace DiNeTool.InGameChecker
 
             // ─── 제스처 컨트롤 패널 ───
             DrawGesturePanel();
+
+            GUILayout.Space(4);
+
+            // 원본 모듈 UI (레이디얼 메뉴, 툴, 디버그 등)
+            if (_gmEditor != null)
+            {
+                _gm.Module.EditorHeader();
+                _gm.Module.EditorContent(_gmEditor, rootVisualElement);
+            }
         }
 
         private void DrawGesturePanel()
