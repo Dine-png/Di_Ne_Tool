@@ -20,8 +20,8 @@ namespace DiNeTool.InGameChecker
         private const int   CircleSegments = 64;
 
         // ─── Colors (VRChat 스타일) ──────────────────────────────────────────
-        private static readonly Color ColBg       = new(0.14f, 0.18f, 0.20f, 0.95f);
-        private static readonly Color ColBorder   = new(0.10f, 0.35f, 0.38f, 1f);
+        private static readonly Color ColBg       = new(0.12f, 0.15f, 0.17f, 0.95f);
+        private static readonly Color ColBorder   = new(0.05f, 0.45f, 0.50f, 1f);
         private static readonly Color ColSelected = new(0.07f, 0.55f, 0.58f, 1f);
         private static readonly Color ColCenter   = new(0.06f, 0.27f, 0.29f, 1f);
         private static readonly Color ColCenterSel= new(0.06f, 0.20f, 0.22f, 1f);
@@ -56,6 +56,14 @@ namespace DiNeTool.InGameChecker
         {
             _module = module;
             _rootMenu = module.Descriptor.expressionsMenu;
+            _currentMenu = _rootMenu;
+            _menuStack.Clear();
+            _puppetMode = PuppetMode.None;
+        }
+
+        public void SetRootMenu(VRCExpressionsMenu newRoot)
+        {
+            _rootMenu = newRoot;
             _currentMenu = _rootMenu;
             _menuStack.Clear();
             _puppetMode = PuppetMode.None;
@@ -133,8 +141,8 @@ namespace DiNeTool.InGameChecker
         private void DrawSlice(Vector2 center, int index, int total, VRCExpressionsMenu.Control control, bool hover)
         {
             float anglePerSlice = 360f / total;
-            float startAngle = -90f + index * anglePerSlice;
-            float endAngle = startAngle + anglePerSlice;
+            float startAngle = -90f + index * anglePerSlice + 1.2f; // 조각 사이의 물리적 공백 추가 (VRChat 동일)
+            float endAngle = -90f + (index + 1) * anglePerSlice - 1.2f;
 
             // 슬라이스 채우기
             Color fillColor = hover ? ColSelected : ColBg;
@@ -184,14 +192,18 @@ namespace DiNeTool.InGameChecker
 
         private void DrawSliceBorders(Vector2 center, int count)
         {
+            // Angular Gap을 적용했으므로, 얇은 선 그리기 대신 각 슬라이스의 테두리를 따라 그려야 VRC 느낌이 더 살지만,
+            // 기본 Border 선도 유지합니다. 겹치지 않게 조절 가능.
             float anglePerSlice = 360f / count;
             for (int i = 0; i < count; i++)
             {
-                float angle = -90f + i * anglePerSlice;
-                var dir = AngleToVector(angle);
-                var from = center + dir * InnerRadius;
-                var to = center + dir * MenuRadius;
-                DrawLine(from, to, ColBorder, 1.5f);
+                float angle = -90f + i * anglePerSlice - 0.5f;
+                float angle2 = -90f + i * anglePerSlice + 0.5f;
+                // 약간 두꺼운 블랙 라인으로 파이를 나누는 효과
+                var dir1 = AngleToVector(angle);
+                var dir2 = AngleToVector(angle2);
+                DrawLine(center + dir1 * InnerRadius, center + dir1 * MenuRadius, ColBorder, 1f);
+                DrawLine(center + dir2 * InnerRadius, center + dir2 * MenuRadius, ColBorder, 1f);
             }
         }
 

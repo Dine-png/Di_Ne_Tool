@@ -89,6 +89,7 @@ namespace DiNeTool.InGameChecker
         // 모듈 — GestureManager 대신 자체 모듈 사용
         private DiNeAvatarModule _module;
         private DiNeRadialMenu _radialMenu;
+        private bool _isOptionMenuMode;
         private List<VRCAvatarDescriptor> _sceneAvatars = new();
 
         // ─── Entry ───────────────────────────────────────────────────────────
@@ -145,6 +146,7 @@ namespace DiNeTool.InGameChecker
             _module?.Disconnect();
             _module = null;
             _radialMenu = null;
+            _isOptionMenuMode = false;
         }
 
         private void RefreshAvatarList()
@@ -378,11 +380,39 @@ namespace DiNeTool.InGameChecker
         // ═════════════════════════════════════════════════════════════════════
         private void DrawExpressionMenuSection()
         {
-            if (_radialMenu == null || !_radialMenu.HasMenu) return;
+            if (_radialMenu == null) return;
 
             GUILayout.Space(8);
-            SectionLabel("Expression Menu");
-            GUILayout.Space(8);
+
+            EditorGUILayout.BeginHorizontal();
+            SectionLabel(_isOptionMenuMode ? "DiNe Options Menu" : "Expression Menu");
+            GUILayout.FlexibleSpace();
+
+            // Options Toggle Button (DiNe Icon)
+            var prevColor = GUI.color;
+            GUI.color = _isOptionMenuMode ? ColAccent : new Color(0.8f, 0.8f, 0.8f, 1f);
+            if (GUILayout.Button(_headerIcon, GUIStyle.none, GUILayout.Width(24), GUILayout.Height(24)))
+            {
+                _isOptionMenuMode = !_isOptionMenuMode;
+                if (_isOptionMenuMode)
+                {
+                    _radialMenu.SetRootMenu(DiNeVirtualMenus.CreateOptionsMenu());
+                }
+                else
+                {
+                    _radialMenu.SetRootMenu(_module.Descriptor.expressionsMenu);
+                }
+            }
+            GUI.color = prevColor;
+            EditorGUILayout.EndHorizontal();
+
+            GUILayout.Space(4);
+
+            if (!_radialMenu.HasMenu)
+            {
+                DrawCenteredHint("No Menu Configured", ColSubText);
+                return;
+            }
 
             // 메뉴를 위한 높이 300 확보
             Rect area = GUILayoutUtility.GetRect(0, 300, GUILayout.ExpandWidth(true));
