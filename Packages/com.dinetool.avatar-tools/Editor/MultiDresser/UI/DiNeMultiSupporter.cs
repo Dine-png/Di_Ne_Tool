@@ -216,16 +216,10 @@ public class DiNeMultiSupporter : Editor
 
         EditorGUILayout.Space(20);
         
-        // [생성 버튼]
-        var genPrevCol = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
-        var genBtnStyle = new GUIStyle(GUI.skin.button) { fontSize = 18, fontStyle = FontStyle.Bold, fixedHeight = 50, normal = { textColor = Color.white } };
-        if (GUILayout.Button(lang["generate"], genBtnStyle))
-        {
-            DiNeMultiIconGenerator.GenerateIcons(gen);
-            gen.Generate();
-        }
-        GUI.backgroundColor = genPrevCol;
+        // [자동 적용 힌트]
+        GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f);
+        EditorGUILayout.HelpBox("플레이 모드 진입 및 아바타 업로드 시 전체 설정이 자동으로 생성/적용됩니다.", MessageType.Info);
+        GUI.backgroundColor = Color.white;
 
         GUILayout.Space(5);
 
