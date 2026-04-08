@@ -32,31 +32,36 @@ namespace DiNeTool.InGameChecker
 
             data.MeshCount = skinnedRenderers.Length + meshRenderers.Length;
 
-            var collectedMeshes = new HashSet<Mesh>();
+            // mesh.triangles 는 호출마다 배열을 힙에 복사하므로 고유 메쉬당 한 번만 호출해서 캐시
+            var meshTriLengthCache = new Dictionary<Mesh, int>();
 
             foreach (var smr in skinnedRenderers)
             {
                 if (smr.sharedMesh == null) continue;
-                data.TriangleCount += smr.sharedMesh.triangles.Length / 3;
-                data.VertexCount   += smr.sharedMesh.vertexCount;
-                collectedMeshes.Add(smr.sharedMesh);
+                var mesh = smr.sharedMesh;
+                if (!meshTriLengthCache.ContainsKey(mesh))
+                    meshTriLengthCache[mesh] = mesh.triangles.Length;
+                data.TriangleCount += meshTriLengthCache[mesh] / 3;
+                data.VertexCount   += mesh.vertexCount;
             }
             foreach (var mr in meshRenderers)
             {
                 var mf = mr.GetComponent<MeshFilter>();
                 if (mf?.sharedMesh == null) continue;
-                data.TriangleCount += mf.sharedMesh.triangles.Length / 3;
-                data.VertexCount   += mf.sharedMesh.vertexCount;
-                collectedMeshes.Add(mf.sharedMesh);
+                var mesh = mf.sharedMesh;
+                if (!meshTriLengthCache.ContainsKey(mesh))
+                    meshTriLengthCache[mesh] = mesh.triangles.Length;
+                data.TriangleCount += meshTriLengthCache[mesh] / 3;
+                data.VertexCount   += mesh.vertexCount;
             }
 
-            // Bones — count unique non-root transforms
+            // Bones — root를 제외한 고유 Transform 수
             data.BoneCount = avatarRoot.GetComponentsInChildren<Transform>(true).Length - 1;
 
             // Materials & Textures
-            var allRenderers     = avatarRoot.GetComponentsInChildren<Renderer>(true);
-            var uniqueMaterials  = new HashSet<Material>();
-            var uniqueTextures   = new HashSet<Texture>();
+            var allRenderers    = avatarRoot.GetComponentsInChildren<Renderer>(true);
+            var uniqueMaterials = new HashSet<Material>();
+            var uniqueTextures  = new HashSet<Texture>();
 
             foreach (var r in allRenderers)
             {
@@ -74,9 +79,13 @@ namespace DiNeTool.InGameChecker
             foreach (var tex in uniqueTextures)
                 data.VRAMBytes += EstimateTextureVRAM(tex);
 
-            // Upload size estimate: compressed mesh data + compressed texture data
-            foreach (var mesh in collectedMeshes)
-                data.UploadSizeBytes += EstimateMeshSize(mesh);
+            // 업로드 사이즈 추정: 캐시된 삼각형 수 재사용 (중복 mesh.triangles 호출 방지)
+            foreach (var kvp in meshTriLengthCache)
+            {
+                long indices  = kvp.Value * 4L;          // index buffer (int per index)
+                long vertices = kvp.Key.vertexCount * 52L; // pos+normal+uv+tangent+boneWeight
+                data.UploadSizeBytes += indices + vertices;
+            }
 
             foreach (var tex in uniqueTextures)
             {
@@ -116,13 +125,7 @@ namespace DiNeTool.InGameChecker
             return 0;
         }
 
-        private static long EstimateMeshSize(Mesh mesh)
-        {
-            // index buffer + vertex buffer (position+normal+uv+tangent+boneweights)
-            long indices  = mesh.triangles.Length * 4L;
-            long vertices = mesh.vertexCount * 52L; // 3+3+2+4+4 floats * 4 bytes
-            return indices + vertices;
-        }
+        // EstimateMeshSize 제거 — Calculate() 내부에서 캐시된 값으로 인라인 처리
 
         private static float GetBytesPerPixel(TextureFormat format)
         {
@@ -143,44 +146,41 @@ namespace DiNeTool.InGameChecker
 
         private static void AssignRanks(ref StatsData data)
         {
-            // VRChat PC avatar performance thresholds (simplified)
-            int tri = data.TriangleCount;
-
-            if (tri <= 32_000)
-            {
-                data.PerformanceRank = "Excellent";
-                data.RankColor = new Color(0.2f, 0.85f, 0.35f);
-                data.TriColor  = new Color(0.2f, 0.85f, 0.35f);
-            }
-            else if (tri <= 70_000)
-            {
-                data.PerformanceRank = "Good";
-                data.RankColor = new Color(0.55f, 0.9f, 0.3f);
-                data.TriColor  = new Color(0.55f, 0.9f, 0.3f);
-            }
-            else if (tri <= 100_000)
-            {
-                data.PerformanceRank = "Medium";
-                data.RankColor = new Color(1f, 0.85f, 0.2f);
-                data.TriColor  = new Color(1f, 0.85f, 0.2f);
-            }
-            else if (tri <= 200_000)
-            {
-                data.PerformanceRank = "Poor";
-                data.RankColor = new Color(1f, 0.5f, 0.1f);
-                data.TriColor  = new Color(1f, 0.5f, 0.1f);
-            }
-            else
-            {
-                data.PerformanceRank = "Very Poor";
-                data.RankColor = new Color(1f, 0.2f, 0.2f);
-                data.TriColor  = new Color(1f, 0.2f, 0.2f);
-            }
-
+            // VRChat PC 아바타 퍼포먼스 랭크 — 공식 기준 (복합 지표)
+            // https://docs.vrchat.com/docs/avatar-performance-ranking-system
+            int  tri    = data.TriangleCount;
+            int  bone   = data.BoneCount;
+            int  mat    = data.MaterialCount;
             long vramMB = data.VRAMBytes / (1024 * 1024);
-            if      (vramMB <= 200)  data.VRAMColor = new Color(0.2f, 0.85f, 0.35f);
-            else if (vramMB <= 500)  data.VRAMColor = new Color(1f, 0.85f, 0.2f);
-            else                     data.VRAMColor = new Color(1f, 0.3f, 0.2f);
+
+            // 지표별 랭크 점수: 0=Excellent 1=Good 2=Medium 3=Poor 4=VeryPoor
+            int triRank  = tri    <=  7_500 ? 0 : tri    <= 10_000 ? 1 : tri    <= 15_000 ? 2 : tri    <= 70_000 ? 3 : 4;
+            int boneRank = bone   <=     75 ? 0 : bone   <=    150 ? 1 : bone   <=    256 ? 2 : bone   <=    400 ? 3 : 4;
+            int matRank  = mat    <=      1 ? 0 : mat    <=      4 ? 1 : mat    <=      8 ? 2 : mat    <=     16 ? 3 : 4;
+            int vramRank = vramMB <=     75 ? 0 : vramMB <=    150 ? 1 : vramMB <=    300 ? 2 : vramMB <=    500 ? 3 : 4;
+
+            // 가장 나쁜 지표 기준으로 종합 랭크 결정
+            int rank = Mathf.Max(triRank, Mathf.Max(boneRank, Mathf.Max(matRank, vramRank)));
+
+            string[] names  = { "Excellent", "Good", "Medium", "Poor", "Very Poor" };
+            Color[]  colors =
+            {
+                new Color(0.20f, 0.85f, 0.35f),
+                new Color(0.55f, 0.90f, 0.30f),
+                new Color(1.00f, 0.85f, 0.20f),
+                new Color(1.00f, 0.50f, 0.10f),
+                new Color(1.00f, 0.20f, 0.20f),
+            };
+
+            data.PerformanceRank = names[rank];
+            data.RankColor       = colors[rank];
+            data.TriColor        = colors[triRank]; // 트라이앵글 지표는 별도 색상
+
+            data.VRAMColor = vramMB <= 150
+                ? new Color(0.20f, 0.85f, 0.35f)
+                : vramMB <= 300
+                    ? new Color(1.00f, 0.85f, 0.20f)
+                    : new Color(1.00f, 0.30f, 0.20f);
         }
     }
 }
