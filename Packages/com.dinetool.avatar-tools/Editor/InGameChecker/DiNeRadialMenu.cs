@@ -401,7 +401,7 @@ namespace DiNeTool.InGameChecker
             {
                 foreach (var sub in _puppetControl.subParameters)
                 {
-                    if (sub?.parameter != null && _module.Params.TryGetValue(sub.parameter.name, out var p))
+                    if (!string.IsNullOrEmpty(sub.name) && _module.Params.TryGetValue(sub.name, out var p))
                         p.Set(0);
                 }
             }
@@ -468,8 +468,8 @@ namespace DiNeTool.InGameChecker
         {
             if (control.subParameters == null || index >= control.subParameters.Length) return;
             var sub = control.subParameters[index];
-            if (sub?.parameter == null || string.IsNullOrEmpty(sub.parameter.name)) return;
-            if (_module.Params.TryGetValue(sub.parameter.name, out var param))
+            if (string.IsNullOrEmpty(sub.name)) return;
+            if (_module.Params.TryGetValue(sub.name, out var param))
                 param.Set(value);
         }
 
@@ -477,8 +477,8 @@ namespace DiNeTool.InGameChecker
         {
             if (control.subParameters == null || index >= control.subParameters.Length) return 0;
             var sub = control.subParameters[index];
-            if (sub?.parameter == null || string.IsNullOrEmpty(sub.parameter.name)) return 0;
-            return _module.Params.TryGetValue(sub.parameter.name, out var param) ? param.FloatValue() : 0;
+            if (string.IsNullOrEmpty(sub.name)) return 0;
+            return _module.Params.TryGetValue(sub.name, out var param) ? param.FloatValue() : 0;
         }
 
         private bool IsControlActive(VRCExpressionsMenu.Control control)
