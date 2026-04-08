@@ -414,6 +414,8 @@ namespace DiNeTool.InGameChecker
         // 제스처 인덱스: 0=Idle, 1=Fist, 2=Open, 3=FingerPoint, 4=Victory, 5=Rock&Roll, 6=Gun, 7=ThumbsUp
         private int _leftGesture;
         private int _rightGesture;
+        private float _leftWeight = 1f;
+        private float _rightWeight = 1f;
 
         private void DrawActiveModule()
         {
@@ -448,34 +450,50 @@ namespace DiNeTool.InGameChecker
 
             GUILayout.Space(4);
 
-            // 원본 모듈 UI (레이디얼 메뉴, 툴, 디버그 등)
+            // 원본 모듈 UI (레이디얼 메뉴, 툴, 디버그 등) — EditorHeader 제외 (Weight를 직접 표시하므로)
             if (_gmEditor != null)
             {
-                _gm.Module.EditorHeader();
                 _gm.Module.EditorContent(_gmEditor, rootVisualElement);
             }
         }
 
         private void DrawGesturePanel()
         {
+            var weightStyle = new GUIStyle(EditorStyles.miniLabel)
+                { alignment = TextAnchor.MiddleCenter, fontSize = 10 };
+
             using (new BgColor(ColCard))
             {
                 EditorGUILayout.BeginVertical("box");
 
-                // 헤더
+                // ─── 헤더: 왼손 / 오른손 + Weight ───
                 EditorGUILayout.BeginHorizontal();
+
+                // 왼손 헤더
+                EditorGUILayout.BeginVertical(GUILayout.ExpandWidth(true));
                 GUILayout.Label(T(23), new GUIStyle(EditorStyles.boldLabel)
-                    { alignment = TextAnchor.MiddleCenter, fontSize = 11, normal = { textColor = ColAccent } },
-                    GUILayout.ExpandWidth(true));
+                    { alignment = TextAnchor.MiddleCenter, fontSize = 11, normal = { textColor = ColAccent } });
+                float leftPct = _leftGesture > 0 ? _leftWeight * 100f : 0f;
+                weightStyle.normal.textColor = leftPct > 0 ? ColAccent : ColSubText;
+                GUILayout.Label($"Weight: {leftPct:0}%", weightStyle);
+                EditorGUILayout.EndVertical();
+
                 GUILayout.Space(4);
+
+                // 오른손 헤더
+                EditorGUILayout.BeginVertical(GUILayout.ExpandWidth(true));
                 GUILayout.Label(T(24), new GUIStyle(EditorStyles.boldLabel)
-                    { alignment = TextAnchor.MiddleCenter, fontSize = 11, normal = { textColor = ColAccent } },
-                    GUILayout.ExpandWidth(true));
+                    { alignment = TextAnchor.MiddleCenter, fontSize = 11, normal = { textColor = ColAccent } });
+                float rightPct = _rightGesture > 0 ? _rightWeight * 100f : 0f;
+                weightStyle.normal.textColor = rightPct > 0 ? ColAccent : ColSubText;
+                GUILayout.Label($"Weight: {rightPct:0}%", weightStyle);
+                EditorGUILayout.EndVertical();
+
                 EditorGUILayout.EndHorizontal();
 
-                GUILayout.Space(2);
+                GUILayout.Space(4);
 
-                // 제스처 버튼 (1~7, 0=Idle)
+                // ─── 제스처 버튼 (1~7, 0=Idle) ───
                 for (int i = 1; i <= 7; i++)
                 {
                     string translated = T(24 + i); // 25~31
@@ -492,7 +510,7 @@ namespace DiNeTool.InGameChecker
                             fontSize = 11, fontStyle = leftActive ? FontStyle.Bold : FontStyle.Normal,
                             normal = { textColor = leftActive ? Color.white : ColText }
                         };
-                        if (GUILayout.Button(label, style, GUILayout.Height(24)))
+                        if (GUILayout.Button(label, style, GUILayout.Height(22)))
                         {
                             _leftGesture = leftActive ? 0 : i;
                             _gm.Module.OnNewHand(GestureHand.Left, _leftGesture);
@@ -510,7 +528,7 @@ namespace DiNeTool.InGameChecker
                             fontSize = 11, fontStyle = rightActive ? FontStyle.Bold : FontStyle.Normal,
                             normal = { textColor = rightActive ? Color.white : ColText }
                         };
-                        if (GUILayout.Button(label, style, GUILayout.Height(24)))
+                        if (GUILayout.Button(label, style, GUILayout.Height(22)))
                         {
                             _rightGesture = rightActive ? 0 : i;
                             _gm.Module.OnNewHand(GestureHand.Right, _rightGesture);
