@@ -243,7 +243,7 @@ public class DiNeMaterialTool : EditorWindow
     [MenuItem("DiNe/Material Tool", false, 2)]
     public static void ShowWindow()
     {
-        var w = GetWindow<DiNeMaterialTool>("DiNe Material Tool");
+        var w = GetWindow<DiNeMaterialTool>();
         w.minSize = new Vector2(340, 500);
         w.position = new Rect(w.position.x, w.position.y, 440, 780);
     }

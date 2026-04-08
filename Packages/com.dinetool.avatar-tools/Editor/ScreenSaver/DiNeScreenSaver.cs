@@ -59,7 +59,7 @@ namespace DiNeScreenSaver
         [MenuItem("DiNe/EX/Screen Saver", false, 101)]
         public static void ShowWindow()
         {
-            EditorWindow window = GetWindow<DiNeScreenSaver>("DiNe Screen Saver");
+            EditorWindow window = GetWindow<DiNeScreenSaver>();
             window.minSize = new Vector2(175, 150);
             window.position = new Rect(window.position.x, window.position.y, 420, 600); // 버튼 추가로 높이 약간 증가
         }

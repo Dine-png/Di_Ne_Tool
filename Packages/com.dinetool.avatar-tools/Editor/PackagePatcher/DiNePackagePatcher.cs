@@ -33,7 +33,7 @@ public class DiNePackagePatcher : EditorWindow
     [MenuItem("DiNe/EX/Package Patcher", false, 100)]
     public static void ShowWindow()
     {
-        EditorWindow window = GetWindow<DiNePackagePatcher>("Package Patcher");
+        EditorWindow window = GetWindow<DiNePackagePatcher>();
         window.minSize = new Vector2(300, 350);
         window.position = new Rect(window.position.x, window.position.y, 420, 580);
     }

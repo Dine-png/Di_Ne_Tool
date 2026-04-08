@@ -59,7 +59,7 @@ public class ArmatureScalerEditor : EditorWindow
     [MenuItem("DiNe/Avi Editor", false, 1)]
     public static void ShowWindow()
     {
-        EditorWindow window = GetWindow<ArmatureScalerEditor>("DiNe Avi Editor");
+        EditorWindow window = GetWindow<ArmatureScalerEditor>();
         window.minSize = new Vector2(300, 400);
         window.position = new Rect(window.position.x, window.position.y, 420, 850);
     }
