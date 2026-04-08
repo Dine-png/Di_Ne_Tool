@@ -417,11 +417,14 @@ namespace DiNeTool.InGameChecker
         private float _leftWeight = 1f;
         private float _rightWeight = 1f;
 
+        // 제스처 이모지 매핑
+        private static readonly string[] GestureEmojis = { "", "✊", "✋", "☝", "✌", "🤘", "👉", "👍" };
+
         private void DrawActiveModule()
         {
             GUILayout.Space(4);
 
-            // 아바타 정보 바
+            // ─── 아바타 정보 바 ───
             using (new BgColor(ColCard))
             {
                 EditorGUILayout.BeginHorizontal("box");
@@ -443,101 +446,112 @@ namespace DiNeTool.InGameChecker
                 EditorGUILayout.EndHorizontal();
             }
 
-            GUILayout.Space(4);
+            GUILayout.Space(6);
 
             // ─── 제스처 컨트롤 패널 ───
             DrawGesturePanel();
 
             GUILayout.Space(4);
 
-            // 원본 모듈 UI (레이디얼 메뉴, 툴, 디버그 등) — EditorHeader 제외 (Weight를 직접 표시하므로)
+            // ─── 래디얼 메뉴 / 툴 / 디버그 (GestureManager EditorContent) ───
             if (_gmEditor != null)
             {
                 _gm.Module.EditorContent(_gmEditor, rootVisualElement);
             }
         }
 
+        // ─── 제스처 패널: 독자 디자인 ─────────────────────────────────────────
         private void DrawGesturePanel()
         {
-            var weightStyle = new GUIStyle(EditorStyles.miniLabel)
-                { alignment = TextAnchor.MiddleCenter, fontSize = 10 };
+            // 왼손 / 오른손 나란히
+            EditorGUILayout.BeginHorizontal();
+            DrawHandCard(true);
+            GUILayout.Space(4);
+            DrawHandCard(false);
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private void DrawHandCard(bool isLeft)
+        {
+            int current  = isLeft ? _leftGesture  : _rightGesture;
+            float weight = isLeft ? _leftWeight   : _rightWeight;
+            string title = isLeft ? T(23) : T(24);
 
             using (new BgColor(ColCard))
             {
-                EditorGUILayout.BeginVertical("box");
+                EditorGUILayout.BeginVertical("box", GUILayout.ExpandWidth(true));
 
-                // ─── 헤더: 왼손 / 오른손 + Weight ───
-                EditorGUILayout.BeginHorizontal();
+                // ── 핸드 타이틀 + Weight ──
+                GUILayout.Label(title, new GUIStyle(EditorStyles.boldLabel)
+                {
+                    alignment = TextAnchor.MiddleCenter,
+                    fontSize  = 12,
+                    normal    = { textColor = ColAccent }
+                });
 
-                // 왼손 헤더
-                EditorGUILayout.BeginVertical(GUILayout.ExpandWidth(true));
-                GUILayout.Label(T(23), new GUIStyle(EditorStyles.boldLabel)
-                    { alignment = TextAnchor.MiddleCenter, fontSize = 11, normal = { textColor = ColAccent } });
-                float leftPct = _leftGesture > 0 ? _leftWeight * 100f : 0f;
-                weightStyle.normal.textColor = leftPct > 0 ? ColAccent : ColSubText;
-                GUILayout.Label($"Weight: {leftPct:0}%", weightStyle);
-                EditorGUILayout.EndVertical();
+                // Weight 슬라이더
+                float pct = current > 0 ? weight * 100f : 0f;
+                var pctStyle = new GUIStyle(EditorStyles.miniLabel)
+                {
+                    alignment = TextAnchor.MiddleCenter,
+                    fontSize  = 10,
+                    normal    = { textColor = pct > 0 ? ColAccent : ColSubText }
+                };
+                GUILayout.Label($"Weight: {pct:0}%", pctStyle);
 
-                GUILayout.Space(4);
+                // Weight 바 (시각적)
+                var barRect = EditorGUILayout.GetControlRect(false, 3);
+                EditorGUI.DrawRect(barRect, new Color(0.15f, 0.15f, 0.18f));
+                if (current > 0)
+                {
+                    var fillRect = new Rect(barRect.x, barRect.y, barRect.width * weight, barRect.height);
+                    EditorGUI.DrawRect(fillRect, ColAccent);
+                }
 
-                // 오른손 헤더
-                EditorGUILayout.BeginVertical(GUILayout.ExpandWidth(true));
-                GUILayout.Label(T(24), new GUIStyle(EditorStyles.boldLabel)
-                    { alignment = TextAnchor.MiddleCenter, fontSize = 11, normal = { textColor = ColAccent } });
-                float rightPct = _rightGesture > 0 ? _rightWeight * 100f : 0f;
-                weightStyle.normal.textColor = rightPct > 0 ? ColAccent : ColSubText;
-                GUILayout.Label($"Weight: {rightPct:0}%", weightStyle);
-                EditorGUILayout.EndVertical();
+                GUILayout.Space(6);
 
-                EditorGUILayout.EndHorizontal();
-
-                GUILayout.Space(4);
-
-                // ─── 제스처 버튼 (1~7, 0=Idle) ───
+                // ── 제스처 버튼들 ──
                 for (int i = 1; i <= 7; i++)
                 {
                     string translated = T(24 + i); // 25~31
-                    string label = (L == 0) ? _gm.Module.GetGestureTextNameByIndex(i) : translated;
+                    string label = (L == 0)
+                        ? _gm.Module.GetGestureTextNameByIndex(i)
+                        : translated;
 
-                    EditorGUILayout.BeginHorizontal();
+                    bool active = (current == i);
 
-                    // 왼손 버튼
-                    bool leftActive = (_leftGesture == i);
-                    using (new BgColor(leftActive ? ColAccent : new Color(0.28f, 0.28f, 0.31f)))
+                    // 버튼 스타일: 선택 시 accent pill, 미선택 시 어두운 flat
+                    var btnStyle = new GUIStyle(GUI.skin.button)
                     {
-                        var style = new GUIStyle(GUI.skin.button)
+                        fontSize  = 11,
+                        fontStyle = active ? FontStyle.Bold : FontStyle.Normal,
+                        alignment = TextAnchor.MiddleCenter,
+                        margin    = new RectOffset(2, 2, 1, 1),
+                        padding   = new RectOffset(4, 4, 3, 3),
+                        normal    = { textColor = active ? Color.white : ColText }
+                    };
+
+                    using (new BgColor(active ? ColAccent : new Color(0.24f, 0.24f, 0.27f)))
+                    {
+                        string btnText = $"{GestureEmojis[i]}  {label}";
+                        if (GUILayout.Button(btnText, btnStyle, GUILayout.Height(26)))
                         {
-                            fontSize = 11, fontStyle = leftActive ? FontStyle.Bold : FontStyle.Normal,
-                            normal = { textColor = leftActive ? Color.white : ColText }
-                        };
-                        if (GUILayout.Button(label, style, GUILayout.Height(22)))
-                        {
-                            _leftGesture = leftActive ? 0 : i;
-                            _gm.Module.OnNewHand(GestureHand.Left, _leftGesture);
+                            int newVal = active ? 0 : i;
+                            if (isLeft)
+                            {
+                                _leftGesture = newVal;
+                                _gm.Module.OnNewHand(GestureHand.Left, _leftGesture);
+                            }
+                            else
+                            {
+                                _rightGesture = newVal;
+                                _gm.Module.OnNewHand(GestureHand.Right, _rightGesture);
+                            }
                         }
                     }
-
-                    GUILayout.Space(2);
-
-                    // 오른손 버튼
-                    bool rightActive = (_rightGesture == i);
-                    using (new BgColor(rightActive ? ColAccent : new Color(0.28f, 0.28f, 0.31f)))
-                    {
-                        var style = new GUIStyle(GUI.skin.button)
-                        {
-                            fontSize = 11, fontStyle = rightActive ? FontStyle.Bold : FontStyle.Normal,
-                            normal = { textColor = rightActive ? Color.white : ColText }
-                        };
-                        if (GUILayout.Button(label, style, GUILayout.Height(22)))
-                        {
-                            _rightGesture = rightActive ? 0 : i;
-                            _gm.Module.OnNewHand(GestureHand.Right, _rightGesture);
-                        }
-                    }
-
-                    EditorGUILayout.EndHorizontal();
                 }
 
+                GUILayout.Space(4);
                 EditorGUILayout.EndVertical();
             }
         }

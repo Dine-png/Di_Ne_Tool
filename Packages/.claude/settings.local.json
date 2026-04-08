@@ -22,7 +22,10 @@
       "Bash(grep -rn \"SetModule\\\\|_gm\\\\\\\\..*\\(\" ./com.dinetool.avatar-tools --include=\"*.cs\")",
       "Read(//c/tmp/**)",
       "Bash(cp \"C:/Users/butei/AppData/Local/VRChatCreatorCompanion/Repos/vrchat.blackstartx.gesture-manager/vrc-get-vrchat.blackstartx.gesture-manager-3.9.8.zip\" .)",
-      "Bash(unzip -l vrc-get-vrchat.blackstartx.gesture-manager-3.9.8.zip)"
+      "Bash(unzip -l vrc-get-vrchat.blackstartx.gesture-manager-3.9.8.zip)",
+      "Bash(find \"C:/Users/butei/OneDrive/문서/GitHub/Di_Ne_Tool\" -name \"package.json\" -exec grep -l \"GestureManager\\\\|BlackStartX\" {} \\\\;)",
+      "Bash(unzip -q \"C:/Users/butei/AppData/Local/VRChatCreatorCompanion/Repos/vrchat.blackstartx.gesture-manager/vrc-get-vrchat.blackstartx.gesture-manager-3.9.8.zip\")",
+      "Bash(find \"C:/Users/butei/OneDrive/문서/GitHub/Di_Ne_Tool\" -name \"*.asmdef\" -exec grep -l \"gesture-manager\" {} \\\\;)"
     ]
   }
 }
