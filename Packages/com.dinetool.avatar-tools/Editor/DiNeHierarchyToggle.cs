@@ -12,7 +12,7 @@ public static class DiNeHierarchyToggle
     private static readonly Color ColTextOff  = new Color(0.50f, 0.50f, 0.53f);
 
     private const float BTN_SIZE    = 14f;
-    private const float BTN_PADDING = 3f;  // 오브젝트 아이콘 왼쪽 여백
+    private const float BTN_MARGIN  = 4f;  // 우측 끝에서의 여백
 
     static DiNeHierarchyToggle()
     {
@@ -24,12 +24,9 @@ public static class DiNeHierarchyToggle
         var obj = EditorUtility.InstanceIDToObject(instanceID) as GameObject;
         if (obj == null) return;
 
-        // 버튼을 오브젝트 이름 좌측에 배치
-        float btnX = selectionRect.x - BTN_SIZE - BTN_PADDING;
-        if (btnX < 0f) return;
-
+        // 버튼을 하이어라키 창 우측 끝에 배치
         var btnRect = new Rect(
-            btnX,
+            selectionRect.xMax - BTN_SIZE - BTN_MARGIN,
             selectionRect.y + (selectionRect.height - BTN_SIZE) * 0.5f,
             BTN_SIZE,
             BTN_SIZE
