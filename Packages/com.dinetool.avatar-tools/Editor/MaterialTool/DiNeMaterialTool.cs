@@ -227,8 +227,14 @@ public class DiNeMaterialTool : EditorWindow
         public long      FormatSavings;
         public long      SizeSavings;
         public TextureImporterFormat SuggestedFormat;
+        
+        // 사용 중인 마테리얼과 오브젝트 리스트
         public List<Material> UsedByMaterials = new List<Material>();
+        public List<GameObject> UsedByObjects = new List<GameObject>(); // 추가됨!
+        
+        // 개별 드롭다운 상태
         public bool      MaterialDropdown;
+        public bool      ObjectDropdown; // 추가됨!
     }
 
     private List<TextureVRAMInfo> _vramTextures = new List<TextureVRAMInfo>();
@@ -1342,7 +1348,7 @@ public class DiNeMaterialTool : EditorWindow
             GUILayout.Width(80));
         EditorGUILayout.EndHorizontal();
 
-        // 줄 2: 포맷 & 해상도 드롭다운 + (우측 끝) 펼쳐보기 버튼
+        // 줄 2: 포맷 & 해상도 드롭다운 + (우측 끝) 오브젝트 및 마테리얼 펼쳐보기 버튼
         var importer = !string.IsNullOrEmpty(info.AssetPath) ? AssetImporter.GetAtPath(info.AssetPath) as TextureImporter : null;
         EditorGUILayout.BeginHorizontal();
 
@@ -1375,42 +1381,70 @@ public class DiNeMaterialTool : EditorWindow
                 { normal = { textColor = ColSubText } }, GUILayout.ExpandWidth(false));
         }
 
-        // =====================================================================
-        // 핵심 변경 포인트: 빈 공간을 채워(FlexibleSpace) 펼쳐보기 버튼을 우측(용량 바로 아래)으로 밀어냄
-        // =====================================================================
+        // 빈 공간을 채워 남은 버튼들을 우측으로 밀어냄
         GUILayout.FlexibleSpace(); 
 
-        // =====================================================================
-        // 핵심 변경 포인트: 빈 공간을 채워(FlexibleSpace) 펼쳐보기 버튼을 우측(용량 바로 아래)으로 밀어냄
-        // =====================================================================
-        GUILayout.FlexibleSpace(); 
+        var foldStyle = new GUIStyle(EditorStyles.foldout) { fontSize = 11, fontStyle = FontStyle.Bold, normal = { textColor = ColSubText } };
 
-        if (info.UsedByMaterials.Count > 0)
+        // 오브젝트 펼쳐보기 버튼 (새로 추가됨)
+        if (info.UsedByObjects.Count > 0)
         {
-            // 공간을 덜 차지하도록 텍스트를 간결하게 조정
-            string foldoutLabel = L == 1 ? $"사용 중 ({info.UsedByMaterials.Count})" : 
-                                  L == 2 ? $"使用中 ({info.UsedByMaterials.Count})" : 
-                                           $"Used ({info.UsedByMaterials.Count})";
+            string objLabel = L == 1 ? $"오브젝트 ({info.UsedByObjects.Count})" : 
+                              L == 2 ? $"オブジェクト ({info.UsedByObjects.Count})" : 
+                                       $"Objects ({info.UsedByObjects.Count})";
 
-            var foldStyle = new GUIStyle(EditorStyles.foldout) { fontSize = 11, fontStyle = FontStyle.Bold, normal = { textColor = ColSubText } };
-            
-            // [수정됨] EditorGUILayout.Foldout 대신 GUILayout.Toggle 사용!
-            // 외형은 폴드아웃(화살표)과 완전히 동일하며, 레이아웃 제어가 정상적으로 작동합니다.
-            info.MaterialDropdown = GUILayout.Toggle(info.MaterialDropdown, foldoutLabel, foldStyle, GUILayout.ExpandWidth(false));
+            info.ObjectDropdown = GUILayout.Toggle(info.ObjectDropdown, objLabel, foldStyle, GUILayout.ExpandWidth(false));
+            GUILayout.Space(8); // 마테리얼 버튼과의 간격
         }
 
-        EditorGUILayout.EndHorizontal(); // 줄 2 닫기 (이제 아랫줄로 넘어가지 않음!)
+        // 마테리얼 펼쳐보기 버튼
+        if (info.UsedByMaterials.Count > 0)
+        {
+            string matLabel = L == 1 ? $"마테리얼 ({info.UsedByMaterials.Count})" : 
+                              L == 2 ? $"マテリアル ({info.UsedByMaterials.Count})" : 
+                                       $"Mats ({info.UsedByMaterials.Count})";
 
-        // 줄 3: 펼쳐보기(Foldout)가 열렸을 때만 표시되는 마테리얼 할당칸 리스트
-        if (info.MaterialDropdown && info.UsedByMaterials.Count > 0)
+            info.MaterialDropdown = GUILayout.Toggle(info.MaterialDropdown, matLabel, foldStyle, GUILayout.ExpandWidth(false));
+        }
+
+        EditorGUILayout.EndHorizontal(); // 줄 2 닫기
+
+        // 줄 3: 리스트 표시 영역 (둘 중 하나라도 열려 있으면 표시)
+        if (info.ObjectDropdown || info.MaterialDropdown)
         {
             GUILayout.Space(4);
-            foreach (var mat in info.UsedByMaterials)
+            
+            // 만약 둘 다 열려있다면 좌우로 나란히(Horizontal) 표시해서 뚱뚱해지는 걸 최소화
+            EditorGUILayout.BeginHorizontal();
+            
+            // 오브젝트 할당칸 리스트 표시
+            if (info.ObjectDropdown && info.UsedByObjects.Count > 0)
             {
-                if (mat == null) continue;
-                // Ping 버튼 대신 깔끔한 유니티 기본 ObjectField 형태 사용
-                EditorGUILayout.ObjectField(mat, typeof(Material), false, GUILayout.Height(18));
+                EditorGUILayout.BeginVertical();
+                foreach (var obj in info.UsedByObjects)
+                {
+                    if (obj == null) continue;
+                    // allowSceneObjects 파라미터를 true로 주어 씬의 게임오브젝트를 찾을 수 있게 함
+                    EditorGUILayout.ObjectField(obj, typeof(GameObject), true, GUILayout.Height(18));
+                }
+                EditorGUILayout.EndVertical();
+                
+                if (info.MaterialDropdown) GUILayout.Space(6); // 둘 다 열렸을 때 사이 여백
             }
+
+            // 마테리얼 할당칸 리스트 표시
+            if (info.MaterialDropdown && info.UsedByMaterials.Count > 0)
+            {
+                EditorGUILayout.BeginVertical();
+                foreach (var mat in info.UsedByMaterials)
+                {
+                    if (mat == null) continue;
+                    EditorGUILayout.ObjectField(mat, typeof(Material), false, GUILayout.Height(18));
+                }
+                EditorGUILayout.EndVertical();
+            }
+
+            EditorGUILayout.EndHorizontal();
         }
 
         EditorGUILayout.EndVertical(); // 우측 영역 닫기
@@ -1464,8 +1498,15 @@ public class DiNeMaterialTool : EditorWindow
                         var info = CalculateVRAMInfo(tex);
                         if (info != null) textureMap[tex] = info;
                     }
-                    if (textureMap.ContainsKey(tex) && !textureMap[tex].UsedByMaterials.Contains(mat))
-                        textureMap[tex].UsedByMaterials.Add(mat);
+                    if (textureMap.ContainsKey(tex))
+                    {
+                        if (!textureMap[tex].UsedByMaterials.Contains(mat))
+                            textureMap[tex].UsedByMaterials.Add(mat);
+                        
+                        // 오브젝트(GameObject) 정보도 함께 수집
+                        if (!textureMap[tex].UsedByObjects.Contains(r.gameObject))
+                            textureMap[tex].UsedByObjects.Add(r.gameObject);
+                    }
                 }
             }
         }
