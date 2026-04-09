@@ -743,34 +743,45 @@ public class DiNeMaterialTool : EditorWindow
 
     private void DrawDietActionButton()
     {
-        bool canApply = _dietScanned && _dietMats.Any(m => m.Selected && m.HasDiet);
+        // 버튼 1: 지울 텍스쳐가 있는 마테리얼이 선택된 경우
+        bool canRemove  = _dietScanned && _dietMats.Any(m => m.Selected && m.HasDiet);
+        // 버튼 2: 지울 텍스쳐 OR 끌 수 있는 기능 토글이 있는 마테리얼이 선택된 경우
+        bool canDisable = _dietScanned && _dietMats.Any(m => m.Selected && (m.HasDiet || HasEnabledToggles(m)));
+
         var btn = new GUIStyle(GUI.skin.button)
             { fontSize = 13, fontStyle = FontStyle.Bold, normal = { textColor = Color.white }, hover = { textColor = Color.white } };
         var prev = GUI.backgroundColor;
 
-        // ⚡ 표시 섹션이 하나라도 enabled 되어 있으면 두 번째 버튼 활성
-        bool hasToggleSections = System.Linq.Enumerable.Range(0, SECTIONS.Length)
-            .Any(i => _dietEnabled[i] && SECTIONS[i].Toggle != null);
-
-        GUI.enabled = canApply;
         EditorGUILayout.BeginHorizontal();
 
         // 버튼 1: 텍스쳐만 제거
+        GUI.enabled = canRemove;
         GUI.backgroundColor = _previewOnly ? ColWarn : new Color(0.55f, 0.35f, 0.35f);
         if (GUILayout.Button(_previewOnly ? T(46) : T(62), btn, GUILayout.Height(36)))
             ApplyDiet(disableFeatures: false);
 
-        // 버튼 2: 제거 + 기능 끄기 (toggle 있는 섹션이 있을 때만)
-        if (hasToggleSections)
-        {
-            GUI.backgroundColor = _previewOnly ? ColWarn : ColDanger;
-            if (GUILayout.Button(_previewOnly ? T(46) : T(63), btn, GUILayout.Height(36), GUILayout.Width(160)))
-                ApplyDiet(disableFeatures: true);
-        }
+        // 버튼 2: 제거 + 기능 끄기
+        GUI.enabled = canDisable;
+        GUI.backgroundColor = _previewOnly ? ColWarn : ColDanger;
+        if (GUILayout.Button(_previewOnly ? T(46) : T(63), btn, GUILayout.Height(36)))
+            ApplyDiet(disableFeatures: true);
 
         EditorGUILayout.EndHorizontal();
         GUI.backgroundColor = prev;
         GUI.enabled = true;
+    }
+
+    private bool HasEnabledToggles(MaterialInfo info)
+    {
+        for (int si = 0; si < SECTIONS.Length; si++)
+        {
+            if (!_dietEnabled[si]) continue;
+            string tog = SECTIONS[si].Toggle;
+            if (tog == null) continue;
+            if (info.Material.HasProperty(tog) && info.Material.GetFloat(tog) > 0.5f)
+                return true;
+        }
+        return false;
     }
 
     private void DrawDietResults()
@@ -1050,6 +1061,9 @@ public class DiNeMaterialTool : EditorWindow
     // ══════════════════════════════════════════════════════════════════════════
     private void DietScanMaterials()
     {
+        // 재스캔 전 선택 상태 저장
+        var prevSelected = new HashSet<int>(_dietMats.Where(m => m.Selected).Select(m => m.Material.GetInstanceID()));
+
         _dietMats.Clear(); _dietScanned = false;
         if (_targetObject == null) { SetStatus(T(19), true); return; }
         Renderer[] renderers = _includeChildren
@@ -1063,13 +1077,14 @@ public class DiNeMaterialTool : EditorWindow
                 if (!IsLilToon(mat)) continue;
                 var info = new MaterialInfo
                 {
-                    Material = mat,
-                    Path     = AssetDatabase.GetAssetPath(mat),
+                    Material   = mat,
+                    Path       = AssetDatabase.GetAssetPath(mat),
                     ShaderName = mat.shader.name,
-                    Selected = false
                 };
                 CollectDietProperties(mat, info);
-                info.Selected = info.HasDiet;
+                bool wasSel = prevSelected.Contains(mat.GetInstanceID());
+                // HasDiet이면 선택, 이전에 선택된 마테리얼이면 기능 끄기 버튼을 위해 유지
+                info.Selected = info.HasDiet || (wasSel && HasEnabledToggles(info));
                 _dietMats.Add(info);
             }
         _dietMats = _dietMats.OrderByDescending(m => m.TotalDietCount).ToList();
@@ -1101,37 +1116,57 @@ public class DiNeMaterialTool : EditorWindow
 
     private void ApplyDiet(bool disableFeatures)
     {
-        var targets = _dietMats.Where(m => m.Selected && m.HasDiet).ToList();
-        if (targets.Count == 0) { SetStatus(T(39), false); return; }
+        // 텍스쳐 제거 대상: HasDiet인 것
+        // 기능 끄기 대상: disableFeatures일 때 HasDiet OR HasEnabledToggles인 것
+        var removeTargets  = _dietMats.Where(m => m.Selected && m.HasDiet).ToList();
+        var disableTargets = disableFeatures
+            ? _dietMats.Where(m => m.Selected && (m.HasDiet || HasEnabledToggles(m))).ToList()
+            : new List<MaterialInfo>();
+
+        var allTargets = removeTargets.Union(disableTargets).Distinct().ToList();
+        if (allTargets.Count == 0) { SetStatus(T(39), false); return; }
+
         if (_previewOnly)
         {
-            int total = targets.Sum(m => m.TotalDietCount);
-            SetStatus(Tf(40, targets.Count, total), true);
+            int total = removeTargets.Sum(m => m.TotalDietCount);
+            SetStatus(Tf(40, allTargets.Count, total), true);
             return;
         }
+
         string dialogTitle = disableFeatures ? T(63) : T(62);
-        bool ok = EditorUtility.DisplayDialog(dialogTitle, Tf(42, targets.Count) + "\n" + T(43), T(44), T(25));
+        bool ok = EditorUtility.DisplayDialog(dialogTitle, Tf(42, allTargets.Count) + "\n" + T(43), T(44), T(25));
         if (!ok) return;
 
-        Undo.RecordObjects(targets.Select(m => (Object)m.Material).ToArray(), "DiNe Diet Tool");
+        Undo.RecordObjects(allTargets.Select(m => (Object)m.Material).ToArray(), "DiNe Diet Tool");
         int removed = 0;
-        foreach (var info in targets)
+
+        foreach (var info in allTargets)
         {
+            // 텍스쳐 제거
             foreach (var res in info.DietResults)
             {
                 var sec = SECTIONS[res.SectionIndex];
-                // Remove textures
                 foreach (string prop in res.Props)
                 { info.Material.SetTexture(prop, null); removed++; }
-                // Disable feature toggle if requested
-                if (disableFeatures && sec.Toggle != null && info.Material.HasProperty(sec.Toggle))
-                    info.Material.SetFloat(sec.Toggle, 0f);
+            }
+            // 기능 끄기
+            if (disableFeatures)
+            {
+                for (int si = 0; si < SECTIONS.Length; si++)
+                {
+                    if (!_dietEnabled[si]) continue;
+                    string tog = SECTIONS[si].Toggle;
+                    if (tog == null) continue;
+                    if (info.Material.HasProperty(tog) && info.Material.GetFloat(tog) > 0.5f)
+                        info.Material.SetFloat(tog, 0f);
+                }
             }
             EditorUtility.SetDirty(info.Material);
         }
+
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
-        SetStatus(Tf(45, targets.Count, removed), false);
+        SetStatus(Tf(45, allTargets.Count, removed), false);
         DietScanMaterials();
     }
 
