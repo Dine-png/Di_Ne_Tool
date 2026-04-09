@@ -65,6 +65,12 @@ namespace DiNeScreenSaver
                              "左ドラッグ: 回転   スクロール: ズーム"    },
             /* 20 */ new[] { "Icon saved.",           "아이콘 저장 완료!","アイコンを保存しました。" },
             /* 21 */ new[] { "Assign a Target Object.", "대상 오브젝트를 지정하세요.", "対象オブジェクトを指定してください。" },
+            /* 22 */ new[] { "Front",  "앞",     "前"  },
+            /* 23 */ new[] { "Back",   "뒤",     "後"  },
+            /* 24 */ new[] { "Left",   "왼쪽",   "左"  },
+            /* 25 */ new[] { "Right",  "오른쪽", "右"  },
+            /* 26 */ new[] { "Top",    "위",     "上"  },
+            /* 27 */ new[] { "Bottom", "아래",   "下"  },
         };
         private static readonly string[][] BG_TEXT =
         {
@@ -114,6 +120,27 @@ namespace DiNeScreenSaver
         private Rect      _previewRect;
         private const int PREVIEW_RENDER_SIZE = 256;
         private const int CAPTURE_LAYER       = 21;
+
+        // 줌 프리셋
+        private static readonly float[]  ZOOM_PRESETS       = { 0.5f, 0.75f, 1f, 1.5f, 2f, 3f };
+        private static readonly string[] ZOOM_PRESET_LABELS = { "0.5×", "0.75×", "1×", "1.5×", "2×", "3×" };
+
+        // 방향 프리셋 (pitch, yaw)
+        private static readonly Vector2[] DIR_EULERS =
+        {
+            new Vector2(  0f,  180f),  // Front
+            new Vector2(  0f,    0f),  // Back
+            new Vector2(  0f,   90f),  // Left
+            new Vector2(  0f,  -90f),  // Right
+            new Vector2(-90f,  180f),  // Top
+            new Vector2( 90f,  180f),  // Bottom
+        };
+
+        // 에디터 배경색에 맞는 프리뷰 배경
+        private static Color PreviewBG =>
+            EditorGUIUtility.isProSkin
+                ? new Color(0.22f, 0.22f, 0.22f)
+                : new Color(0.76f, 0.76f, 0.76f);
 
         // ══════════════════════════════════════════════════════════════════════
         //  Assets
@@ -314,7 +341,7 @@ namespace DiNeScreenSaver
             float previewH = Mathf.Min(previewW, 240f);
 
             var prevBg = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0.13f, 0.13f, 0.15f);
+            GUI.backgroundColor = PreviewBG;
             _previewRect = GUILayoutUtility.GetRect(previewW, previewH);
             GUI.Box(_previewRect, GUIContent.none, "box");
             GUI.backgroundColor = prevBg;
@@ -339,6 +366,16 @@ namespace DiNeScreenSaver
             // 힌트
             GUILayout.Label(T(19), new GUIStyle(EditorStyles.centeredGreyMiniLabel)
                 { fontSize = 10, normal = { textColor = new Color(0.55f, 0.55f, 0.58f) } });
+
+            GUILayout.Space(4);
+
+            // ── 방향 프리셋 버튼 (6개) ──
+            DrawDirectionButtons();
+
+            GUILayout.Space(3);
+
+            // ── 줌 프리셋 버튼 ──
+            DrawZoomButtons();
 
             GUILayout.Space(8);
 
@@ -375,6 +412,67 @@ namespace DiNeScreenSaver
             EditorGUILayout.EndVertical();
         }
 
+        private void DrawDirectionButtons()
+        {
+            var dirLabels = new[] { T(22), T(23), T(24), T(25), T(26), T(27) };
+            var prevBg = GUI.backgroundColor;
+            var btnStyle = new GUIStyle(GUI.skin.button)
+            {
+                fontSize  = 11,
+                fontStyle = FontStyle.Bold,
+                normal    = { textColor = new Color(0.85f, 0.85f, 0.85f) },
+                hover     = { textColor = Color.white },
+            };
+
+            EditorGUILayout.BeginHorizontal();
+            for (int i = 0; i < dirLabels.Length; i++)
+            {
+                bool active = (_previewEuler == DIR_EULERS[i]);
+                GUI.backgroundColor = active
+                    ? new Color(0.30f, 0.82f, 0.76f)
+                    : new Color(0.21f, 0.21f, 0.24f);
+
+                if (GUILayout.Button(dirLabels[i], btnStyle, GUILayout.Height(24), GUILayout.ExpandWidth(true)))
+                {
+                    _previewEuler = DIR_EULERS[i];
+                    _previewDirty = true;
+                    Repaint();
+                }
+            }
+            GUI.backgroundColor = prevBg;
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private void DrawZoomButtons()
+        {
+            var prevBg = GUI.backgroundColor;
+            var btnStyle = new GUIStyle(GUI.skin.button)
+            {
+                fontSize  = 10,
+                fontStyle = FontStyle.Bold,
+                normal    = { textColor = new Color(0.85f, 0.85f, 0.85f) },
+                hover     = { textColor = Color.white },
+            };
+
+            EditorGUILayout.BeginHorizontal();
+            for (int i = 0; i < ZOOM_PRESETS.Length; i++)
+            {
+                bool active = Mathf.Approximately(_zoomFactor, ZOOM_PRESETS[i]);
+                GUI.backgroundColor = active
+                    ? new Color(0.30f, 0.82f, 0.76f)
+                    : new Color(0.21f, 0.21f, 0.24f);
+
+                if (GUILayout.Button(ZOOM_PRESET_LABELS[i], btnStyle, GUILayout.Height(22), GUILayout.ExpandWidth(true)))
+                {
+                    _zoomFactor   = ZOOM_PRESETS[i];
+                    _previewDirty = true;
+                    Repaint();
+                }
+            }
+            GUI.backgroundColor = prevBg;
+            EditorGUILayout.EndHorizontal();
+        }
+
         private void HandlePreviewInput()
         {
             Event e = Event.current;
@@ -385,7 +483,7 @@ namespace DiNeScreenSaver
             if (e.type == EventType.MouseDrag && e.button == 0)
             {
                 _previewEuler.y += e.delta.x * 0.5f;
-                _previewEuler.x -= e.delta.y * 0.5f;
+                _previewEuler.x += e.delta.y * 0.5f;
                 _previewEuler.x  = Mathf.Clamp(_previewEuler.x, -85f, 85f);
                 _previewDirty    = true;
                 e.Use();
@@ -429,7 +527,7 @@ namespace DiNeScreenSaver
                 camObj = new GameObject("_DiNe_Preview_Cam");
                 var cam = camObj.AddComponent<Camera>();
                 cam.clearFlags      = CameraClearFlags.SolidColor;
-                cam.backgroundColor = new Color(0.13f, 0.13f, 0.15f, 1f);
+                cam.backgroundColor = PreviewBG;
                 cam.cullingMask     = 1 << CAPTURE_LAYER;
                 cam.orthographic    = true;
                 cam.nearClipPlane   = 0.001f;
