@@ -50,7 +50,7 @@ public class DiNeMultiSupporter : Editor
                 { "cleanup", "🗑 모든 데이터 삭제 (Clean Up)" }, // 추가됨
                 { "catIcon", "아이콘" },
                 { "fxController", "FX 컨트롤러" },
-                { "expressionMenu", "표정 메뉴" },
+                { "expressionMenu", "익스프레션 메뉴" },
                 { "newLayer", "새 레이어" },
                 { "autoApplyHint", "플레이 모드 진입 및 아바타 업로드 시 전체 설정이 자동으로 생성/적용됩니다." },
                 { "cleanupDialogTitle", "Clean Up" },
