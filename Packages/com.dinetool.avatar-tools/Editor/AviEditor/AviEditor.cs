@@ -67,7 +67,9 @@ public class ArmatureScalerEditor : EditorWindow
     private UnityEditor.Animations.AnimatorController _exprFxController;
     private int                      _exprFxLayerSel  = 0;   // 0=LeftHand 1=RightHand
     private int                      _exprFxStateSel  = -1;
-    private bool                     _exprFxExpanded  = false;
+    private bool                     _exprFxExpanded      = false;
+    private bool                     _exprFxPreviewMode   = false;
+    private float[]                  _exprWorkingValues;
     private GameObject               _prevExprTarget;
 
     private enum HumanoidBodyPart
@@ -1643,11 +1645,11 @@ public class ArmatureScalerEditor : EditorWindow
             return;
         }
 
-        _exprMainScroll = EditorGUILayout.BeginScrollView(_exprMainScroll);
-
-        // ── 얼굴 프리뷰 ──
+        // ── 얼굴 프리뷰 (스크롤 독립 고정) ──
         DrawFacePreview();
         GUILayout.Space(5);
+
+        _exprMainScroll = EditorGUILayout.BeginScrollView(_exprMainScroll);
 
         // ── 애니메이션 클립 ──
         DrawExpressionClipSection(prevBg);
@@ -1838,16 +1840,25 @@ public class ArmatureScalerEditor : EditorWindow
                             EditorGUILayout.BeginHorizontal();
                             bool sel = _exprFxStateSel == i;
 
-                            // 메인 버튼: 스테이트 이름
+                            // 메인 버튼: 스테이트 이름 (토글 미리보기)
                             GUI.backgroundColor = sel ? new Color(0.30f, 0.82f, 0.76f) : prevBg;
                             string stateLabel = clips[i].state != null ? clips[i].state.name : "(no state)";
                             if (GUILayout.Button(stateLabel, GUILayout.ExpandWidth(true), GUILayout.Height(22)))
                             {
-                                _exprFxStateSel = i;
-                                if (clips[i].clip != null)
+                                if (sel)
                                 {
-                                    _exprClip = clips[i].clip;
-                                    LoadExpressionFromClip();
+                                    // 이미 선택된 버튼 → 토글 OFF, 작업 상태 복원
+                                    _exprFxStateSel    = -1;
+                                    _exprFxPreviewMode = false;
+                                    RestoreWorkingValues();
+                                }
+                                else
+                                {
+                                    // 새 버튼 선택 → 현재 작업 저장 후 미리보기
+                                    if (!_exprFxPreviewMode) SaveWorkingValues();
+                                    _exprFxStateSel    = i;
+                                    _exprFxPreviewMode = true;
+                                    PreviewFxClip(clips[i].clip);
                                 }
                             }
                             GUI.backgroundColor = prevBg;
@@ -1950,6 +1961,66 @@ public class ArmatureScalerEditor : EditorWindow
 
         GUILayout.Space(20);
         EditorGUILayout.EndVertical();
+    }
+
+    // ── 헬퍼: FX 미리보기 작업 상태 저장/복원 ────
+    private void SaveWorkingValues()
+    {
+        if (_bodySmr == null || _bodySmr.sharedMesh == null) return;
+        int cnt = _bodySmr.sharedMesh.blendShapeCount;
+        _exprWorkingValues = new float[cnt];
+        for (int i = 0; i < cnt; i++)
+            _exprWorkingValues[i] = _exprShapeValues != null ? _exprShapeValues[i] : _bodySmr.GetBlendShapeWeight(i);
+    }
+
+    private void RestoreWorkingValues()
+    {
+        if (_bodySmr == null || _exprWorkingValues == null) return;
+        Undo.RecordObject(_bodySmr, "Avi Editor FX Preview Restore");
+        int cnt = Mathf.Min(_exprWorkingValues.Length, _bodySmr.sharedMesh.blendShapeCount);
+        for (int i = 0; i < cnt; i++)
+        {
+            _bodySmr.SetBlendShapeWeight(i, _exprWorkingValues[i]);
+            if (_exprShapeValues != null && i < _exprShapeValues.Length)
+                _exprShapeValues[i] = _exprWorkingValues[i];
+        }
+        _facePreviewDirty = true;
+        Repaint();
+    }
+
+    private void PreviewFxClip(AnimationClip clip)
+    {
+        if (clip == null || _bodySmr == null || _bodySmr.sharedMesh == null) return;
+        Undo.RecordObject(_bodySmr, "Avi Editor FX Preview");
+        int cnt = _bodySmr.sharedMesh.blendShapeCount;
+
+        // 먼저 0으로 리셋 (이전 표정 지우기)
+        for (int i = 0; i < cnt; i++)
+        {
+            _bodySmr.SetBlendShapeWeight(i, 0f);
+            if (_exprShapeValues != null && i < _exprShapeValues.Length)
+                _exprShapeValues[i] = 0f;
+        }
+
+        // 클립 값 적용
+        string smrPath = AnimationUtility.CalculateTransformPath(_bodySmr.transform, targetAvatarRoot.transform);
+        foreach (var b in AnimationUtility.GetCurveBindings(clip))
+        {
+            if (!b.propertyName.StartsWith("blendShape.")) continue;
+            if (b.path != smrPath) continue;
+            var curve = AnimationUtility.GetEditorCurve(clip, b);
+            if (curve == null) continue;
+            string skName = b.propertyName.Substring("blendShape.".Length);
+            int idx = _bodySmr.sharedMesh.GetBlendShapeIndex(skName);
+            if (idx < 0) continue;
+            float val = curve.Evaluate(0f);
+            _bodySmr.SetBlendShapeWeight(idx, val);
+            if (_exprShapeValues != null && idx < _exprShapeValues.Length)
+                _exprShapeValues[idx] = val;
+        }
+
+        _facePreviewDirty = true;
+        Repaint();
     }
 
     // ── 헬퍼: Body SMR 탐색 ──────────────────────
