@@ -442,12 +442,21 @@ public class DiNeMaterialTool : EditorWindow
 
         GUILayout.Space(4);
         GuiLine(1, 2);
+        
         bool prevChildren = _includeChildren;
         bool prevInactive = _includeInactive;
         _includeChildren = EditorGUILayout.Toggle(T(4), _includeChildren);
         _includeInactive = EditorGUILayout.Toggle(T(5), _includeInactive);
         if (_includeChildren != prevChildren || _includeInactive != prevInactive)
             AutoScan();
+            
+        GUILayout.Space(4);
+        
+        // 미리보기 토글 UI 복구
+        bool prevPreview = _previewOnly;
+        _previewOnly = EditorGUILayout.Toggle(T(_previewOnly ? 6 : 7), _previewOnly);
+        if (_previewOnly != prevPreview) AutoScan();
+        
         GUILayout.Space(4);
     }
 
@@ -1333,19 +1342,31 @@ public class DiNeMaterialTool : EditorWindow
             GUILayout.Width(80));
         EditorGUILayout.EndHorizontal();
 
-        // 줄 2: 포맷 드롭다운
+        // 줄 2: 포맷 & 해상도 드롭다운 (수정된 부분)
         var importer = !string.IsNullOrEmpty(info.AssetPath) ? AssetImporter.GetAtPath(info.AssetPath) as TextureImporter : null;
         EditorGUILayout.BeginHorizontal();
 
         if (importer != null && info.Texture is Texture2D)
         {
+            // 1. 포맷 드롭다운
             int curFmtIdx = System.Array.IndexOf(_formatOptions, (TextureImporterFormat)info.Format);
             if (curFmtIdx < 0) curFmtIdx = 0;
-            int newFmtIdx = EditorGUILayout.Popup(curFmtIdx, _formatNames);
+            int newFmtIdx = EditorGUILayout.Popup(curFmtIdx, _formatNames, GUILayout.Width(110));
             if (newFmtIdx != curFmtIdx)
             {
                 info.SuggestedFormat = _formatOptions[newFmtIdx];
                 VRAMChangeCompression(info);
+            }
+
+            GUILayout.Space(4);
+
+            // 2. 해상도(Max Size) 드롭다운 복구
+            int curSizeIdx = System.Array.IndexOf(_sizeOptions, importer.maxTextureSize);
+            if (curSizeIdx < 0) curSizeIdx = _sizeOptions.Length - 1; 
+            int newSizeIdx = EditorGUILayout.Popup(curSizeIdx, _sizeNames, GUILayout.Width(70));
+            if (newSizeIdx != curSizeIdx)
+            {
+                VRAMChangeSize(info, _sizeOptions[newSizeIdx]);
             }
         }
         else
@@ -1365,6 +1386,20 @@ public class DiNeMaterialTool : EditorWindow
     // ══════════════════════════════════════════════════════════════════════════
     //  VRAM Logic
     // ══════════════════════════════════════════════════════════════════════════
+    
+    // 현재 빌드 타겟 플랫폼 이름 가져오기
+    private string GetActivePlatformName()
+    {
+        BuildTarget target = EditorUserBuildSettings.activeBuildTarget;
+        switch (target)
+        {
+            case BuildTarget.Android: return "Android";
+            case BuildTarget.iOS: return "iPhone";
+            case BuildTarget.WebGL: return "WebGL";
+            default: return "Standalone"; // PC/Mac/Linux
+        }
+    }
+
     private void VRAMScanTextures()
     {
         _vramTextures.Clear(); _vramScanned = false; _vramTotal = 0;
@@ -1474,9 +1509,11 @@ public class DiNeMaterialTool : EditorWindow
     {
         var importer = AssetImporter.GetAtPath(info.AssetPath) as TextureImporter;
         if (importer == null) return;
+        
+        string platform = GetActivePlatformName();
         importer.SetPlatformTextureSettings(new TextureImporterPlatformSettings()
         {
-            name = "PC",
+            name = platform,
             overridden = true,
             format = info.SuggestedFormat,
             maxTextureSize = importer.maxTextureSize,
@@ -1490,9 +1527,15 @@ public class DiNeMaterialTool : EditorWindow
     {
         var importer = AssetImporter.GetAtPath(info.AssetPath) as TextureImporter;
         if (importer == null) return;
-        importer.maxTextureSize = maxSize;
-        var settings = importer.GetPlatformTextureSettings("PC");
+        
+        string platform = GetActivePlatformName();
+        importer.maxTextureSize = maxSize; 
+        
+        var settings = importer.GetPlatformTextureSettings(platform); 
+        settings.name = platform;
+        settings.overridden = true; 
         settings.maxTextureSize = maxSize;
+        
         importer.SetPlatformTextureSettings(settings);
         importer.SaveAndReimport();
         VRAMScanTextures();
@@ -1504,6 +1547,7 @@ public class DiNeMaterialTool : EditorWindow
 
         long savedTotal = 0;
         int count = 0;
+        string platform = GetActivePlatformName(); 
 
         for (int i = 0; i < targets.Count; i++)
         {
@@ -1519,7 +1563,7 @@ public class DiNeMaterialTool : EditorWindow
             {
                 importer.SetPlatformTextureSettings(new TextureImporterPlatformSettings()
                 {
-                    name = "PC",
+                    name = platform, 
                     overridden = true,
                     format = info.SuggestedFormat,
                     maxTextureSize = importer.maxTextureSize,
@@ -1531,7 +1575,9 @@ public class DiNeMaterialTool : EditorWindow
             if (info.CanOptimizeSize)
             {
                 importer.maxTextureSize = 2048;
-                var settings = importer.GetPlatformTextureSettings("PC");
+                var settings = importer.GetPlatformTextureSettings(platform);
+                settings.name = platform;
+                settings.overridden = true;
                 settings.maxTextureSize = 2048;
                 importer.SetPlatformTextureSettings(settings);
                 changed = true;
