@@ -1039,21 +1039,16 @@ public class DiNeMaterialTool : EditorWindow
 
     private void DrawVRAMTextureCard(TextureVRAMInfo info)
     {
-        const float rowH = 24f;
-        const float thumbSize = 22f;
+        var prev = GUI.backgroundColor;
+        GUI.backgroundColor = ColCard;
+        EditorGUILayout.BeginVertical("box");
+        GUI.backgroundColor = prev;
 
-        var importer = !string.IsNullOrEmpty(info.AssetPath) ? AssetImporter.GetAtPath(info.AssetPath) as TextureImporter : null;
-
-        // ── 한 줄: 용량 | 썸네일 | 이름 | 해상도 | 포맷 ──
-        EditorGUILayout.BeginHorizontal(GUILayout.Height(rowH));
-
-        // 용량
-        GUILayout.Label(FormatBytes(info.VRAMBytes), new GUIStyle(EditorStyles.boldLabel)
-            { fontSize = 12, alignment = TextAnchor.MiddleLeft, normal = { textColor = GetVRAMColor(info.VRAMBytes) } },
-            GUILayout.Width(78), GUILayout.Height(rowH));
+        // ── 썸네일 + 이름 + VRAM ──
+        EditorGUILayout.BeginHorizontal();
 
         // 썸네일 (클릭 시 프로젝트에서 선택)
-        Rect thumbRect = GUILayoutUtility.GetRect(thumbSize, thumbSize, GUILayout.Width(thumbSize), GUILayout.Height(thumbSize));
+        Rect thumbRect = GUILayoutUtility.GetRect(40, 40, GUILayout.Width(40), GUILayout.Height(40));
         if (info.Texture is Texture2D t2d)
         {
             Texture2D thumb = AssetPreview.GetAssetPreview(info.Texture);
@@ -1070,27 +1065,35 @@ public class DiNeMaterialTool : EditorWindow
         }
         EditorGUIUtility.AddCursorRect(thumbRect, MouseCursor.Link);
 
-        GUILayout.Space(4);
+        GUILayout.Space(6);
 
-        // 이름
-        GUILayout.Label(info.Texture.name, new GUIStyle(EditorStyles.label)
-            { fontSize = 11, normal = { textColor = ColText }, clipping = TextClipping.Clip },
-            GUILayout.ExpandWidth(true), GUILayout.Height(rowH));
+        // 이름 + VRAM + 드롭다운 (이미지 높이에 맞춤)
+        EditorGUILayout.BeginVertical();
 
-        // 해상도 드롭다운
+        // 줄 1: 이름 + VRAM
+        EditorGUILayout.BeginHorizontal();
+        GUILayout.Label(info.Texture.name, new GUIStyle(EditorStyles.boldLabel) { fontSize = 11 }, GUILayout.ExpandWidth(true));
+        GUILayout.FlexibleSpace();
+        GUILayout.Label(FormatBytes(info.VRAMBytes), new GUIStyle(EditorStyles.boldLabel)
+            { fontSize = 13, alignment = TextAnchor.MiddleRight, normal = { textColor = GetVRAMColor(info.VRAMBytes) } },
+            GUILayout.Width(80));
+        EditorGUILayout.EndHorizontal();
+
+        // 줄 2: 해상도 드롭다운 + 포맷 드롭다운 + Mat 버튼
+        var importer = !string.IsNullOrEmpty(info.AssetPath) ? AssetImporter.GetAtPath(info.AssetPath) as TextureImporter : null;
+        EditorGUILayout.BeginHorizontal();
+
         if (importer != null && info.Texture is Texture2D)
         {
-            int curMaxSize = importer.maxTextureSize;
-            int curSizeIdx = System.Array.IndexOf(_sizeOptions, curMaxSize);
+            int curSizeIdx = System.Array.IndexOf(_sizeOptions, importer.maxTextureSize);
             if (curSizeIdx < 0) curSizeIdx = _sizeOptions.Length - 1;
-            int newSizeIdx = EditorGUILayout.Popup(curSizeIdx, _sizeNames, GUILayout.Width(55), GUILayout.Height(rowH));
+            int newSizeIdx = EditorGUILayout.Popup(curSizeIdx, _sizeNames, GUILayout.Width(55));
             if (newSizeIdx != curSizeIdx)
                 VRAMChangeSize(info, _sizeOptions[newSizeIdx]);
 
-            // 포맷 드롭다운
             int curFmtIdx = System.Array.IndexOf(_formatOptions, (TextureImporterFormat)info.Format);
             if (curFmtIdx < 0) curFmtIdx = 0;
-            int newFmtIdx = EditorGUILayout.Popup(curFmtIdx, _formatNames, GUILayout.Width(70), GUILayout.Height(rowH));
+            int newFmtIdx = EditorGUILayout.Popup(curFmtIdx, _formatNames, GUILayout.Width(70));
             if (newFmtIdx != curFmtIdx)
             {
                 info.SuggestedFormat = _formatOptions[newFmtIdx];
@@ -1100,10 +1103,34 @@ public class DiNeMaterialTool : EditorWindow
         else
         {
             GUILayout.Label(info.FormatString, new GUIStyle(EditorStyles.miniLabel)
-                { normal = { textColor = ColSubText } }, GUILayout.Width(70), GUILayout.Height(rowH));
+                { normal = { textColor = ColSubText } }, GUILayout.Width(70));
+        }
+
+        GUILayout.FlexibleSpace();
+
+        if (info.UsedByMaterials.Count > 0)
+        {
+            if (GUILayout.Button($"Mat ×{info.UsedByMaterials.Count}", EditorStyles.miniButton,
+                GUILayout.Width(60), GUILayout.Height(16)))
+                info.MaterialDropdown = !info.MaterialDropdown;
         }
 
         EditorGUILayout.EndHorizontal();
+        EditorGUILayout.EndVertical();
+        EditorGUILayout.EndHorizontal();
+
+        // 머티리얼 리스트
+        if (info.MaterialDropdown && info.UsedByMaterials.Count > 0)
+        {
+            GUILayout.Space(2);
+            EditorGUI.indentLevel++;
+            foreach (var mat in info.UsedByMaterials)
+                EditorGUILayout.ObjectField(mat, typeof(Material), false, GUILayout.Height(18));
+            EditorGUI.indentLevel--;
+        }
+
+        EditorGUILayout.EndVertical();
+        GUILayout.Space(2);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
