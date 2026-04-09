@@ -1300,10 +1300,10 @@ public class DiNeMaterialTool : EditorWindow
         EditorGUILayout.BeginVertical("box");
         GUI.backgroundColor = prev;
 
-        // ── 썸네일 + 이름 + VRAM ──
+        // ── 썸네일 + 우측 텍스트 영역 ──
         EditorGUILayout.BeginHorizontal();
 
-        // 썸네일 (클릭 시 프로젝트에서 선택)
+        // 1. 썸네일 영역
         Rect thumbRect = GUILayoutUtility.GetRect(40, 40, GUILayout.Width(40), GUILayout.Height(40));
         Texture2D thumb = AssetPreview.GetAssetPreview(info.Texture);
         if (thumb != null)
@@ -1330,10 +1330,10 @@ public class DiNeMaterialTool : EditorWindow
 
         GUILayout.Space(6);
 
-        // 이름 + VRAM + 드롭다운 (이미지 높이에 맞춤)
+        // 2. 우측 텍스트 & 옵션 영역 시작
         EditorGUILayout.BeginVertical();
 
-        // 줄 1: 이름 + VRAM
+        // 줄 1: 이름 + VRAM 용량
         EditorGUILayout.BeginHorizontal();
         GUILayout.Label(info.Texture.name, new GUIStyle(EditorStyles.boldLabel) { fontSize = 11 }, GUILayout.ExpandWidth(true));
         GUILayout.FlexibleSpace();
@@ -1342,13 +1342,13 @@ public class DiNeMaterialTool : EditorWindow
             GUILayout.Width(80));
         EditorGUILayout.EndHorizontal();
 
-        // 줄 2: 포맷 & 해상도 드롭다운 (수정된 부분)
+        // 줄 2: 포맷 & 해상도 드롭다운 + (우측 끝) 펼쳐보기 버튼
         var importer = !string.IsNullOrEmpty(info.AssetPath) ? AssetImporter.GetAtPath(info.AssetPath) as TextureImporter : null;
         EditorGUILayout.BeginHorizontal();
 
         if (importer != null && info.Texture is Texture2D)
         {
-            // 1. 포맷 드롭다운
+            // 포맷 드롭다운
             int curFmtIdx = System.Array.IndexOf(_formatOptions, (TextureImporterFormat)info.Format);
             if (curFmtIdx < 0) curFmtIdx = 0;
             int newFmtIdx = EditorGUILayout.Popup(curFmtIdx, _formatNames, GUILayout.Width(110));
@@ -1360,7 +1360,7 @@ public class DiNeMaterialTool : EditorWindow
 
             GUILayout.Space(4);
 
-            // 2. 해상도(Max Size) 드롭다운 복구
+            // 해상도 드롭다운
             int curSizeIdx = System.Array.IndexOf(_sizeOptions, importer.maxTextureSize);
             if (curSizeIdx < 0) curSizeIdx = _sizeOptions.Length - 1; 
             int newSizeIdx = EditorGUILayout.Popup(curSizeIdx, _sizeNames, GUILayout.Width(70));
@@ -1372,14 +1372,51 @@ public class DiNeMaterialTool : EditorWindow
         else
         {
             GUILayout.Label(info.FormatString, new GUIStyle(EditorStyles.miniLabel)
-                { normal = { textColor = ColSubText } });
+                { normal = { textColor = ColSubText } }, GUILayout.ExpandWidth(false));
         }
 
-        EditorGUILayout.EndHorizontal();
-        EditorGUILayout.EndVertical();
-        EditorGUILayout.EndHorizontal();
+        // =====================================================================
+        // 핵심 변경 포인트: 빈 공간을 채워(FlexibleSpace) 펼쳐보기 버튼을 우측(용량 바로 아래)으로 밀어냄
+        // =====================================================================
+        GUILayout.FlexibleSpace(); 
 
-        EditorGUILayout.EndVertical();
+        // =====================================================================
+        // 핵심 변경 포인트: 빈 공간을 채워(FlexibleSpace) 펼쳐보기 버튼을 우측(용량 바로 아래)으로 밀어냄
+        // =====================================================================
+        GUILayout.FlexibleSpace(); 
+
+        if (info.UsedByMaterials.Count > 0)
+        {
+            // 공간을 덜 차지하도록 텍스트를 간결하게 조정
+            string foldoutLabel = L == 1 ? $"사용 중 ({info.UsedByMaterials.Count})" : 
+                                  L == 2 ? $"使用中 ({info.UsedByMaterials.Count})" : 
+                                           $"Used ({info.UsedByMaterials.Count})";
+
+            var foldStyle = new GUIStyle(EditorStyles.foldout) { fontSize = 11, fontStyle = FontStyle.Bold, normal = { textColor = ColSubText } };
+            
+            // [수정됨] EditorGUILayout.Foldout 대신 GUILayout.Toggle 사용!
+            // 외형은 폴드아웃(화살표)과 완전히 동일하며, 레이아웃 제어가 정상적으로 작동합니다.
+            info.MaterialDropdown = GUILayout.Toggle(info.MaterialDropdown, foldoutLabel, foldStyle, GUILayout.ExpandWidth(false));
+        }
+
+        EditorGUILayout.EndHorizontal(); // 줄 2 닫기 (이제 아랫줄로 넘어가지 않음!)
+
+        // 줄 3: 펼쳐보기(Foldout)가 열렸을 때만 표시되는 마테리얼 할당칸 리스트
+        if (info.MaterialDropdown && info.UsedByMaterials.Count > 0)
+        {
+            GUILayout.Space(4);
+            foreach (var mat in info.UsedByMaterials)
+            {
+                if (mat == null) continue;
+                // Ping 버튼 대신 깔끔한 유니티 기본 ObjectField 형태 사용
+                EditorGUILayout.ObjectField(mat, typeof(Material), false, GUILayout.Height(18));
+            }
+        }
+
+        EditorGUILayout.EndVertical(); // 우측 영역 닫기
+        EditorGUILayout.EndHorizontal(); // 썸네일 + 우측 영역 닫기
+
+        EditorGUILayout.EndVertical(); // 카드 전체 박스 닫기
         GUILayout.Space(2);
     }
 
