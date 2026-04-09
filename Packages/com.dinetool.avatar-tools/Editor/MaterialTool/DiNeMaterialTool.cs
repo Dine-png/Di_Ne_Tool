@@ -799,18 +799,17 @@ public class DiNeMaterialTool : EditorWindow
         string tog = SECTIONS[si].Toggle;
         if (tog == null) return false;
 
-        // 일반 float 토글 확인
+        // 일반 float 토글 (_UseOutline, _UseMatCap 등)
         if (mat.HasProperty(tog) && mat.GetFloat(tog) > 0.5f) return true;
 
-        // Outline 특별 처리: _UseOutline 프로퍼티가 없는 전용 Outline 셰이더
+        // Outline 전용 셰이더 처리
+        // _UseOutline 프로퍼티가 없는 "lilToon Outline" 셰이더 변형은
+        // 셰이더 이름에 "Outline"이 있으면 항상 켜진 상태로 간주
         if (tog == "_UseOutline" &&
             mat.shader.name.IndexOf("Outline", System.StringComparison.OrdinalIgnoreCase) >= 0)
         {
-            // _OutlineWidth가 0이면 이미 비활성화 처리된 것으로 간주
+            // _OutlineWidth가 거의 0이면 기능 끄기가 적용된 것으로 간주
             if (mat.HasProperty("_OutlineWidth") && mat.GetFloat("_OutlineWidth") <= 0.001f)
-                return false;
-            // _OUTLINE 키워드가 명시적으로 꺼진 경우
-            if (!mat.IsKeywordEnabled("_OUTLINE"))
                 return false;
             return true;
         }
