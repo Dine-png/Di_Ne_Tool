@@ -25,30 +25,55 @@ public class DiNeToggleAnimator : EditorWindow
     private const float SIDEBAR_W  = 42f;
     private const float LANG_W     = 28f;   
     private const float LABEL_W    = 190f;
-    private const float COL_W      = 90f;
-    private const float ROW_H      = 26f;
-    private const float HEADER_H   = 52f;
+    
+    private const float COL_W      = 130f;  
+    private const float ROW_H      = 20f;   
+    private const float HEADER_H   = 24f;
+    
     private const float DEL_W      = 22f;
-    private const int   CLIP_VISIBLE = 3;       
+
+    // ─── Data Structures ────────────────────────────────────────
+    [System.Serializable]
+    public struct RowData : System.IEquatable<RowData>
+    {
+        public string path;
+        public string propName;
+        public bool IsBlendShape => propName != null && propName.StartsWith("blendShape.");
+        
+        public string ShortName
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(path)) return IsBlendShape ? propName.Substring(11) : "Root";
+                int s = path.LastIndexOf('/');
+                string p = s >= 0 ? path.Substring(s + 1) : path;
+                if (IsBlendShape) return p + " (" + propName.Substring(11) + ")";
+                return p;
+            }
+        }
+
+        public bool Equals(RowData other) => path == other.path && propName == other.propName;
+        public override bool Equals(object obj) => obj is RowData other && Equals(other);
+        public override int GetHashCode() => (path != null ? path.GetHashCode() : 0) ^ (propName != null ? propName.GetHashCode() : 0);
+    }
 
     // ─── Data ───────────────────────────────────────────────────
     private GameObject          _avatarRoot;
     private List<AnimationClip> _clips = new List<AnimationClip>();
-    private List<string>        _rows  = new List<string>();  
-    private List<List<bool?>>   _grid  = new List<List<bool?>>();
+    private List<RowData>       _rows  = new List<RowData>();  
+    private List<List<float?>>  _grid  = new List<List<float?>>(); 
     
     // ─── UI State ───────────────────────────────────────────────
     private int     _previewClipIdx = -1;
-    private Vector2 _clipListScroll;
     private Vector2 _gridScroll;
-    private bool    _isDirty;
     private string  _statusMsg  = "";
     private double  _statusTime = -1;
+    private bool    _lockSelection = false;
 
     // ─── Assets ─────────────────────────────────────────────────
     private Font      _titleFont;
-    private Texture2D _iconTex;        // 탭 창 헤더 아이콘
-    private Texture2D _sidebarLogoTex; // 사이드바 내부 로고
+    private Texture2D _iconTex;        
+    private Texture2D _sidebarLogoTex; 
 
     // ─── Menu ───────────────────────────────────────────────────
     [MenuItem("DiNe/Toggle Animator", false, 5)]
@@ -61,16 +86,39 @@ public class DiNeToggleAnimator : EditorWindow
     void OnEnable()
     {
         _titleFont = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
-        // 두 개의 아이콘을 분리해서 로드합니다.
         _iconTex        = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
         _sidebarLogoTex = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
-        
-        // 창 상단 탭에는 _iconTex(DiNe_Icon.png) 사용
         titleContent = new GUIContent("Toggle Animator", _iconTex);
+
+        Selection.selectionChanged += OnSelectionChange;
+        OnSelectionChange(); 
+    }
+
+    void OnDisable()
+    {
+        Selection.selectionChanged -= OnSelectionChange;
     }
 
     private string T(string en, string kr, string jp) =>
         _lang == Lang.Korean ? kr : _lang == Lang.Japanese ? jp : en;
+
+    // ────────────────────────────────────────────────────────────
+    //  Selection Sync Logic 
+    // ────────────────────────────────────────────────────────────
+    private void OnSelectionChange()
+    {
+        if (_lockSelection) return;
+
+        var newClips = Selection.objects.OfType<AnimationClip>().ToList();
+        
+        if (!_clips.SequenceEqual(newClips))
+        {
+            _previewClipIdx = -1;
+            _clips = newClips;
+            RebuildGrid();
+            Repaint();
+        }
+    }
 
     // ────────────────────────────────────────────────────────────
     //  Data Validation
@@ -78,14 +126,24 @@ public class DiNeToggleAnimator : EditorWindow
     private void ValidateData()
     {
         if (_clips == null) _clips = new List<AnimationClip>();
-        if (_rows == null) _rows = new List<string>();
-        if (_grid == null) _grid = new List<List<bool?>>();
+        if (_rows == null) _rows = new List<RowData>();
+        if (_grid == null) _grid = new List<List<float?>>();
 
         bool needsRebuild = false;
 
+        for (int i = _rows.Count - 1; i >= 0; i--)
+        {
+            if (string.IsNullOrEmpty(_rows[i].propName)) 
+            {
+                _rows.RemoveAt(i);
+                if (i < _grid.Count) _grid.RemoveAt(i);
+                needsRebuild = true;
+            }
+        }
+
         while (_grid.Count < _rows.Count)
         {
-            _grid.Add(new List<bool?>(new bool?[_clips.Count]));
+            _grid.Add(new List<float?>(new float?[_clips.Count]));
             needsRebuild = true;
         }
         while (_grid.Count > _rows.Count)
@@ -97,7 +155,7 @@ public class DiNeToggleAnimator : EditorWindow
         {
             if (_grid[r] == null)
             {
-                _grid[r] = new List<bool?>(new bool?[_clips.Count]);
+                _grid[r] = new List<float?>(new float?[_clips.Count]);
                 needsRebuild = true;
             }
             while (_grid[r].Count < _clips.Count) { _grid[r].Add(null); needsRebuild = true; }
@@ -125,14 +183,13 @@ public class DiNeToggleAnimator : EditorWindow
         EditorGUI.DrawRect(sidebarRect, ColSidebar);
         EditorGUI.DrawRect(new Rect(SIDEBAR_W - 1, 0, 1, winH), new Color(0.30f, 0.82f, 0.76f, 0.35f));
 
-        // 창 안쪽 사이드바 로고에는 _sidebarLogoTex(DiNe.png) 사용
         if (_sidebarLogoTex != null)
         {
             float iSz = SIDEBAR_W - 8f;
             GUI.DrawTexture(new Rect(4, 5, iSz, iSz), _sidebarLogoTex, ScaleMode.ScaleToFit, true);
         }
 
-        DrawSidebarTitle("Toggle\nAnimator", SIDEBAR_W - 8f, SIDEBAR_W + 10f);
+        DrawSidebarTitle("Toggle\nAnimator", winH); 
 
         float langX = SIDEBAR_W;
         EditorGUI.DrawRect(new Rect(langX, 0, LANG_W, winH), new Color(0.19f, 0.19f, 0.22f));
@@ -155,14 +212,17 @@ public class DiNeToggleAnimator : EditorWindow
         }
         else
         {
-            DrawEmptyHint("클립 드롭존에 Animation Clip을 끌어다 놓으세요.\n그 뒤 GameObject를 드래그해서 행을 추가합니다.");
+            DrawEmptyHint(T(
+                "Select Animation Clips in the Project window to begin.\n(You can select multiple clips at once)\n\nAfter that, drag GameObjects here to add rows.",
+                "프로젝트(Project) 창에서 Animation Clip을 선택하세요.\n(여러 개 동시 선택 가능)\n\n그 뒤, GameObject를 아래 공간에 드래그하여 행을 추가합니다.",
+                "プロジェクトウィンドウでアニメーションクリップを選択してください。\n(複数選択可能)\n\nその後、GameObjectを下のスペースにドラッグして行を追加します。"
+            ));
         }
 
         GUILayout.Space(2);
         DrawStatusBar();
 
-        HandleClipDrop();
-        HandleGameObjectDrop();
+        HandleGameObjectDrop(); 
 
         GUILayout.EndVertical();
         GUILayout.EndArea();
@@ -171,42 +231,51 @@ public class DiNeToggleAnimator : EditorWindow
         GUI.color           = prevColor;
     }
 
-    private void DrawSidebarTitle(string text, float x, float startY)
+    private void DrawSidebarTitle(string text, float winH)
     {
         var style = new GUIStyle(EditorStyles.label)
         {
             font      = _titleFont,
-            fontSize  = 11,
+            fontSize  = 19, // 21의 약 0.9배 사이즈
             fontStyle = FontStyle.Bold,
-            alignment = TextAnchor.UpperCenter,
+            alignment = TextAnchor.MiddleCenter, // 좌우 중앙 정렬
             normal    = { textColor = new Color(0.50f, 0.50f, 0.54f) },
         };
 
-        float y = startY;
+        // 전체 텍스트 블록의 높이 계산
+        float totalHeight = 0;
+        float lineSpacing = 18f;
+        float paragraphSpacing = 8f;
+
         foreach (char ch in text)
         {
-            if (ch == '\n') { y += 6f; continue; }
-            GUI.Label(new Rect(x - SIDEBAR_W + 4, y, SIDEBAR_W - 4, 16f), ch.ToString(), style);
-            y += 14f;
+            if (ch == '\n') totalHeight += paragraphSpacing;
+            else totalHeight += lineSpacing;
+        }
+
+        // 로고(상단 46px 가량) 아래부터 화면 끝 사이의 정중앙 Y좌표 계산
+        float startY = 46f + (winH - 46f - totalHeight) * 0.5f;
+        float y = startY;
+
+        foreach (char ch in text)
+        {
+            if (ch == '\n') { y += paragraphSpacing; continue; }
+            // x좌표 0, 너비 SIDEBAR_W로 주어 완벽하게 가로/세로 중앙에 오도록 처리
+            GUI.Label(new Rect(0, y, SIDEBAR_W, lineSpacing), ch.ToString(), style);
+            y += lineSpacing; 
         }
     }
 
-    // ────────────────────────────────────────────────────────────
-    //  Language buttons (vertical column)
-    // ────────────────────────────────────────────────────────────
     private void DrawLangButtons(float x, float winH, Color prevBg)
     {
         Lang[] langs = { Lang.English, Lang.Korean, Lang.Japanese };
         
-        // 언어별로 변경될 세로 텍스트 데이터
         string[] labelsEn = { "E\nN\nG", "K\nO\nR", "J\nP\nN" };
         string[] labelsKr = { "영\n어", "한\n국\n어", "일\n본\n어" };
         string[] labelsJp = { "英\n語", "韓\n国\n語", "日\n本\n語" };
 
-        // 현재 선택된 언어에 맞춰 배열 선택
         string[] currentLabels = _lang == Lang.Korean ? labelsKr : (_lang == Lang.Japanese ? labelsJp : labelsEn);
 
-        // 창 높이에 맞춰 3등분 꽉 차게 계산 (위, 아래, 버튼 사이 간격 고려)
         float padding = 4f;
         float btnH = (winH - (padding * 4f)) / 3f;
         float startY = padding; 
@@ -226,7 +295,6 @@ public class DiNeToggleAnimator : EditorWindow
                 wordWrap  = false 
             };
             
-            // 세로로 길쭉하게 늘어난 버튼 Rect
             Rect btnRect = new Rect(x + 2, startY + i * (btnH + padding), LANG_W - 4, btnH);
             
             if (GUI.Button(btnRect, currentLabels[i], style))
@@ -238,9 +306,6 @@ public class DiNeToggleAnimator : EditorWindow
         }
     }
 
-    // ────────────────────────────────────────────────────────────
-    //  Setup Section
-    // ────────────────────────────────────────────────────────────
     private void DrawSetupSection(Color prevBg)
     {
         GUI.backgroundColor = ColPanel;
@@ -252,107 +317,22 @@ public class DiNeToggleAnimator : EditorWindow
         EditorGUI.BeginChangeCheck();
         _avatarRoot = (GameObject)EditorGUILayout.ObjectField(_avatarRoot, typeof(GameObject), true);
         if (EditorGUI.EndChangeCheck() && _previewClipIdx >= 0) PreviewClip(_previewClipIdx);
-        EditorGUILayout.EndHorizontal();
-
-        GUILayout.Space(5);
-        EditorGUILayout.LabelField(T("Animation Clips", "애니메이션 클립", "アニメーションクリップ"), EditorStyles.boldLabel);
-
-        float clipRowH  = 22f;
-        float clipAreaH = clipRowH * CLIP_VISIBLE + 4f;
-        _clipListScroll = EditorGUILayout.BeginScrollView(_clipListScroll,
-            false, false, GUIStyle.none, GUIStyle.none,
-            GUIStyle.none, GUILayout.Height(clipAreaH));
-
-        for (int c = 0; c < _clips.Count; c++)
+        
+        GUILayout.FlexibleSpace();
+        
+        GUI.backgroundColor = _lockSelection ? ColMint : ColDark;
+        if (GUILayout.Button(T("Lock Selection", "선택 유지 (Lock)", "選択維持 (Lock)"), 
+            new GUIStyle(GUI.skin.button) { fontSize = 11, fontStyle = FontStyle.Bold, normal = { textColor = _lockSelection ? ColDeep : Color.white } }, 
+            GUILayout.Width(130), GUILayout.Height(20)))
         {
-            EditorGUILayout.BeginHorizontal(GUILayout.Height(clipRowH));
-
-            GUILayout.Label($"{c + 1}",
-                new GUIStyle(EditorStyles.miniLabel)
-                {
-                    normal    = { textColor = ColMint },
-                    fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.MiddleCenter,
-                },
-                GUILayout.Width(18), GUILayout.Height(clipRowH));
-
-            EditorGUI.BeginChangeCheck();
-            var nc = (AnimationClip)EditorGUILayout.ObjectField(_clips[c], typeof(AnimationClip), false);
-            if (EditorGUI.EndChangeCheck()) { _clips[c] = nc; RebuildGrid(); }
-
-            EditorGUI.BeginDisabledGroup(_clips[c] == null);
-            GUI.backgroundColor = ColMintDark;
-            if (GUILayout.Button("↓", GUILayout.Width(24), GUILayout.Height(clipRowH)))
-            {
-                SaveClip(c);
-                SetStatus($"저장 완료:  {_clips[c].name}");
-            }
-            GUI.backgroundColor = prevBg;
-            EditorGUI.EndDisabledGroup();
-
-            GUI.backgroundColor = new Color(0.50f, 0.15f, 0.15f);
-            if (GUILayout.Button("✕", GUILayout.Width(24), GUILayout.Height(clipRowH)))
-            {
-                RemoveClip(c);
-                GUI.backgroundColor = prevBg;
-                EditorGUILayout.EndHorizontal();
-                break;
-            }
-            GUI.backgroundColor = prevBg;
-            EditorGUILayout.EndHorizontal();
-        }
-        EditorGUILayout.EndScrollView();
-
-        GUILayout.Space(5);
-
-        Rect dropRect = GUILayoutUtility.GetRect(0, 44f, GUILayout.ExpandWidth(true));
-        bool isClipOver = _clipDragOver;
-        EditorGUI.DrawRect(dropRect, isClipOver ? new Color(0.20f, 0.58f, 0.54f, 0.25f) : new Color(0.15f, 0.15f, 0.18f));
-        DrawBorder(dropRect, isClipOver ? ColMint : new Color(0.32f, 0.32f, 0.36f), 1);
-        GUI.Label(dropRect,
-            T("⊕  Drop Animation Clips here  (multiple at once)",
-              "⊕  Animation Clip 을 여기에 끌어다 놓으세요  (여러 개 동시 가능)",
-              "⊕  アニメーションクリップをここにドロップ  (複数同時可)"),
-            new GUIStyle(GUI.skin.label)
-            {
-                alignment = TextAnchor.MiddleCenter, fontSize = 11,
-                fontStyle = isClipOver ? FontStyle.Bold : FontStyle.Normal,
-                normal    = { textColor = isClipOver ? ColMint : new Color(0.45f, 0.45f, 0.50f) },
-            });
-        _clipDropGuiRect = dropRect;
-
-        GUILayout.Space(4);
-
-        EditorGUILayout.BeginHorizontal();
-        GUI.backgroundColor = ColDark;
-        if (GUILayout.Button(T("＋  Add Clip", "＋  클립 추가", "＋  クリップ追加"), GUILayout.Height(24)))
-        {
-            _clips.Add(null);
-            foreach (var row in _grid) row.Add(null);
-        }
-        if (_isDirty)
-        {
-            GUI.backgroundColor = ColMint;
-            if (GUILayout.Button(T("✔  Save All", "✔  저장", "✔  保存"),
-                new GUIStyle(GUI.skin.button)
-                {
-                    fontSize = 11, fontStyle = FontStyle.Bold,
-                    normal   = { textColor = ColDeep },
-                    hover    = { textColor = ColDeep },
-                }, GUILayout.Height(24)))
-            {
-                SaveAll();
-                SetStatus("모든 클립 저장 완료!");
-            }
+            _lockSelection = !_lockSelection;
+            if (!_lockSelection) OnSelectionChange(); 
         }
         GUI.backgroundColor = prevBg;
-        EditorGUILayout.EndHorizontal();
 
+        EditorGUILayout.EndHorizontal();
         EditorGUILayout.EndVertical();
     }
-
-    private Rect   _clipDropGuiRect;
-    private bool   _clipDragOver;
 
     // ────────────────────────────────────────────────────────────
     //  Grid
@@ -377,7 +357,7 @@ public class DiNeToggleAnimator : EditorWindow
             if (GUILayout.Button(cname,
                 new GUIStyle(GUI.skin.button)
                 {
-                    fontSize  = 10, fontStyle = FontStyle.Bold, wordWrap = true,
+                    fontSize  = 10, fontStyle = FontStyle.Bold, wordWrap = false,
                     alignment = TextAnchor.MiddleCenter,
                     normal    = { textColor = isPrev ? ColDeep : new Color(0.80f, 0.82f, 0.80f) },
                     hover     = { textColor = isPrev ? ColDeep : Color.white },
@@ -407,14 +387,32 @@ public class DiNeToggleAnimator : EditorWindow
             GUILayout.Space(8);
         }
 
+        var cellBtnStyle = new GUIStyle(GUI.skin.button)
+        {
+            fontSize  = 11, fontStyle = FontStyle.Bold,
+            normal    = { textColor = Color.white },
+            hover     = { textColor = Color.white },
+        };
+
+        // [수정됨] 패딩을 없애 텍스트가 찌그러지지 않게 만든 초소형 버튼 스타일
+        var smallXStyle = new GUIStyle(GUI.skin.button)
+        {
+            fontSize  = 10, fontStyle = FontStyle.Bold,
+            alignment = TextAnchor.MiddleCenter,
+            padding   = new RectOffset(0, 0, 0, 0), 
+            normal    = { textColor = Color.white },
+            hover     = { textColor = Color.white },
+        };
+
         for (int r = 0; r < _rows.Count; r++)
         {
             Color rowBg = r % 2 == 0 ? new Color(0.19f, 0.19f, 0.21f) : new Color(0.21f, 0.21f, 0.24f);
             Rect rowRect = EditorGUILayout.BeginHorizontal(GUILayout.Height(ROW_H));
             EditorGUI.DrawRect(rowRect, rowBg);
 
+            // Row Label
             GUILayout.Label(
-                new GUIContent(GetShortName(_rows[r]), _rows[r]),
+                new GUIContent(_rows[r].ShortName, _rows[r].path + "\n" + _rows[r].propName),
                 new GUIStyle(EditorStyles.label)
                 {
                     fontSize  = 11, alignment = TextAnchor.MiddleLeft,
@@ -422,32 +420,82 @@ public class DiNeToggleAnimator : EditorWindow
                 },
                 GUILayout.Width(LABEL_W), GUILayout.Height(ROW_H));
 
+            bool isBlendShape = _rows[r].IsBlendShape;
+
+            // Cells
             for (int c = 0; c < _clips.Count; c++)
             {
-                bool? state = _grid[r][c];
-                string lbl; Color bg;
+                float? state = _grid[r][c];
 
-                if      (state == null)  { lbl = "—";   bg = ColUnset; }
-                else if (state == true)  { lbl = "ON";  bg = ColOn; }
-                else                     { lbl = "OFF"; bg = ColOff; }
-
-                GUI.backgroundColor = bg;
-                if (GUILayout.Button(lbl,
-                    new GUIStyle(GUI.skin.button)
-                    {
-                        fontSize  = 11, fontStyle = FontStyle.Bold,
-                        normal    = { textColor = Color.white },
-                        hover     = { textColor = Color.white },
-                    },
-                    GUILayout.Width(COL_W), GUILayout.Height(ROW_H)))
+                if (state == null)
                 {
-                    HandleCellClick(r, c);
+                    GUI.backgroundColor = ColUnset;
+                    if (GUILayout.Button("—", cellBtnStyle, GUILayout.Width(COL_W), GUILayout.Height(ROW_H)))
+                    {
+                        _grid[r][c] = isBlendShape ? 100f : 1f; 
+                        SaveClip(c);
+                        UpdatePreview(r, c);
+                    }
+                    GUI.backgroundColor = prevBg;
                 }
-                GUI.backgroundColor = prevBg;
+                else
+                {
+                    if (!isBlendShape)
+                    {
+                        // 토글 (ON/OFF)
+                        bool isOn = state.Value > 0.5f;
+                        GUI.backgroundColor = isOn ? ColOn : ColOff;
+                        
+                        Rect btnRect = GUILayoutUtility.GetRect(new GUIContent(isOn ? "ON" : "OFF"), cellBtnStyle, GUILayout.Width(COL_W), GUILayout.Height(ROW_H));
+                        
+                        // 우클릭으로 제거(Null 처리) 감지
+                        if (Event.current.type == EventType.ContextClick && btnRect.Contains(Event.current.mousePosition))
+                        {
+                            _grid[r][c] = null;
+                            SaveClip(c);
+                            UpdatePreview(r, c);
+                            Event.current.Use();
+                        }
+                        else if (GUI.Button(btnRect, isOn ? "ON" : "OFF", cellBtnStyle))
+                        {
+                            _grid[r][c] = isOn ? 0f : 1f;
+                            SaveClip(c);
+                            UpdatePreview(r, c);
+                        }
+                        GUI.backgroundColor = prevBg;
+                    }
+                    else
+                    {
+                        // 쉐이프키 (숫자 입력)
+                        GUILayout.BeginHorizontal(GUILayout.Width(COL_W));
+                        
+                        EditorGUI.BeginChangeCheck();
+                        float val = EditorGUILayout.FloatField(state.Value, GUILayout.Width(COL_W - 20f), GUILayout.Height(ROW_H));
+                        if (EditorGUI.EndChangeCheck())
+                        {
+                            _grid[r][c] = val;
+                            SaveClip(c);
+                            UpdatePreview(r, c);
+                        }
+
+                        GUI.backgroundColor = new Color(0.42f, 0.12f, 0.12f);
+                        // [수정됨] smallXStyle 적용으로 글씨 깨짐 방지
+                        if (GUILayout.Button("✕", smallXStyle, GUILayout.Width(16f), GUILayout.Height(ROW_H)))
+                        {
+                            _grid[r][c] = null;
+                            SaveClip(c);
+                            UpdatePreview(r, c);
+                        }
+                        GUI.backgroundColor = prevBg;
+                        
+                        GUILayout.EndHorizontal();
+                    }
+                }
             }
 
             GUI.backgroundColor = new Color(0.42f, 0.12f, 0.12f);
-            if (GUILayout.Button("✕", GUILayout.Width(DEL_W), GUILayout.Height(ROW_H)))
+            // 줄 삭제 버튼에도 smallXStyle 적용 (동일한 찌그러짐 방지)
+            if (GUILayout.Button("✕", smallXStyle, GUILayout.Width(DEL_W), GUILayout.Height(ROW_H)))
             {
                 RemoveRow(r);
                 GUI.backgroundColor = prevBg;
@@ -495,12 +543,12 @@ public class DiNeToggleAnimator : EditorWindow
             hover     = { textColor = Color.white },
         };
         EditorGUILayout.BeginHorizontal();
-        if (GUILayout.Button(T("Fill Missing → OFF", "미지정 → OFF", "未設定→OFF"), bs, GUILayout.Height(26)))
-        { FillMissing(false); SetStatus(T("Filled all unset cells with OFF.", "미지정(—) 셀 전부 OFF 로 채웠습니다.", "未設定セルをすべてOFFにしました。")); }
+        if (GUILayout.Button(T("Fill Missing → OFF", "미지정 → OFF (0)", "未設定→OFF"), bs, GUILayout.Height(26)))
+        { FillMissing(0f); SetStatus(T("Filled all unset cells with OFF.", "미지정(—) 셀 전부 0(OFF) 으로 채웠습니다.", "未設定セルをすべて0にしました。")); }
         if (GUILayout.Button(T("Smart Fill", "Smart Fill", "スマートフィル"), bs, GUILayout.Height(26)))
-        { SmartFill(); SetStatus(T("Smart Fill: set OFF where ON exists in other clips.", "Smart Fill: ON 있는 행의 나머지를 OFF 처리.", "スマートフィル完了。")); }
+        { SmartFill(); SetStatus(T("Smart Fill: set OFF where ON exists in other clips.", "Smart Fill: 값이 있는 행의 나머지를 0 처리.", "スマートフィル完了。")); }
         if (GUILayout.Button(T("Invert All", "전체 반전", "全て反転"), bs, GUILayout.Height(26)))
-        { InvertAll(); SetStatus(T("Inverted all ON ↔ OFF.", "전체 ON ↔ OFF 반전 완료.", "全てのON↔OFFを反転しました。")); }
+        { InvertAll(); SetStatus(T("Inverted all values.", "전체 반전 완료.", "全ての値を反転しました。")); }
         GUI.backgroundColor = prevBg;
         EditorGUILayout.EndHorizontal();
     }
@@ -526,58 +574,18 @@ public class DiNeToggleAnimator : EditorWindow
     private void SetStatus(string m) { _statusMsg = m; _statusTime = EditorApplication.timeSinceStartup; }
 
     // ────────────────────────────────────────────────────────────
-    //  Drag & Drop — Clips
-    // ────────────────────────────────────────────────────────────
-    private void HandleClipDrop()
-    {
-        var e = Event.current;
-        bool hasClip = DragAndDrop.objectReferences.Any(o => o is AnimationClip);
-
-        bool overZone = _clipDropGuiRect.Contains(e.mousePosition);
-        _clipDragOver = overZone && hasClip &&
-                        (e.type == EventType.DragUpdated || e.type == EventType.DragPerform);
-        if (_clipDragOver) Repaint();
-
-        if (!overZone || !hasClip) return;
-
-        if (e.type == EventType.DragUpdated)
-        {
-            DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
-            e.Use();
-        }
-        else if (e.type == EventType.DragPerform)
-        {
-            DragAndDrop.AcceptDrag();
-            int added = 0;
-            foreach (var clip in DragAndDrop.objectReferences.OfType<AnimationClip>())
-            {
-                if (!_clips.Contains(clip))
-                {
-                    _clips.Add(clip);
-                    foreach (var row in _grid) row.Add(null);
-                    added++;
-                }
-            }
-            RebuildGrid();
-            SetStatus($"클립 {added}개 추가됨");
-            _clipDragOver = false;
-            e.Use();
-            Repaint();
-        }
-    }
-
-    // ────────────────────────────────────────────────────────────
     //  Drag & Drop — GameObjects
     // ────────────────────────────────────────────────────────────
     private void HandleGameObjectDrop()
     {
         var e = Event.current;
-        bool hasGo   = DragAndDrop.objectReferences.Any(o => o is GameObject);
-        bool hasClip = DragAndDrop.objectReferences.Any(o => o is AnimationClip);
-        if (!hasGo || hasClip) { _goDragOver = false; return; }
+        bool hasGo = DragAndDrop.objectReferences.Any(o => o is GameObject);
+        if (!hasGo) { _goDragOver = false; return; }
 
-        bool overDropZone = _goDropGuiRect.Contains(e.mousePosition);
-        _goDragOver = (e.type == EventType.DragUpdated || e.type == EventType.DragPerform) && hasGo && !hasClip;
+        bool validZone = _clips.Count == 0 || _goDropGuiRect.Contains(e.mousePosition);
+        if (!validZone) return;
+
+        _goDragOver = (e.type == EventType.DragUpdated || e.type == EventType.DragPerform);
         if (_goDragOver) Repaint();
 
         if (e.type == EventType.DragUpdated)
@@ -603,11 +611,20 @@ public class DiNeToggleAnimator : EditorWindow
     // ────────────────────────────────────────────────────────────
     private void HandleCellClick(int r, int c)
     {
-        bool? cur  = _grid[r][c];
-        bool? next = Event.current.button == 1 ? (bool?)null : cur != true;
+        float? cur  = _grid[r][c];
+        
+        float? next;
+        if (Event.current.button == 1) 
+            next = null; 
+        else 
+        {
+            bool isOn = cur.HasValue && cur.Value > 0.5f;
+            next = isOn ? 0f : 1f;
+        }
 
         _grid[r][c] = next;
-        _isDirty = true;
+
+        SaveClip(c);
 
         if (_previewClipIdx == c) PreviewClip(c);
         else                       ApplyCellToScene(r, next);
@@ -617,30 +634,54 @@ public class DiNeToggleAnimator : EditorWindow
     // ────────────────────────────────────────────────────────────
     //  Scene Sync
     // ────────────────────────────────────────────────────────────
+    private void UpdatePreview(int r, int c)
+    {
+        if (_previewClipIdx == c) PreviewClip(c);
+        else ApplyCellToScene(r, _grid[r][c]);
+        Repaint();
+    }
+
     private void PreviewClip(int c)
     {
         if (_avatarRoot == null) return;
         for (int r = 0; r < _rows.Count; r++)
         {
-            bool? state = _grid[r][c];
+            float? state = _grid[r][c];
             if (!state.HasValue) continue;
-            var t = _avatarRoot.transform.Find(_rows[r]);
-            if (t != null)
-            {
-                Undo.RecordObject(t.gameObject, "Toggle Animator Preview");
-                t.gameObject.SetActive(state.Value);
-            }
+            ApplyToScene(_rows[r], state.Value, "Toggle Animator Preview");
         }
     }
 
-    private void ApplyCellToScene(int r, bool? state)
+    private void ApplyCellToScene(int r, float? state)
     {
         if (_avatarRoot == null || !state.HasValue) return;
-        var t = _avatarRoot.transform.Find(_rows[r]);
-        if (t != null)
+        ApplyToScene(_rows[r], state.Value, "Toggle Animator");
+    }
+
+    private void ApplyToScene(RowData row, float val, string undoMsg)
+    {
+        var t = _avatarRoot.transform.Find(row.path);
+        if (t == null && !string.IsNullOrEmpty(row.path)) return;
+        if (t == null && string.IsNullOrEmpty(row.path)) t = _avatarRoot.transform; 
+
+        if (row.IsBlendShape)
         {
-            Undo.RecordObject(t.gameObject, "Toggle Animator");
-            t.gameObject.SetActive(state.Value);
+            var smr = t.GetComponent<SkinnedMeshRenderer>();
+            if (smr != null)
+            {
+                string bsName = row.propName.Substring(11);
+                int idx = smr.sharedMesh.GetBlendShapeIndex(bsName);
+                if (idx >= 0)
+                {
+                    Undo.RecordObject(smr, undoMsg);
+                    smr.SetBlendShapeWeight(idx, val);
+                }
+            }
+        }
+        else
+        {
+            Undo.RecordObject(t.gameObject, undoMsg);
+            t.gameObject.SetActive(val > 0.5f);
         }
     }
 
@@ -649,25 +690,25 @@ public class DiNeToggleAnimator : EditorWindow
     // ────────────────────────────────────────────────────────────
     private void RebuildGrid()
     {
-        var clipPaths = new HashSet<string>();
+        var clipBindings = new HashSet<RowData>();
         foreach (var clip in _clips)
         {
             if (clip == null) continue;
             foreach (var b in AnimationUtility.GetCurveBindings(clip))
             {
-                if (b.propertyName == "m_IsActive")
-                    clipPaths.Add(b.path);
-                else if (b.propertyName.StartsWith("blendShape.") && !string.IsNullOrEmpty(b.path))
-                    clipPaths.Add(b.path);
+                if (b.propertyName == "m_IsActive" || b.propertyName.StartsWith("blendShape."))
+                {
+                    clipBindings.Add(new RowData { path = b.path, propName = b.propertyName });
+                }
             }
         }
 
-        foreach (var path in clipPaths)
+        foreach (var cb in clipBindings)
         {
-            if (!_rows.Contains(path))
+            if (!_rows.Contains(cb))
             {
-                _rows.Add(path);
-                _grid.Add(new List<bool?>(new bool?[_clips.Count]));
+                _rows.Add(cb);
+                _grid.Add(new List<float?>(new float?[_clips.Count]));
             }
         }
 
@@ -682,21 +723,24 @@ public class DiNeToggleAnimator : EditorWindow
             var clip = _clips[c];
             if (clip == null) continue;
 
-            var active = new Dictionary<string, EditorCurveBinding>();
+            var curveDict = new Dictionary<RowData, EditorCurveBinding>();
             foreach (var b in AnimationUtility.GetCurveBindings(clip))
             {
-                if (b.propertyName == "m_IsActive")
+                if (b.propertyName == "m_IsActive" || b.propertyName.StartsWith("blendShape."))
                 {
-                    active[b.path] = b;
+                    curveDict[new RowData { path = b.path, propName = b.propertyName }] = b;
                 }
             }
 
             for (int r = 0; r < _rows.Count; r++)
             {
-                if (active.TryGetValue(_rows[r], out var b))
+                if (curveDict.TryGetValue(_rows[r], out var b))
                 {
                     var curve = AnimationUtility.GetEditorCurve(clip, b);
-                    _grid[r][c] = curve != null && curve.Evaluate(0f) > 0.5f;
+                    if (curve != null && curve.length > 0)
+                    {
+                        _grid[r][c] = curve.Evaluate(0f);
+                    }
                 }
             }
         }
@@ -708,11 +752,12 @@ public class DiNeToggleAnimator : EditorWindow
             ? AnimationUtility.CalculateTransformPath(obj.transform, _avatarRoot.transform)
             : obj.name;
 
-        if (_rows.Contains(path)) return false;
+        var row = new RowData { path = path, propName = "m_IsActive" };
+        if (_rows.Contains(row)) return false;
 
         int rowIdx = _rows.Count;
-        _rows.Add(path);
-        _grid.Add(new List<bool?>(new bool?[_clips.Count]));
+        _rows.Add(row);
+        _grid.Add(new List<float?>(new float?[_clips.Count]));
 
         for (int c = 0; c < _clips.Count; c++)
         {
@@ -723,103 +768,114 @@ public class DiNeToggleAnimator : EditorWindow
                 if (b.propertyName == "m_IsActive" && b.path == path)
                 {
                     var curve = AnimationUtility.GetEditorCurve(clip, b);
-                    _grid[rowIdx][c] = curve != null && curve.Evaluate(0f) > 0.5f;
+                    if (curve != null && curve.length > 0)
+                        _grid[rowIdx][c] = curve.Evaluate(0f);
                     break;
                 }
             }
         }
 
-        _isDirty = true;
         return true;
-    }
-
-    private void RemoveClip(int c)
-    {
-        if (c < 0 || c >= _clips.Count) return;
-        _clips.RemoveAt(c);
-        foreach (var row in _grid) if (c < row.Count) row.RemoveAt(c);
-        if      (_previewClipIdx == c) _previewClipIdx = -1;
-        else if (_previewClipIdx  > c) _previewClipIdx--;
     }
 
     private void RemoveRow(int r)
     {
         if (r < 0 || r >= _rows.Count) return;
-        _rows.RemoveAt(r); _grid.RemoveAt(r); _isDirty = true;
+        _rows.RemoveAt(r); 
+        _grid.RemoveAt(r); 
+
+        SaveAll(); 
     }
 
     // ────────────────────────────────────────────────────────────
     //  Utility
     // ────────────────────────────────────────────────────────────
-    private void FillMissing(bool v)
+    private void FillMissing(float v)
     {
         for (int r = 0; r < _rows.Count; r++)
             for (int c = 0; c < _clips.Count; c++)
                 if (_grid[r][c] == null) _grid[r][c] = v;
-        _isDirty = true;
+        
+        SaveAll();
     }
 
     private void SmartFill()
     {
         for (int r = 0; r < _rows.Count; r++)
         {
-            if (!_grid[r].Any(v => v == true)) continue;
+            if (!_grid[r].Any(v => v != null && v.Value > 0f)) continue;
             for (int c = 0; c < _clips.Count; c++)
-                if (_grid[r][c] != true) _grid[r][c] = false;
+                if (_grid[r][c] == null || _grid[r][c].Value <= 0f) _grid[r][c] = 0f;
         }
-        _isDirty = true;
+
+        SaveAll();
     }
 
     private void InvertAll()
     {
         for (int r = 0; r < _rows.Count; r++)
+        {
+            bool isBlendShape = _rows[r].IsBlendShape;
             for (int c = 0; c < _clips.Count; c++)
-                if (_grid[r][c].HasValue) _grid[r][c] = !_grid[r][c];
-        _isDirty = true;
+            {
+                if (_grid[r][c].HasValue)
+                {
+                    if (isBlendShape) _grid[r][c] = _grid[r][c].Value > 0f ? 0f : 100f;
+                    else              _grid[r][c] = _grid[r][c].Value > 0.5f ? 0f : 1f;
+                }
+            }
+        }
+
+        SaveAll();
     }
 
     // ────────────────────────────────────────────────────────────
-    //  Save
+    //  Save (Real-time Auto-Save Logic)
     // ────────────────────────────────────────────────────────────
     private void SaveAll()
     {
-        for (int c = 0; c < _clips.Count; c++) SaveClip(c);
-        _isDirty = false;
+        for (int c = 0; c < _clips.Count; c++) SaveClipData(c);
+        AssetDatabase.SaveAssets(); 
     }
 
     private void SaveClip(int c)
     {
+        SaveClipData(c);
+        AssetDatabase.SaveAssets(); 
+    }
+
+    private void SaveClipData(int c)
+    {
         var clip = _clips[c];
         if (clip == null) return;
-        Undo.RecordObject(clip, "Toggle Animator Save");
-
-        foreach (var b in AnimationUtility.GetCurveBindings(clip)
-            .Where(b => b.propertyName == "m_IsActive").ToArray())
-            AnimationUtility.SetEditorCurve(clip, b, null);
+        Undo.RecordObject(clip, "Toggle Animator Auto-Save");
 
         for (int r = 0; r < _rows.Count; r++)
         {
-            bool? st = _grid[r][c];
-            if (!st.HasValue) continue;
-            AnimationUtility.SetEditorCurve(clip,
-                EditorCurveBinding.FloatCurve(_rows[r], typeof(GameObject), "m_IsActive"),
-                AnimationCurve.Constant(0f, 0f, st.Value ? 1f : 0f));
+            var row = _rows[r];
+            float? st = _grid[r][c];
+            
+            var binding = EditorCurveBinding.FloatCurve(
+                row.path, 
+                row.IsBlendShape ? typeof(SkinnedMeshRenderer) : typeof(GameObject), 
+                row.propName);
+
+            if (st.HasValue) 
+            {
+                AnimationUtility.SetEditorCurve(clip, binding, AnimationCurve.Constant(0f, 0f, st.Value));
+            } 
+            else 
+            {
+                AnimationUtility.SetEditorCurve(clip, binding, null);
+            }
         }
 
-        EditorUtility.SetDirty(clip);
-        AssetDatabase.SaveAssets();
+        EditorUtility.SetDirty(clip); 
     }
 
     // ────────────────────────────────────────────────────────────
     //  Helpers
     // ────────────────────────────────────────────────────────────
-    private static string GetShortName(string path)
-    {
-        if (string.IsNullOrEmpty(path)) return "";
-        int s = path.LastIndexOf('/');
-        return s >= 0 ? path.Substring(s + 1) : path;
-    }
-
     private void DrawEmptyHint(string msg)
     {
         GUILayout.FlexibleSpace();
