@@ -13,29 +13,21 @@ public class DiNeTexturePreviewWindow : EditorWindow
         win.titleContent = new GUIContent(texture.name);
         win._texture = texture;
 
-        // FHD 기준 1/6 크기에 텍스처 비율 적용
-        const float toolbarH = 32f;
-        const float maxArea  = 1920f / 6f; // 기준 변 길이 320px
+        // FHD 기준 1/4 크기 (320 * 1.5 = 480px) 에 텍스처 비율 적용
+        const float toolbarH = 22f;
+        const float maxSide  = 480f;
 
-        float aspect = (float)texture.width / texture.height;
-        float winW, winH;
-        if (aspect >= 1f)
-        {
-            winW = maxArea;
-            winH = maxArea / aspect + toolbarH;
-        }
-        else
-        {
-            winH = maxArea + toolbarH;
-            winW = maxArea * aspect;
-        }
+        float zoom = maxSide / Mathf.Max(texture.width, texture.height);
+        float imgW = texture.width  * zoom;
+        float imgH = texture.height * zoom;
 
-        win._zoom = maxArea / Mathf.Max(texture.width, texture.height);
-        win.minSize = new Vector2(120, 120);
+        win._zoom    = zoom;
+        win.minSize  = new Vector2(120, 120);
+        win.maxSize  = new Vector2(imgW + 2, imgH + toolbarH + 2);
         win.position = new Rect(
-            (Screen.currentResolution.width  - winW) * 0.5f,
-            (Screen.currentResolution.height - winH) * 0.5f,
-            winW, winH
+            (Screen.currentResolution.width  - imgW) * 0.5f,
+            (Screen.currentResolution.height - imgH - toolbarH) * 0.5f,
+            imgW, imgH + toolbarH
         );
 
         win.ShowUtility();
@@ -55,9 +47,9 @@ public class DiNeTexturePreviewWindow : EditorWindow
         GUILayout.Label("Zoom", GUILayout.Width(36));
         _zoom = GUILayout.HorizontalSlider(_zoom, 0.1f, 4f, GUILayout.Width(80));
         if (GUILayout.Button("1:1", EditorStyles.toolbarButton, GUILayout.Width(28)))
-            _zoom = 1f;
+            { _zoom = 1f; ResizeToZoom(); }
         if (GUILayout.Button("Fit", EditorStyles.toolbarButton, GUILayout.Width(28)))
-            _zoom = Mathf.Min((position.width) / _texture.width, (position.height - 32f) / _texture.height);
+            { _zoom = 480f / Mathf.Max(_texture.width, _texture.height); ResizeToZoom(); }
 
         EditorGUILayout.EndHorizontal();
 
@@ -65,21 +57,32 @@ public class DiNeTexturePreviewWindow : EditorWindow
         float drawW = _texture.width  * _zoom;
         float drawH = _texture.height * _zoom;
 
-        _scroll = EditorGUILayout.BeginScrollView(_scroll);
+        _scroll = EditorGUILayout.BeginScrollView(_scroll,
+            GUILayout.Width(position.width), GUILayout.Height(position.height - 22f));
 
-        Rect texRect = GUILayoutUtility.GetRect(drawW, drawH);
+        Rect texRect = GUILayoutUtility.GetRect(drawW, drawH,
+            GUILayout.Width(drawW), GUILayout.Height(drawH));
 
-        // 체커보드 배경 (알파 확인용)
-        EditorGUI.DrawTextureTransparent(texRect, _texture, ScaleMode.ScaleToFit);
+        EditorGUI.DrawTextureTransparent(texRect, _texture, ScaleMode.StretchToFill);
 
         EditorGUILayout.EndScrollView();
 
         // 마우스 휠 줌
-        if (Event.current.type == EventType.ScrollWheel && position.Contains(GUIUtility.GUIToScreenPoint(Event.current.mousePosition)))
+        if (Event.current.type == EventType.ScrollWheel)
         {
             _zoom = Mathf.Clamp(_zoom - Event.current.delta.y * 0.05f, 0.1f, 4f);
             Event.current.Use();
             Repaint();
         }
+    }
+
+    private void ResizeToZoom()
+    {
+        if (_texture == null) return;
+        const float toolbarH = 22f;
+        float imgW = _texture.width  * _zoom;
+        float imgH = _texture.height * _zoom;
+        maxSize = new Vector2(imgW + 2, imgH + toolbarH + 2);
+        position = new Rect(position.x, position.y, imgW, imgH + toolbarH);
     }
 }
