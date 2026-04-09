@@ -48,7 +48,15 @@ public class DiNeMultiSupporter : Editor
                 { "skSettings", "쉐이프키 설정 (ShapeKeys)" },
                 { "generate", "🎀 적용 및 생성 (Generate)" },
                 { "cleanup", "🗑 모든 데이터 삭제 (Clean Up)" }, // 추가됨
-                { "catIcon", "아이콘" }
+                { "catIcon", "아이콘" },
+                { "fxController", "FX 컨트롤러" },
+                { "expressionMenu", "표정 메뉴" },
+                { "newLayer", "새 레이어" },
+                { "autoApplyHint", "플레이 모드 진입 및 아바타 업로드 시 전체 설정이 자동으로 생성/적용됩니다." },
+                { "cleanupDialogTitle", "Clean Up" },
+                { "cleanupDialogMsg", "정말로 생성된 모든 데이터(파라미터, 레이어, 메뉴)를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다." },
+                { "cleanupDialogOk", "삭제 (Yes)" },
+                { "cleanupDialogCancel", "취소 (No)" }
             }
         },
         {
@@ -73,7 +81,15 @@ public class DiNeMultiSupporter : Editor
                 { "skSettings", "Shape Key Settings" },
                 { "generate", "🎀 Generate All" },
                 { "cleanup", "🗑 Clean Up All Data" }, // 추가됨
-                { "catIcon", "Icon" }
+                { "catIcon", "Icon" },
+                { "fxController", "FX Controller" },
+                { "expressionMenu", "Expression Menu" },
+                { "newLayer", "New Layer" },
+                { "autoApplyHint", "All settings will be automatically generated/applied when entering Play Mode or uploading the avatar." },
+                { "cleanupDialogTitle", "Clean Up" },
+                { "cleanupDialogMsg", "Are you sure you want to delete all generated data (parameters, layers, menus)?\nThis action cannot be undone." },
+                { "cleanupDialogOk", "Delete (Yes)" },
+                { "cleanupDialogCancel", "Cancel (No)" }
             }
         },
         {
@@ -98,7 +114,15 @@ public class DiNeMultiSupporter : Editor
                 { "skSettings", "シェイプキー設定 (ShapeKeys)" },
                 { "generate", "🎀 適用して生成 (Generate)" },
                 { "cleanup", "🗑 全データ削除 (Clean Up)" }, // 추가됨
-                { "catIcon", "アイコン" }
+                { "catIcon", "アイコン" },
+                { "fxController", "FX コントローラー" },
+                { "expressionMenu", "表情メニュー" },
+                { "newLayer", "新しいレイヤー" },
+                { "autoApplyHint", "プレイモード開始またはアバターアップロード時に全設定が自動生成/適用されます。" },
+                { "cleanupDialogTitle", "Clean Up" },
+                { "cleanupDialogMsg", "生成されたすべてのデータ（パラメーター、レイヤー、メニュー）を削除しますか？\nこの操作は元に戻せません。" },
+                { "cleanupDialogOk", "削除 (Yes)" },
+                { "cleanupDialogCancel", "キャンセル (No)" }
             }
         }
     };
@@ -154,12 +178,12 @@ public class DiNeMultiSupporter : Editor
         }
 
         EditorGUILayout.BeginHorizontal();
-        GUILayout.Label("FX Controller", GUILayout.Width(100));
+        GUILayout.Label(lang["fxController"], GUILayout.Width(110));
         controller.objectReferenceValue = EditorGUILayout.ObjectField(controller.objectReferenceValue, typeof(RuntimeAnimatorController), false);
         EditorGUILayout.EndHorizontal();
 
         EditorGUILayout.BeginHorizontal();
-        GUILayout.Label("Expression Menu", GUILayout.Width(100));
+        GUILayout.Label(lang["expressionMenu"], GUILayout.Width(110));
         exMenu.objectReferenceValue = EditorGUILayout.ObjectField(exMenu.objectReferenceValue, typeof(VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionsMenu), false);
         EditorGUILayout.EndHorizontal();
         
@@ -196,7 +220,7 @@ public class DiNeMultiSupporter : Editor
         {
             layers.InsertArrayElementAtIndex(layers.arraySize);
             var newLayerProp = layers.GetArrayElementAtIndex(layers.arraySize - 1);
-            newLayerProp.FindPropertyRelative("layerName").stringValue = "New Layer";
+            newLayerProp.FindPropertyRelative("layerName").stringValue = lang["newLayer"];
             newLayerProp.FindPropertyRelative("targets").ClearArray();
             newLayerProp.FindPropertyRelative("labels").ClearArray();
             newLayerProp.FindPropertyRelative("icons").ClearArray();
@@ -218,7 +242,7 @@ public class DiNeMultiSupporter : Editor
         
         // [자동 적용 힌트]
         GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f);
-        EditorGUILayout.HelpBox("플레이 모드 진입 및 아바타 업로드 시 전체 설정이 자동으로 생성/적용됩니다.", MessageType.Info);
+        EditorGUILayout.HelpBox(lang["autoApplyHint"], MessageType.Info);
         GUI.backgroundColor = Color.white;
 
         GUILayout.Space(5);
@@ -228,7 +252,7 @@ public class DiNeMultiSupporter : Editor
         var cleanBtnStyle = new GUIStyle(GUI.skin.button) { fixedHeight = 30, fontStyle = FontStyle.Bold, normal = { textColor = Color.white } };
         if (GUILayout.Button(lang["cleanup"], cleanBtnStyle))
         {
-            if (EditorUtility.DisplayDialog("Clean Up", "정말로 생성된 모든 데이터(파라미터, 레이어, 메뉴)를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.", "삭제 (Yes)", "취소 (No)"))
+            if (EditorUtility.DisplayDialog(lang["cleanupDialogTitle"], lang["cleanupDialogMsg"], lang["cleanupDialogOk"], lang["cleanupDialogCancel"]))
             {
                 gen.DeleteAllGeneratedData();
             }
