@@ -138,16 +138,28 @@ public class DiNeMaterialTool : EditorWindow
 
     private static readonly SectionDef[] SECTIONS = new[]
     {
-        new SectionDef(new[]{"Shadow / AO",  "쉐도우 / AO",  "シャドウ / AO"},  new[]{"_ShadowStrengthMask","_ShadowBorderMask","_ShadowBlurMask"}),
-        new SectionDef(new[]{"Outline",      "아웃라인",      "アウトライン"},    new[]{"_OutlineWidthMask","_OutlineVectorTex"}, "_UseOutline"),
-        new SectionDef(new[]{"Normal Map",   "노멀 맵",       "ノーマルマップ"},  new[]{"_BumpMap","_Bump2ndMap"}),
-        new SectionDef(new[]{"MatCap",       "맷캡",          "マットキャップ"},  new[]{"_MatCapTex","_MatCapBlendMask","_MatCap2ndTex","_MatCap2ndBlendMask"}, "_UseMatCap"),
-        new SectionDef(new[]{"Rim Light",    "림라이트",      "リムライト"},      new[]{"_RimColorTex"}, "_UseRim"),
-        new SectionDef(new[]{"Emission",     "에미션",        "エミッション"},    new[]{"_EmissionMap","_Emission2ndMap"}, "_UseEmission"),
-        new SectionDef(new[]{"Glitter",      "글리터",        "グリッター"},      new[]{"_GlitterColorTex"}, "_UseGlitter"),
-        new SectionDef(new[]{"Backlight",    "백라이트",      "バックライト"},    new[]{"_BacklightColorTex"}, "_UseBacklight"),
-        new SectionDef(new[]{"Parallax",     "시차",          "パララックス"},    new[]{"_ParallaxMap"}, "_UseParallax"),
-        new SectionDef(new[]{"Dissolve",     "디졸브",        "ディゾルブ"},      new[]{"_DissolveMask","_DissolveNoiseMask"}, "_UseDissolve"),
+        new SectionDef(new[]{"Shadow / AO",  "쉐도우 / AO",  "シャドウ / AO"},
+            new[]{"_ShadowStrengthMask","_ShadowBorderMask","_ShadowBlurMask",
+                  "_Shadow2ndColorTex","_Shadow3rdColorTex"}),
+        new SectionDef(new[]{"Outline",      "아웃라인",      "アウトライン"},
+            new[]{"_OutlineTex","_OutlineWidthMask","_OutlineVectorTex"},
+            "_UseOutline"),   // lilToon unified: _UseOutline=0 / Outline variant: _OutlineWidth=0
+        new SectionDef(new[]{"Normal Map",   "노멀 맵",       "ノーマルマップ"},
+            new[]{"_BumpMap","_Bump2ndMap","_DetailNormalMap"}),
+        new SectionDef(new[]{"MatCap",       "맷캡",          "マットキャップ"},
+            new[]{"_MatCapTex","_MatCapBlendMask","_MatCap2ndTex","_MatCap2ndBlendMask"}, "_UseMatCap"),
+        new SectionDef(new[]{"Rim Light",    "림라이트",      "リムライト"},
+            new[]{"_RimColorTex"}, "_UseRim"),
+        new SectionDef(new[]{"Emission",     "에미션",        "エミッション"},
+            new[]{"_EmissionMap","_Emission2ndMap"}, "_UseEmission"),
+        new SectionDef(new[]{"Glitter",      "글리터",        "グリッター"},
+            new[]{"_GlitterColorTex"}, "_UseGlitter"),
+        new SectionDef(new[]{"Backlight",    "백라이트",      "バックライト"},
+            new[]{"_BacklightColorTex"}, "_UseBacklight"),
+        new SectionDef(new[]{"Parallax",     "시차",          "パララックス"},
+            new[]{"_ParallaxMap"}, "_UseParallax"),
+        new SectionDef(new[]{"Dissolve",     "디졸브",        "ディゾルブ"},
+            new[]{"_DissolveMask","_DissolveNoiseMask"}, "_UseDissolve"),
     };
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -776,11 +788,29 @@ public class DiNeMaterialTool : EditorWindow
         for (int si = 0; si < SECTIONS.Length; si++)
         {
             if (!_dietEnabled[si]) continue;
-            string tog = SECTIONS[si].Toggle;
-            if (tog == null) continue;
-            if (info.Material.HasProperty(tog) && info.Material.GetFloat(tog) > 0.5f)
+            if (IsSectionFeatureOn(info.Material, si)) return true;
+        }
+        return false;
+    }
+
+    // 해당 섹션의 기능이 켜져 있는지 판단
+    private bool IsSectionFeatureOn(Material mat, int si)
+    {
+        string tog = SECTIONS[si].Toggle;
+        if (tog == null) return false;
+
+        // 일반 float 토글 확인
+        if (mat.HasProperty(tog) && mat.GetFloat(tog) > 0.5f) return true;
+
+        // Outline 특별 처리: lilToon Outline 전용 셰이더는 _UseOutline 프로퍼티가 없거나 0이어도
+        // 셰이더 이름에 "Outline"이 포함되면 아웃라인이 항상 켜진 상태
+        if (tog == "_UseOutline")
+        {
+            string shaderName = mat.shader.name;
+            if (shaderName.IndexOf("Outline", System.StringComparison.OrdinalIgnoreCase) >= 0)
                 return true;
         }
+
         return false;
     }
 
@@ -807,8 +837,9 @@ public class DiNeMaterialTool : EditorWindow
 
     private void DrawDietCard(MaterialInfo info)
     {
-        // HasDiet도 없고 끌 수 있는 토글도 없으면 선택 해제
-        if (!info.HasDiet && !HasEnabledToggles(info)) info.Selected = false;
+        // HasDiet도 없고 활성화된 기능 토글도 없으면 선택 해제
+        bool hasAction = info.HasDiet || HasEnabledToggles(info);
+        if (!hasAction) info.Selected = false;
 
         var prev = GUI.backgroundColor;
         GUI.backgroundColor = ColCard;
@@ -1159,10 +1190,19 @@ public class DiNeMaterialTool : EditorWindow
                 for (int si = 0; si < SECTIONS.Length; si++)
                 {
                     if (!_dietEnabled[si]) continue;
+                    if (!IsSectionFeatureOn(info.Material, si)) continue;
+
                     string tog = SECTIONS[si].Toggle;
-                    if (tog == null) continue;
-                    if (info.Material.HasProperty(tog) && info.Material.GetFloat(tog) > 0.5f)
+                    // 일반 float 토글
+                    if (info.Material.HasProperty(tog))
+                    {
                         info.Material.SetFloat(tog, 0f);
+                    }
+                    // Outline 전용 셰이더: _UseOutline 없으면 _OutlineWidth = 0으로 비활성화
+                    else if (tog == "_UseOutline" && info.Material.HasProperty("_OutlineWidth"))
+                    {
+                        info.Material.SetFloat("_OutlineWidth", 0f);
+                    }
                 }
             }
             EditorUtility.SetDirty(info.Material);
