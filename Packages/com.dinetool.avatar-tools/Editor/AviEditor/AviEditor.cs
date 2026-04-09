@@ -1738,31 +1738,36 @@ public class ArmatureScalerEditor : EditorWindow
     {
         EditorGUILayout.BeginVertical("box");
 
-        string clipLabel   = language == LanguagePreset.Korean  ? "표정 애니메이션"
-                           : language == LanguagePreset.Japanese ? "表情アニメーション" : "Expression Clip";
-        string newLabel    = language == LanguagePreset.Korean  ? "새로 만들기"
-                           : language == LanguagePreset.Japanese ? "新規作成" : "New";
-        string loadLabel   = language == LanguagePreset.Korean  ? "클립에서 불러오기"
-                           : language == LanguagePreset.Japanese ? "クリップから読込" : "Load from Clip";
-        string saveLabel   = language == LanguagePreset.Korean  ? "저장"
-                           : language == LanguagePreset.Japanese ? "保存" : "Save";
-        string overwrite   = language == LanguagePreset.Korean  ? "덮어쓰기"
-                           : language == LanguagePreset.Japanese ? "上書き" : "Overwrite";
+        string clipLabel    = language == LanguagePreset.Korean  ? "표정 애니메이션"
+                            : language == LanguagePreset.Japanese ? "表情アニメーション" : "Expression Clip";
+        string newLabel     = language == LanguagePreset.Korean  ? "새로 만들기"
+                            : language == LanguagePreset.Japanese ? "新規作成" : "New";
+        string overwrite    = language == LanguagePreset.Korean  ? "덮어쓰기 저장"
+                            : language == LanguagePreset.Japanese ? "上書き保存" : "Overwrite";
+        string saveAsNew    = language == LanguagePreset.Korean  ? "새 파일로 저장"
+                            : language == LanguagePreset.Japanese ? "新規ファイル保存" : "Save as New";
 
         EditorGUILayout.LabelField(clipLabel, EditorStyles.boldLabel);
 
-        // 기존 클립 or 새 클립 선택
+        // 클립 할당 필드 (할당 시 자동 불러오기)
         EditorGUILayout.BeginHorizontal();
+        EditorGUI.BeginChangeCheck();
         _exprClip = (AnimationClip)EditorGUILayout.ObjectField(_exprClip, typeof(AnimationClip), false);
+        if (EditorGUI.EndChangeCheck() && _exprClip != null)
+        {
+            _exprIsNewClip = false;
+            LoadExpressionFromClip();
+        }
         if (GUILayout.Button(newLabel, GUILayout.Width(80)))
         {
-            _exprClip       = null;
-            _exprIsNewClip  = true;
+            _exprClip        = null;
+            _exprIsNewClip   = true;
             _exprNewClipName = "New Expression";
         }
         EditorGUILayout.EndHorizontal();
 
-        if (_exprIsNewClip || _exprClip == null)
+        // 새 클립이거나 미할당 시 이름 입력
+        if (_exprClip == null)
         {
             _exprNewClipName = EditorGUILayout.TextField(
                 language == LanguagePreset.Korean ? "클립 이름" : language == LanguagePreset.Japanese ? "クリップ名" : "Clip Name",
@@ -1771,17 +1776,17 @@ public class ArmatureScalerEditor : EditorWindow
 
         EditorGUILayout.BeginHorizontal();
 
-        // 클립에서 불러오기
+        // 덮어쓰기 저장 (클립 있을 때만 활성)
         GUI.backgroundColor = new Color(0.25f, 0.65f, 0.60f);
         EditorGUI.BeginDisabledGroup(_exprClip == null);
-        if (GUILayout.Button(loadLabel, GUILayout.ExpandWidth(true), GUILayout.Height(28)))
-            LoadExpressionFromClip();
+        if (GUILayout.Button(overwrite, GUILayout.ExpandWidth(true), GUILayout.Height(28)))
+            SaveExpressionClip(overwriteExisting: true);
         EditorGUI.EndDisabledGroup();
 
-        // 저장
+        // 새 파일로 저장
         GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
-        if (GUILayout.Button(_exprClip != null ? overwrite : saveLabel, GUILayout.ExpandWidth(true), GUILayout.Height(28)))
-            SaveExpressionClip();
+        if (GUILayout.Button(saveAsNew, GUILayout.ExpandWidth(true), GUILayout.Height(28)))
+            SaveExpressionClip(overwriteExisting: false);
 
         GUI.backgroundColor = prevBg;
         EditorGUILayout.EndHorizontal();
@@ -1867,15 +1872,26 @@ public class ArmatureScalerEditor : EditorWindow
                             string clipName = clips[i].clip != null ? clips[i].clip.name : "(empty)";
                             GUILayout.Label(clipName, clipNameStyle, GUILayout.Width(110));
 
-                            // 교체 버튼
-                            EditorGUI.BeginDisabledGroup(_exprFxStateSel != i);
+                            // 교체 버튼 (미리보기 없이도 항상 활성)
                             GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
                             if (GUILayout.Button(replaceLabel, GUILayout.Width(110), GUILayout.Height(22)))
                             {
-                                ReplaceClipInFxLayer(_exprFxController, layerNames[_exprFxLayerSel], i);
+                                string stateName2 = clips[i].state != null ? clips[i].state.name : "?";
+                                string confirmMsg =
+                                    language == LanguagePreset.Korean
+                                    ? $"'{stateName2}' 슬롯의 애니메이션을 현재 표정으로 교체합니다.\n(Ctrl+Z로 되돌릴 수 있습니다)"
+                                    : language == LanguagePreset.Japanese
+                                    ? $"'{stateName2}' スロットのアニメーションを現在の表情に差し替えます。\n(Ctrl+Z で元に戻せます)"
+                                    : $"Replace the animation in '{stateName2}' with the current expression?\n(Undoable with Ctrl+Z)";
+                                string confirmTitle =
+                                    language == LanguagePreset.Korean  ? "표정 교체 확인"
+                                  : language == LanguagePreset.Japanese ? "表情差し替え確認" : "Confirm Replace";
+                                string ok  = language == LanguagePreset.Korean  ? "교체" : language == LanguagePreset.Japanese ? "差し替え" : "Replace";
+                                string cancel = language == LanguagePreset.Korean  ? "취소" : language == LanguagePreset.Japanese ? "キャンセル" : "Cancel";
+                                if (EditorUtility.DisplayDialog(confirmTitle, confirmMsg, ok, cancel))
+                                    ReplaceClipInFxLayer(_exprFxController, layerNames[_exprFxLayerSel], i);
                             }
                             GUI.backgroundColor = prevBg;
-                            EditorGUI.EndDisabledGroup();
                             EditorGUILayout.EndHorizontal();
                         }
                     }
@@ -2102,14 +2118,14 @@ public class ArmatureScalerEditor : EditorWindow
     }
 
     // ── 헬퍼: 클립 저장 ──────────────────────────
-    private void SaveExpressionClip()
+    private void SaveExpressionClip(bool overwriteExisting = false)
     {
         if (_bodySmr == null || _bodySmr.sharedMesh == null) return;
 
         AnimationClip clip;
         string path;
 
-        if (_exprClip != null)
+        if (overwriteExisting && _exprClip != null)
         {
             // 기존 클립 덮어쓰기
             clip = _exprClip;
@@ -2121,15 +2137,17 @@ public class ArmatureScalerEditor : EditorWindow
             clip = new AnimationClip();
             string dir = "Assets/Di Ne/Expressions";
             if (!System.IO.Directory.Exists(dir)) System.IO.Directory.CreateDirectory(dir);
-            string name = string.IsNullOrEmpty(_exprNewClipName) ? "New Expression" : _exprNewClipName;
-            path = AssetDatabase.GenerateUniqueAssetPath($"{dir}/{name}.anim");
+            string baseName = string.IsNullOrEmpty(_exprNewClipName) ? "New Expression" : _exprNewClipName;
+            // 새로 저장 시 현재 클립 이름을 기본값으로 사용
+            if (!overwriteExisting && _exprClip != null)
+                baseName = _exprClip.name;
+            path = AssetDatabase.GenerateUniqueAssetPath($"{dir}/{baseName}.anim");
         }
 
         // 전체 블렌드쉐이프 키프레임 쓰기
         Undo.RecordObject(clip, "Save Expression Clip");
         clip.ClearCurves();
 
-        // Body의 아바타 내 상대 경로
         string smrPath = AnimationUtility.CalculateTransformPath(_bodySmr.transform, targetAvatarRoot.transform);
         int cnt = _bodySmr.sharedMesh.blendShapeCount;
         for (int i = 0; i < cnt; i++)
@@ -2143,10 +2161,10 @@ public class ArmatureScalerEditor : EditorWindow
                 EditorCurveBinding.FloatCurve(smrPath, typeof(SkinnedMeshRenderer), propName), curve);
         }
 
-        if (_exprClip == null)
+        if (!overwriteExisting || _exprClip == null)
         {
             AssetDatabase.CreateAsset(clip, path);
-            _exprClip = clip;
+            _exprClip      = clip;
             _exprIsNewClip = false;
         }
         else
