@@ -30,7 +30,9 @@
       "Bash(grep -E \"~$\")",
       "WebSearch",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Read(//c/Users/butei/OneDrive/문서/GitHub/Di_Ne_Tool//**)",
+      "Read(//c/Users/butei/OneDrive/문서/GitHub/Di_Ne_Tool/**)"
     ]
   }
 }
