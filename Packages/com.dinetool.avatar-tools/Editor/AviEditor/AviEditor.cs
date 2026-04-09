@@ -1790,31 +1790,22 @@ public class ArmatureScalerEditor : EditorWindow
     // ── VRChat FX 섹션 ───────────────────────────
     private void DrawExpressionFxSection(Color prevBg)
     {
-        string fxTitle   = language == LanguagePreset.Korean  ? "VRChat FX 연동"
-                         : language == LanguagePreset.Japanese ? "VRChat FX 連携" : "VRChat FX";
-        string findLabel = language == LanguagePreset.Korean  ? "FX 컨트롤러 찾기"
-                         : language == LanguagePreset.Japanese ? "FXコントローラを検索" : "Find FX Controller";
-        string replaceLabel = language == LanguagePreset.Korean  ? "이 표정으로 교체"
-                            : language == LanguagePreset.Japanese ? "この表情に差し替え" : "Replace with This";
+        string fxTitle      = language == LanguagePreset.Korean  ? "VRChat FX 연동"
+                            : language == LanguagePreset.Japanese ? "VRChat FX 連携" : "VRChat FX";
+        string replaceLabel = language == LanguagePreset.Korean  ? "현재 표정으로 교체"
+                            : language == LanguagePreset.Japanese ? "現在の表情に差し替え" : "Replace with Current";
 
         _exprFxExpanded = EditorGUILayout.BeginFoldoutHeaderGroup(_exprFxExpanded, fxTitle);
         if (_exprFxExpanded)
         {
             EditorGUILayout.BeginVertical("box");
 
-            // FX 컨트롤러 필드
+            // FX 컨트롤러 필드 (수동 지정용)
             EditorGUI.BeginChangeCheck();
             _exprFxController = (UnityEditor.Animations.AnimatorController)EditorGUILayout.ObjectField(
                 "FX Controller", _exprFxController,
                 typeof(UnityEditor.Animations.AnimatorController), false);
             if (EditorGUI.EndChangeCheck()) _exprFxStateSel = -1;
-
-            EditorGUILayout.BeginHorizontal();
-            GUI.backgroundColor = new Color(0.21f, 0.21f, 0.24f);
-            if (GUILayout.Button(findLabel, GUILayout.Height(24)))
-                AutoFindFxController();
-            GUI.backgroundColor = prevBg;
-            EditorGUILayout.EndHorizontal();
 
             if (_exprFxController != null)
             {
@@ -1836,13 +1827,21 @@ public class ArmatureScalerEditor : EditorWindow
                     }
                     else
                     {
+                        var clipNameStyle = new GUIStyle(EditorStyles.miniLabel)
+                        {
+                            alignment = TextAnchor.MiddleRight,
+                            normal    = { textColor = new Color(0.55f, 0.55f, 0.55f) },
+                        };
+
                         for (int i = 0; i < clips.Length; i++)
                         {
                             EditorGUILayout.BeginHorizontal();
                             bool sel = _exprFxStateSel == i;
+
+                            // 메인 버튼: 스테이트 이름
                             GUI.backgroundColor = sel ? new Color(0.30f, 0.82f, 0.76f) : prevBg;
-                            if (GUILayout.Button(clips[i].clip != null ? clips[i].clip.name : "(empty)",
-                                GUILayout.ExpandWidth(true), GUILayout.Height(22)))
+                            string stateLabel = clips[i].state != null ? clips[i].state.name : "(no state)";
+                            if (GUILayout.Button(stateLabel, GUILayout.ExpandWidth(true), GUILayout.Height(22)))
                             {
                                 _exprFxStateSel = i;
                                 if (clips[i].clip != null)
@@ -1853,9 +1852,14 @@ public class ArmatureScalerEditor : EditorWindow
                             }
                             GUI.backgroundColor = prevBg;
 
+                            // 클립 이름 (작게, 우측)
+                            string clipName = clips[i].clip != null ? clips[i].clip.name : "(empty)";
+                            GUILayout.Label(clipName, clipNameStyle, GUILayout.Width(110));
+
+                            // 교체 버튼
                             EditorGUI.BeginDisabledGroup(_exprFxStateSel != i);
                             GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
-                            if (GUILayout.Button(replaceLabel, GUILayout.Width(100), GUILayout.Height(22)))
+                            if (GUILayout.Button(replaceLabel, GUILayout.Width(110), GUILayout.Height(22)))
                             {
                                 ReplaceClipInFxLayer(_exprFxController, layerNames[_exprFxLayerSel], i);
                             }
@@ -1921,8 +1925,6 @@ public class ArmatureScalerEditor : EditorWindow
         EditorGUILayout.EndHorizontal();
         GUILayout.Space(3);
 
-        _exprShapeScroll = EditorGUILayout.BeginScrollView(_exprShapeScroll);
-
         string searchLower = _exprShapeSearch.ToLower();
         for (int i = 0; i < count; i++)
         {
@@ -1946,7 +1948,7 @@ public class ArmatureScalerEditor : EditorWindow
             EditorGUILayout.EndHorizontal();
         }
 
-        EditorGUILayout.EndScrollView();
+        GUILayout.Space(20);
         EditorGUILayout.EndVertical();
     }
 
@@ -1985,6 +1987,11 @@ public class ArmatureScalerEditor : EditorWindow
             for (int i = 0; i < cnt; i++)
                 _exprShapeValues[i] = _bodySmr.GetBlendShapeWeight(i);
         }
+
+        // FX 컨트롤러 자동 탐색
+        _exprFxController = null;
+        _exprFxStateSel   = -1;
+        AutoFindFxController();
     }
 
     // ── 헬퍼: 클립에서 쉐이프키 불러오기 ────────
