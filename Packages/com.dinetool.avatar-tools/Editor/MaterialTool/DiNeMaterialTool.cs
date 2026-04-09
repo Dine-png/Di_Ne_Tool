@@ -802,13 +802,17 @@ public class DiNeMaterialTool : EditorWindow
         // 일반 float 토글 확인
         if (mat.HasProperty(tog) && mat.GetFloat(tog) > 0.5f) return true;
 
-        // Outline 특별 처리: lilToon Outline 전용 셰이더는 _UseOutline 프로퍼티가 없거나 0이어도
-        // 셰이더 이름에 "Outline"이 포함되면 아웃라인이 항상 켜진 상태
-        if (tog == "_UseOutline")
+        // Outline 특별 처리: _UseOutline 프로퍼티가 없는 전용 Outline 셰이더
+        if (tog == "_UseOutline" &&
+            mat.shader.name.IndexOf("Outline", System.StringComparison.OrdinalIgnoreCase) >= 0)
         {
-            string shaderName = mat.shader.name;
-            if (shaderName.IndexOf("Outline", System.StringComparison.OrdinalIgnoreCase) >= 0)
-                return true;
+            // _OutlineWidth가 0이면 이미 비활성화 처리된 것으로 간주
+            if (mat.HasProperty("_OutlineWidth") && mat.GetFloat("_OutlineWidth") <= 0.001f)
+                return false;
+            // _OUTLINE 키워드가 명시적으로 꺼진 경우
+            if (!mat.IsKeywordEnabled("_OUTLINE"))
+                return false;
+            return true;
         }
 
         return false;
@@ -1193,15 +1197,19 @@ public class DiNeMaterialTool : EditorWindow
                     if (!IsSectionFeatureOn(info.Material, si)) continue;
 
                     string tog = SECTIONS[si].Toggle;
-                    // 일반 float 토글
-                    if (info.Material.HasProperty(tog))
+                    if (tog == "_UseOutline")
+                    {
+                        // 통합 셰이더: float + 키워드 같이 끄기
+                        if (info.Material.HasProperty("_UseOutline"))
+                            info.Material.SetFloat("_UseOutline", 0f);
+                        // 전용 Outline 셰이더: 키워드 + 폭을 0으로
+                        if (info.Material.HasProperty("_OutlineWidth"))
+                            info.Material.SetFloat("_OutlineWidth", 0f);
+                        info.Material.DisableKeyword("_OUTLINE");
+                    }
+                    else if (info.Material.HasProperty(tog))
                     {
                         info.Material.SetFloat(tog, 0f);
-                    }
-                    // Outline 전용 셰이더: _UseOutline 없으면 _OutlineWidth = 0으로 비활성화
-                    else if (tog == "_UseOutline" && info.Material.HasProperty("_OutlineWidth"))
-                    {
-                        info.Material.SetFloat("_OutlineWidth", 0f);
                     }
                 }
             }
