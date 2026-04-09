@@ -23,7 +23,6 @@ public class DiNeTexturePreviewWindow : EditorWindow
 
         win._zoom    = zoom;
         win.minSize  = new Vector2(120, 120);
-        win.maxSize  = new Vector2(imgW + 2, imgH + toolbarH + 2);
         win.position = new Rect(
             (Screen.currentResolution.width  - imgW) * 0.5f,
             (Screen.currentResolution.height - imgH - toolbarH) * 0.5f,
@@ -82,7 +81,6 @@ public class DiNeTexturePreviewWindow : EditorWindow
         const float toolbarH = 22f;
         float imgW = _texture.width  * _zoom;
         float imgH = _texture.height * _zoom;
-        maxSize = new Vector2(imgW + 2, imgH + toolbarH + 2);
         position = new Rect(position.x, position.y, imgW, imgH + toolbarH);
     }
 }
