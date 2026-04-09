@@ -807,7 +807,8 @@ public class DiNeMaterialTool : EditorWindow
 
     private void DrawDietCard(MaterialInfo info)
     {
-        if (!info.HasDiet) info.Selected = false;
+        // HasDiet도 없고 끌 수 있는 토글도 없으면 선택 해제
+        if (!info.HasDiet && !HasEnabledToggles(info)) info.Selected = false;
 
         var prev = GUI.backgroundColor;
         GUI.backgroundColor = ColCard;
@@ -816,7 +817,7 @@ public class DiNeMaterialTool : EditorWindow
 
         // ── Header row ──
         EditorGUILayout.BeginHorizontal();
-        GUI.enabled = info.HasDiet;
+        GUI.enabled = info.HasDiet || HasEnabledToggles(info);
         info.Selected = GUILayout.Toggle(info.Selected, "", GUILayout.Width(20), GUILayout.Height(20));
         GUI.enabled = true;
         GUILayout.Space(2);
@@ -825,9 +826,12 @@ public class DiNeMaterialTool : EditorWindow
         var badge = new GUIStyle(EditorStyles.miniLabel)
         {
             fontStyle = FontStyle.Bold, fontSize = 10, alignment = TextAnchor.MiddleCenter,
-            normal = { textColor = info.HasDiet ? new Color(1f, 0.55f, 0.2f) : new Color(0.4f, 0.85f, 0.4f) }
+            normal = { textColor = info.HasDiet ? new Color(1f, 0.55f, 0.2f)
+                     : HasEnabledToggles(info) ? new Color(0.85f, 0.50f, 0.50f)
+                     : new Color(0.4f, 0.85f, 0.4f) }
         };
-        GUILayout.Label(info.HasDiet ? $"×{info.TotalDietCount}" : "Clean", badge, GUILayout.Width(38), GUILayout.Height(20));
+        string badgeLabel = info.HasDiet ? $"×{info.TotalDietCount}" : HasEnabledToggles(info) ? "⚡ON" : "Clean";
+        GUILayout.Label(badgeLabel, badge, GUILayout.Width(42), GUILayout.Height(20));
 
         info.Foldout = EditorGUILayout.Foldout(info.Foldout, info.Material.name, true,
             new GUIStyle(EditorStyles.foldout) { fontStyle = FontStyle.Bold, fontSize = 12 });
