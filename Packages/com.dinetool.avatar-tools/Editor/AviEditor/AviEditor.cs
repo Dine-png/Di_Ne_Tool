@@ -10,7 +10,7 @@ public class ArmatureScalerEditor : EditorWindow
     private LanguagePreset language = LanguagePreset.Korean;
 
     // ─── 에디터 모드 ───
-    private enum EditorMode { Armature, ShapeKey }
+    private enum EditorMode { Armature, ShapeKey, Expression }
     private EditorMode currentMode = EditorMode.Armature;
 
     private GameObject targetAvatarRoot;
@@ -50,6 +50,24 @@ public class ArmatureScalerEditor : EditorWindow
     private Dictionary<Transform, (Vector3 pos, Quaternion rot, Vector3 scl)> _snapTransforms = new Dictionary<Transform, (Vector3, Quaternion, Vector3)>();
     private bool   _hasSnapshot;
     private GameObject _prevSnapshotTarget;
+
+    // ─── Expression 탭 필드 ───
+    private SkinnedMeshRenderer      _bodySmr;
+    private RenderTexture            _faceRT;
+    private PreviewRenderUtility     _facePreview;
+    private bool                     _facePreviewDirty = true;
+    private AnimationClip            _exprClip;
+    private bool                     _exprIsNewClip;
+    private string                   _exprNewClipName = "New Expression";
+    private float[]                  _exprShapeValues;
+    private Vector2                  _exprShapeScroll;
+    private string                   _exprShapeSearch = "";
+    // VRChat FX
+    private UnityEditor.Animations.AnimatorController _exprFxController;
+    private int                      _exprFxLayerSel  = 0;   // 0=LeftHand 1=RightHand
+    private int                      _exprFxStateSel  = -1;
+    private bool                     _exprFxExpanded  = false;
+    private GameObject               _prevExprTarget;
 
     private enum HumanoidBodyPart
     {
@@ -240,9 +258,9 @@ public class ArmatureScalerEditor : EditorWindow
         GUILayout.Space(5);
 
         // ─── 모드 탭 ───
-        string[] modeLabels = language == LanguagePreset.Korean ? new[] { "아마추어", "애니메이션" }
-                            : language == LanguagePreset.Japanese ? new[] { "アーマチュア", "アニメーション" }
-                            : new[] { "Armature", "Animation" };
+        string[] modeLabels = language == LanguagePreset.Korean   ? new[] { "아마추어", "애니메이션", "표정" }
+                            : language == LanguagePreset.Japanese  ? new[] { "アーマチュア", "アニメーション", "表情" }
+                            : new[] { "Armature", "Animation", "Expression" };
         int newMode = DrawCustomToolbar((int)currentMode, modeLabels, 30);
         if (newMode != (int)currentMode)
         {
@@ -251,13 +269,11 @@ public class ArmatureScalerEditor : EditorWindow
         GUILayout.Space(10);
 
         if (currentMode == EditorMode.Armature)
-        {
             DrawArmatureGUI();
-        }
-        else
-        {
+        else if (currentMode == EditorMode.ShapeKey)
             DrawShapeKeyGUI();
-        }
+        else
+            DrawExpressionGUI();
     }
 
     // ─── 아마추어 모드 GUI ───
@@ -1575,5 +1591,604 @@ public class ArmatureScalerEditor : EditorWindow
         }
         EditorGUILayout.EndHorizontal();
         return newSelected;
+    }
+
+    // ════════════════════════════════════════════
+    //  EXPRESSION TAB
+    // ════════════════════════════════════════════
+
+    private void DrawExpressionGUI()
+    {
+        // ── 타겟 변경 감지 → Body SMR 재탐색 ──
+        if (targetAvatarRoot != _prevExprTarget)
+        {
+            _prevExprTarget = targetAvatarRoot;
+            RefreshBodySmr();
+            _facePreviewDirty = true;
+        }
+
+        var prevBg = GUI.backgroundColor;
+
+        // ── 대상 오브젝트 ──
+        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.LabelField(language == LanguagePreset.Korean  ? "대상 설정"
+                                 : language == LanguagePreset.Japanese ? "対象設定" : "Target", EditorStyles.boldLabel);
+        EditorGUI.BeginChangeCheck();
+        targetAvatarRoot = (GameObject)EditorGUILayout.ObjectField(
+            language == LanguagePreset.Korean  ? "아바타 루트"
+          : language == LanguagePreset.Japanese ? "アバタールート" : "Avatar Root",
+            targetAvatarRoot, typeof(GameObject), true);
+        if (EditorGUI.EndChangeCheck())
+        {
+            RefreshBodySmr();
+            _facePreviewDirty = true;
+        }
+
+        if (_bodySmr == null && targetAvatarRoot != null)
+            EditorGUILayout.HelpBox(
+                language == LanguagePreset.Korean  ? "Body 메쉬를 찾을 수 없습니다."
+              : language == LanguagePreset.Japanese ? "Bodyメッシュが見つかりません。" : "Body mesh not found.",
+                MessageType.Warning);
+
+        EditorGUILayout.EndVertical();
+        GUILayout.Space(5);
+
+        if (targetAvatarRoot == null || _bodySmr == null)
+        {
+            EditorGUILayout.HelpBox(
+                language == LanguagePreset.Korean  ? "아바타를 할당하면 표정 편집을 시작합니다."
+              : language == LanguagePreset.Japanese ? "アバタを割り当てて表情編集を開始します。" : "Assign an avatar to start editing expressions.",
+                MessageType.Info);
+            return;
+        }
+
+        // ── 얼굴 프리뷰 ──
+        DrawFacePreview();
+        GUILayout.Space(5);
+
+        // ── 애니메이션 클립 ──
+        DrawExpressionClipSection(prevBg);
+        GUILayout.Space(5);
+
+        // ── VRChat FX ──
+        DrawExpressionFxSection(prevBg);
+        GUILayout.Space(5);
+
+        // ── 쉐이프키 슬라이더 ──
+        DrawExpressionShapeKeys(prevBg);
+
+        GUI.backgroundColor = prevBg;
+    }
+
+    // ── 얼굴 프리뷰 ──────────────────────────────
+    private void DrawFacePreview()
+    {
+        float size = Mathf.Min(position.width - 20f, 260f);
+        Rect previewRect = GUILayoutUtility.GetRect(size, size, GUILayout.ExpandWidth(false));
+        previewRect.x = (position.width - size) * 0.5f;
+
+        // 배경
+        Color bgCol = EditorGUIUtility.isProSkin ? new Color(0.22f, 0.22f, 0.22f) : new Color(0.76f, 0.76f, 0.76f);
+        EditorGUI.DrawRect(previewRect, bgCol);
+
+        if (Event.current.type == EventType.Repaint)
+        {
+            RenderFacePreview((int)size);
+            if (_faceRT != null)
+                GUI.DrawTexture(previewRect, _faceRT, ScaleMode.ScaleToFit, true);
+            _facePreviewDirty = false;
+        }
+
+        // 슬라이더 움직임 → dirty
+        if (Event.current.type == EventType.Used)
+            _facePreviewDirty = true;
+    }
+
+    private void RenderFacePreview(int size)
+    {
+        if (_bodySmr == null || targetAvatarRoot == null) return;
+        if (size <= 0) return;
+
+        // RenderTexture 준비
+        if (_faceRT == null || _faceRT.width != size)
+        {
+            if (_faceRT != null) _faceRT.Release();
+            _faceRT = new RenderTexture(size, size, 24, RenderTextureFormat.ARGB32);
+            _faceRT.antiAliasing = 2;
+            _faceRT.Create();
+        }
+
+        // Head bone 위치
+        Vector3 headPos = targetAvatarRoot.transform.position + Vector3.up * 1.5f;
+        if (boneMapping != null && boneMapping.TryGetValue(HumanBodyBones.Head, out Transform headBone))
+            headPos = headBone.position;
+
+        // 임시 카메라
+        var camGo = new GameObject("__AviExprPreviewCam__") { hideFlags = HideFlags.HideAndDontSave };
+        var cam   = camGo.AddComponent<Camera>();
+        cam.backgroundColor    = new Color(0, 0, 0, 0);
+        cam.clearFlags         = CameraClearFlags.SolidColor;
+        cam.orthographic       = false;
+        cam.fieldOfView        = 22f;
+        cam.nearClipPlane      = 0.01f;
+        cam.farClipPlane       = 100f;
+        cam.targetTexture      = _faceRT;
+        cam.cullingMask        = -1;
+        cam.enabled            = false;
+
+        // 아바타 정면 방향 계산
+        Vector3 avatarForward = targetAvatarRoot.transform.forward;
+        // 카메라를 약간 위쪽에서 앞쪽으로 배치 (얼굴 줌인)
+        cam.transform.position = headPos + avatarForward * 0.45f + Vector3.up * 0.04f;
+        cam.transform.LookAt(headPos + Vector3.up * 0.04f);
+
+        cam.Render();
+        cam.targetTexture = null;
+        DestroyImmediate(camGo);
+    }
+
+    // ── 애니메이션 클립 섹션 ─────────────────────
+    private void DrawExpressionClipSection(Color prevBg)
+    {
+        EditorGUILayout.BeginVertical("box");
+
+        string clipLabel   = language == LanguagePreset.Korean  ? "표정 애니메이션"
+                           : language == LanguagePreset.Japanese ? "表情アニメーション" : "Expression Clip";
+        string newLabel    = language == LanguagePreset.Korean  ? "새로 만들기"
+                           : language == LanguagePreset.Japanese ? "新規作成" : "New";
+        string loadLabel   = language == LanguagePreset.Korean  ? "클립에서 불러오기"
+                           : language == LanguagePreset.Japanese ? "クリップから読込" : "Load from Clip";
+        string saveLabel   = language == LanguagePreset.Korean  ? "저장"
+                           : language == LanguagePreset.Japanese ? "保存" : "Save";
+        string overwrite   = language == LanguagePreset.Korean  ? "덮어쓰기"
+                           : language == LanguagePreset.Japanese ? "上書き" : "Overwrite";
+
+        EditorGUILayout.LabelField(clipLabel, EditorStyles.boldLabel);
+
+        // 기존 클립 or 새 클립 선택
+        EditorGUILayout.BeginHorizontal();
+        _exprClip = (AnimationClip)EditorGUILayout.ObjectField(_exprClip, typeof(AnimationClip), false);
+        if (GUILayout.Button(newLabel, GUILayout.Width(80)))
+        {
+            _exprClip       = null;
+            _exprIsNewClip  = true;
+            _exprNewClipName = "New Expression";
+        }
+        EditorGUILayout.EndHorizontal();
+
+        if (_exprIsNewClip || _exprClip == null)
+        {
+            _exprNewClipName = EditorGUILayout.TextField(
+                language == LanguagePreset.Korean ? "클립 이름" : language == LanguagePreset.Japanese ? "クリップ名" : "Clip Name",
+                _exprNewClipName);
+        }
+
+        EditorGUILayout.BeginHorizontal();
+
+        // 클립에서 불러오기
+        GUI.backgroundColor = new Color(0.25f, 0.65f, 0.60f);
+        EditorGUI.BeginDisabledGroup(_exprClip == null);
+        if (GUILayout.Button(loadLabel, GUILayout.ExpandWidth(true), GUILayout.Height(28)))
+            LoadExpressionFromClip();
+        EditorGUI.EndDisabledGroup();
+
+        // 저장
+        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+        if (GUILayout.Button(_exprClip != null ? overwrite : saveLabel, GUILayout.ExpandWidth(true), GUILayout.Height(28)))
+            SaveExpressionClip();
+
+        GUI.backgroundColor = prevBg;
+        EditorGUILayout.EndHorizontal();
+
+        EditorGUILayout.EndVertical();
+    }
+
+    // ── VRChat FX 섹션 ───────────────────────────
+    private void DrawExpressionFxSection(Color prevBg)
+    {
+        string fxTitle   = language == LanguagePreset.Korean  ? "VRChat FX 연동"
+                         : language == LanguagePreset.Japanese ? "VRChat FX 連携" : "VRChat FX";
+        string findLabel = language == LanguagePreset.Korean  ? "FX 컨트롤러 찾기"
+                         : language == LanguagePreset.Japanese ? "FXコントローラを検索" : "Find FX Controller";
+        string replaceLabel = language == LanguagePreset.Korean  ? "이 표정으로 교체"
+                            : language == LanguagePreset.Japanese ? "この表情に差し替え" : "Replace with This";
+
+        _exprFxExpanded = EditorGUILayout.BeginFoldoutHeaderGroup(_exprFxExpanded, fxTitle);
+        if (_exprFxExpanded)
+        {
+            EditorGUILayout.BeginVertical("box");
+
+            // FX 컨트롤러 필드
+            EditorGUI.BeginChangeCheck();
+            _exprFxController = (UnityEditor.Animations.AnimatorController)EditorGUILayout.ObjectField(
+                "FX Controller", _exprFxController,
+                typeof(UnityEditor.Animations.AnimatorController), false);
+            if (EditorGUI.EndChangeCheck()) _exprFxStateSel = -1;
+
+            EditorGUILayout.BeginHorizontal();
+            GUI.backgroundColor = new Color(0.21f, 0.21f, 0.24f);
+            if (GUILayout.Button(findLabel, GUILayout.Height(24)))
+                AutoFindFxController();
+            GUI.backgroundColor = prevBg;
+            EditorGUILayout.EndHorizontal();
+
+            if (_exprFxController != null)
+            {
+                // Left Hand / Right Hand 레이어 탭
+                var layerNames = GetHandLayerNames(_exprFxController);
+                if (layerNames.Length > 0)
+                {
+                    GUILayout.Space(4);
+                    _exprFxLayerSel = GUILayout.Toolbar(_exprFxLayerSel, layerNames);
+                    GUILayout.Space(4);
+
+                    var clips = GetHandLayerClips(_exprFxController, layerNames[_exprFxLayerSel]);
+                    if (clips.Length == 0)
+                    {
+                        EditorGUILayout.LabelField(
+                            language == LanguagePreset.Korean ? "레이어에 애니메이션이 없습니다."
+                          : language == LanguagePreset.Japanese ? "レイヤーにアニメーションがありません。"
+                          : "No animations in this layer.", EditorStyles.miniLabel);
+                    }
+                    else
+                    {
+                        for (int i = 0; i < clips.Length; i++)
+                        {
+                            EditorGUILayout.BeginHorizontal();
+                            bool sel = _exprFxStateSel == i;
+                            GUI.backgroundColor = sel ? new Color(0.30f, 0.82f, 0.76f) : prevBg;
+                            if (GUILayout.Button(clips[i].clip != null ? clips[i].clip.name : "(empty)",
+                                GUILayout.ExpandWidth(true), GUILayout.Height(22)))
+                            {
+                                _exprFxStateSel = i;
+                                if (clips[i].clip != null)
+                                {
+                                    _exprClip = clips[i].clip;
+                                    LoadExpressionFromClip();
+                                }
+                            }
+                            GUI.backgroundColor = prevBg;
+
+                            EditorGUI.BeginDisabledGroup(_exprFxStateSel != i);
+                            GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+                            if (GUILayout.Button(replaceLabel, GUILayout.Width(100), GUILayout.Height(22)))
+                            {
+                                ReplaceClipInFxLayer(_exprFxController, layerNames[_exprFxLayerSel], i);
+                            }
+                            GUI.backgroundColor = prevBg;
+                            EditorGUI.EndDisabledGroup();
+                            EditorGUILayout.EndHorizontal();
+                        }
+                    }
+                }
+                else
+                {
+                    EditorGUILayout.HelpBox(
+                        language == LanguagePreset.Korean  ? "Left Hand 또는 Right Hand 레이어를 찾을 수 없습니다."
+                      : language == LanguagePreset.Japanese ? "Left Hand / Right Hand レイヤーが見つかりません。"
+                      : "No Left Hand or Right Hand layers found.", MessageType.Warning);
+                }
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+        EditorGUILayout.EndFoldoutHeaderGroup();
+    }
+
+    // ── 쉐이프키 슬라이더 ────────────────────────
+    private void DrawExpressionShapeKeys(Color prevBg)
+    {
+        if (_bodySmr == null || _bodySmr.sharedMesh == null) return;
+
+        int count = _bodySmr.sharedMesh.blendShapeCount;
+        if (_exprShapeValues == null || _exprShapeValues.Length != count)
+        {
+            _exprShapeValues = new float[count];
+            for (int i = 0; i < count; i++)
+                _exprShapeValues[i] = _bodySmr.GetBlendShapeWeight(i);
+        }
+
+        EditorGUILayout.BeginVertical("box");
+        string skLabel = language == LanguagePreset.Korean  ? $"쉐이프키  ({count}개)"
+                       : language == LanguagePreset.Japanese ? $"シェイプキー  ({count}個)" : $"Shape Keys  ({count})";
+        EditorGUILayout.LabelField(skLabel, EditorStyles.boldLabel);
+
+        // 검색
+        _exprShapeSearch = EditorGUILayout.TextField("", _exprShapeSearch, EditorStyles.toolbarSearchField);
+        GUILayout.Space(3);
+
+        // 리셋 버튼
+        EditorGUILayout.BeginHorizontal();
+        GUILayout.FlexibleSpace();
+        GUI.backgroundColor = new Color(0.21f, 0.21f, 0.24f);
+        string resetAll = language == LanguagePreset.Korean  ? "전체 초기화"
+                        : language == LanguagePreset.Japanese ? "全てリセット" : "Reset All";
+        if (GUILayout.Button(resetAll, GUILayout.Width(90), GUILayout.Height(22)))
+        {
+            Undo.RecordObject(_bodySmr, "Expr Reset ShapeKeys");
+            for (int i = 0; i < count; i++)
+            {
+                _exprShapeValues[i] = 0f;
+                _bodySmr.SetBlendShapeWeight(i, 0f);
+            }
+            _facePreviewDirty = true;
+        }
+        GUI.backgroundColor = prevBg;
+        EditorGUILayout.EndHorizontal();
+        GUILayout.Space(3);
+
+        _exprShapeScroll = EditorGUILayout.BeginScrollView(_exprShapeScroll, GUILayout.Height(260));
+
+        string searchLower = _exprShapeSearch.ToLower();
+        for (int i = 0; i < count; i++)
+        {
+            string shapeName = _bodySmr.sharedMesh.GetBlendShapeName(i);
+            if (!string.IsNullOrEmpty(searchLower) && !shapeName.ToLower().Contains(searchLower))
+                continue;
+
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label(shapeName, GUILayout.Width(160));
+
+            EditorGUI.BeginChangeCheck();
+            float newVal = EditorGUILayout.Slider(_exprShapeValues[i], 0f, 100f);
+            if (EditorGUI.EndChangeCheck())
+            {
+                _exprShapeValues[i] = newVal;
+                Undo.RecordObject(_bodySmr, "Expr ShapeKey");
+                _bodySmr.SetBlendShapeWeight(i, newVal);
+                _facePreviewDirty = true;
+                Repaint();
+            }
+            EditorGUILayout.EndHorizontal();
+        }
+
+        EditorGUILayout.EndScrollView();
+        EditorGUILayout.EndVertical();
+    }
+
+    // ── 헬퍼: Body SMR 탐색 ──────────────────────
+    private void RefreshBodySmr()
+    {
+        _bodySmr = null;
+        _exprShapeValues = null;
+        if (targetAvatarRoot == null) return;
+
+        foreach (var smr in targetAvatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+        {
+            if (smr.name == "Body")
+            {
+                _bodySmr = smr;
+                break;
+            }
+        }
+
+        // Body가 없으면 블렌드쉐이프가 가장 많은 SMR 사용
+        if (_bodySmr == null)
+        {
+            int best = -1;
+            foreach (var smr in targetAvatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                if (smr.sharedMesh == null) continue;
+                int cnt = smr.sharedMesh.blendShapeCount;
+                if (cnt > best) { best = cnt; _bodySmr = smr; }
+            }
+        }
+
+        if (_bodySmr != null && _bodySmr.sharedMesh != null)
+        {
+            int cnt = _bodySmr.sharedMesh.blendShapeCount;
+            _exprShapeValues = new float[cnt];
+            for (int i = 0; i < cnt; i++)
+                _exprShapeValues[i] = _bodySmr.GetBlendShapeWeight(i);
+        }
+    }
+
+    // ── 헬퍼: 클립에서 쉐이프키 불러오기 ────────
+    private void LoadExpressionFromClip()
+    {
+        if (_exprClip == null || _bodySmr == null || _bodySmr.sharedMesh == null) return;
+
+        Undo.RecordObject(_bodySmr, "Load Expression Clip");
+
+        int cnt = _bodySmr.sharedMesh.blendShapeCount;
+        if (_exprShapeValues == null || _exprShapeValues.Length != cnt)
+            _exprShapeValues = new float[cnt];
+
+        // 클립의 t=0 값 적용
+        foreach (var b in AnimationUtility.GetCurveBindings(_exprClip))
+        {
+            if (!b.propertyName.StartsWith("blendShape.")) continue;
+            var curve = AnimationUtility.GetEditorCurve(_exprClip, b);
+            if (curve == null) continue;
+
+            // Body 경로 매칭
+            var t = string.IsNullOrEmpty(b.path) ? targetAvatarRoot.transform
+                    : targetAvatarRoot.transform.Find(b.path);
+            if (t == null || t.GetComponent<SkinnedMeshRenderer>() != _bodySmr) continue;
+
+            string skName = b.propertyName.Substring("blendShape.".Length);
+            int idx = _bodySmr.sharedMesh.GetBlendShapeIndex(skName);
+            if (idx < 0) continue;
+
+            float val = curve.Evaluate(0f);
+            _exprShapeValues[idx] = val;
+            _bodySmr.SetBlendShapeWeight(idx, val);
+        }
+
+        _facePreviewDirty = true;
+        Repaint();
+    }
+
+    // ── 헬퍼: 클립 저장 ──────────────────────────
+    private void SaveExpressionClip()
+    {
+        if (_bodySmr == null || _bodySmr.sharedMesh == null) return;
+
+        AnimationClip clip;
+        string path;
+
+        if (_exprClip != null)
+        {
+            // 기존 클립 덮어쓰기
+            clip = _exprClip;
+            path = AssetDatabase.GetAssetPath(clip);
+        }
+        else
+        {
+            // 새 클립 생성
+            clip = new AnimationClip();
+            string dir = "Assets/Di Ne/Expressions";
+            if (!System.IO.Directory.Exists(dir)) System.IO.Directory.CreateDirectory(dir);
+            string name = string.IsNullOrEmpty(_exprNewClipName) ? "New Expression" : _exprNewClipName;
+            path = AssetDatabase.GenerateUniqueAssetPath($"{dir}/{name}.anim");
+        }
+
+        // 전체 블렌드쉐이프 키프레임 쓰기
+        Undo.RecordObject(clip, "Save Expression Clip");
+        clip.ClearCurves();
+
+        // Body의 아바타 내 상대 경로
+        string smrPath = AnimationUtility.CalculateTransformPath(_bodySmr.transform, targetAvatarRoot.transform);
+        int cnt = _bodySmr.sharedMesh.blendShapeCount;
+        for (int i = 0; i < cnt; i++)
+        {
+            float val = _exprShapeValues != null ? _exprShapeValues[i] : _bodySmr.GetBlendShapeWeight(i);
+            if (val == 0f) continue; // 0인 키는 생략
+
+            string propName = "blendShape." + _bodySmr.sharedMesh.GetBlendShapeName(i);
+            var curve = AnimationCurve.Constant(0f, 0f, val);
+            AnimationUtility.SetEditorCurve(clip,
+                EditorCurveBinding.FloatCurve(smrPath, typeof(SkinnedMeshRenderer), propName), curve);
+        }
+
+        if (_exprClip == null)
+        {
+            AssetDatabase.CreateAsset(clip, path);
+            _exprClip = clip;
+            _exprIsNewClip = false;
+        }
+        else
+        {
+            EditorUtility.SetDirty(clip);
+        }
+
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+        Debug.Log($"[Avi Editor] Expression saved → {path}");
+    }
+
+    // ── 헬퍼: FX 컨트롤러 자동 탐색 ─────────────
+    private void AutoFindFxController()
+    {
+        if (targetAvatarRoot == null) return;
+
+        // VRCAvatarDescriptor 시도 (VRC SDK 있을 때)
+        var vrcDescType = System.Type.GetType("VRC.SDK3.Avatars.Components.VRCAvatarDescriptor, VRC.SDK3.Avatars");
+        if (vrcDescType != null)
+        {
+            var desc = targetAvatarRoot.GetComponent(vrcDescType);
+            if (desc != null)
+            {
+                var layersProp = vrcDescType.GetField("baseAnimationLayers",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                if (layersProp != null)
+                {
+                    var layers = layersProp.GetValue(desc) as System.Array;
+                    if (layers != null)
+                    {
+                        foreach (var layer in layers)
+                        {
+                            var typeProp = layer.GetType().GetField("type",
+                                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                            var animProp = layer.GetType().GetField("animatorController",
+                                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                            if (typeProp == null || animProp == null) continue;
+                            int typeVal = (int)typeProp.GetValue(layer);
+                            if (typeVal == 4) // FX = 4
+                            {
+                                var ctrl = animProp.GetValue(layer) as UnityEditor.Animations.AnimatorController;
+                                if (ctrl != null) { _exprFxController = ctrl; return; }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 폴백: 모든 Animator에서 FX 레이어 이름 검색
+        foreach (var anim in targetAvatarRoot.GetComponentsInChildren<Animator>(true))
+        {
+            var ctrl = anim.runtimeAnimatorController as UnityEditor.Animations.AnimatorController;
+            if (ctrl == null) continue;
+            foreach (var layer in ctrl.layers)
+            {
+                string n = layer.name.ToLower();
+                if (n.Contains("fx") || n.Contains("left hand") || n.Contains("right hand"))
+                {
+                    _exprFxController = ctrl;
+                    return;
+                }
+            }
+        }
+
+        Debug.LogWarning("[Avi Editor] FX controller not found.");
+    }
+
+    // ── 헬퍼: Left/Right Hand 레이어 이름 목록 ───
+    private string[] GetHandLayerNames(UnityEditor.Animations.AnimatorController ctrl)
+    {
+        var result = new System.Collections.Generic.List<string>();
+        foreach (var layer in ctrl.layers)
+        {
+            string n = layer.name.ToLower();
+            if (n.Contains("left hand") || n.Contains("lefthand") || n.Contains("right hand") || n.Contains("righthand"))
+                result.Add(layer.name);
+        }
+        return result.ToArray();
+    }
+
+    // ── 헬퍼: 레이어 내 클립 목록 ───────────────
+    private struct FxClipEntry { public AnimationClip clip; public UnityEditor.Animations.AnimatorState state; }
+    private FxClipEntry[] GetHandLayerClips(UnityEditor.Animations.AnimatorController ctrl, string layerName)
+    {
+        var result = new System.Collections.Generic.List<FxClipEntry>();
+        foreach (var layer in ctrl.layers)
+        {
+            if (layer.name != layerName) continue;
+            foreach (var state in layer.stateMachine.states)
+            {
+                var motion = state.state.motion as AnimationClip;
+                result.Add(new FxClipEntry { clip = motion, state = state.state });
+            }
+        }
+        return result.ToArray();
+    }
+
+    // ── 헬퍼: FX 레이어 클립 교체 ───────────────
+    private void ReplaceClipInFxLayer(UnityEditor.Animations.AnimatorController ctrl, string layerName, int stateIndex)
+    {
+        AnimationClip targetClip = _exprClip;
+        if (targetClip == null)
+        {
+            // 저장 먼저
+            SaveExpressionClip();
+            targetClip = _exprClip;
+        }
+        if (targetClip == null) return;
+
+        int idx = 0;
+        foreach (var layer in ctrl.layers)
+        {
+            if (layer.name != layerName) continue;
+            if (stateIndex < layer.stateMachine.states.Length)
+            {
+                Undo.RecordObject(ctrl, "Replace FX Clip");
+                layer.stateMachine.states[stateIndex].state.motion = targetClip;
+                EditorUtility.SetDirty(ctrl);
+                AssetDatabase.SaveAssets();
+                Debug.Log($"[Avi Editor] Replaced clip in {layerName}[{stateIndex}] → {targetClip.name}");
+            }
+            break;
+        }
     }
 }
