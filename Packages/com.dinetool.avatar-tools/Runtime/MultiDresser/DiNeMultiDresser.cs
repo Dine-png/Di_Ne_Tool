@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
+[AddComponentMenu("DiNe/Multi Dresser")]
 public class DiNeMultiDresser : MonoBehaviour
 {
     [System.Serializable]
