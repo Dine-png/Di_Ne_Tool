@@ -40,10 +40,16 @@ public class ArmatureScalerEditor : EditorWindow
     private string selectedPresetName = "";
     private Vector2 presetScrollPosition;
 
-    // ─── ShapeKey Freezer 필드 ───
+    // ─── Animation Freezer 필드 ───
     private AnimationClip animationClip;
     private float clipTime = 0.0f;
     private string[] SK_TEXT;
+
+    // 스냅샷
+    private Dictionary<SkinnedMeshRenderer, float[]>                          _snapShapeKeys  = new Dictionary<SkinnedMeshRenderer, float[]>();
+    private Dictionary<Transform, (Vector3 pos, Quaternion rot, Vector3 scl)> _snapTransforms = new Dictionary<Transform, (Vector3, Quaternion, Vector3)>();
+    private bool   _hasSnapshot;
+    private GameObject _prevSnapshotTarget;
 
     private enum HumanoidBodyPart
     {
@@ -234,9 +240,9 @@ public class ArmatureScalerEditor : EditorWindow
         GUILayout.Space(5);
 
         // ─── 모드 탭 ───
-        string[] modeLabels = language == LanguagePreset.Korean ? new[] { "아마추어", "쉐이프키" }
-                            : language == LanguagePreset.Japanese ? new[] { "アーマチュア", "シェイプキー" }
-                            : new[] { "Armature", "ShapeKey" };
+        string[] modeLabels = language == LanguagePreset.Korean ? new[] { "아마추어", "애니메이션" }
+                            : language == LanguagePreset.Japanese ? new[] { "アーマチュア", "アニメーション" }
+                            : new[] { "Armature", "Animation" };
         int newMode = DrawCustomToolbar((int)currentMode, modeLabels, 30);
         if (newMode != (int)currentMode)
         {
@@ -459,100 +465,235 @@ public class ArmatureScalerEditor : EditorWindow
         EditorGUILayout.EndVertical();
     }
 
-    // ─── 쉐이프키 모드 GUI ───
+    // ─── 애니메이션 모드 GUI ───
     private void DrawShapeKeyGUI()
     {
-        // ─── 오브젝트 / 클립 선택 ───
+        // 타겟 변경 시 자동 스냅샷
+        if (targetAvatarRoot != _prevSnapshotTarget)
+        {
+            _prevSnapshotTarget = targetAvatarRoot;
+            if (targetAvatarRoot != null) TakeSnapshot();
+        }
+
+        // ─── 대상 설정 ───
         EditorGUILayout.BeginVertical("box");
         EditorGUILayout.LabelField(SK_TEXT[0], EditorStyles.boldLabel);
         GUILayout.Space(3);
         targetAvatarRoot = (GameObject)EditorGUILayout.ObjectField(SK_TEXT[1], targetAvatarRoot, typeof(GameObject), true);
-        animationClip = (AnimationClip)EditorGUILayout.ObjectField(SK_TEXT[2], animationClip, typeof(AnimationClip), false);
+        animationClip    = (AnimationClip)EditorGUILayout.ObjectField(SK_TEXT[2], animationClip, typeof(AnimationClip), false);
         EditorGUILayout.EndVertical();
 
         GUILayout.Space(5);
 
-        // ─── 슬라이더 + 버튼 ───
+        // ─── 슬라이더 ───
         EditorGUI.BeginDisabledGroup(targetAvatarRoot == null || animationClip == null);
 
         EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.BeginHorizontal();
         EditorGUILayout.LabelField(SK_TEXT[3], EditorStyles.boldLabel);
+        GUILayout.FlexibleSpace();
+        if (animationClip != null)
+            GUILayout.Label($"{clipTime:F3}s / {animationClip.length:F3}s",
+                new GUIStyle(EditorStyles.miniLabel) { alignment = TextAnchor.MiddleRight, normal = { textColor = new Color(0.6f, 0.6f, 0.6f) } });
+        EditorGUILayout.EndHorizontal();
         GUILayout.Space(3);
 
-        if (animationClip != null)
-        {
-            GUIStyle timeStyle = new GUIStyle(EditorStyles.miniLabel)
-            {
-                alignment = TextAnchor.MiddleRight,
-                normal = { textColor = new Color(0.6f, 0.6f, 0.6f) }
-            };
-            GUILayout.Label($"{clipTime:F3}s / {animationClip.length:F3}s", timeStyle);
-        }
-
         EditorGUI.BeginChangeCheck();
-        float maxTime = animationClip != null ? animationClip.length : 1f;
-        clipTime = EditorGUILayout.Slider(clipTime, 0f, maxTime);
+        clipTime = EditorGUILayout.Slider(clipTime, 0f, animationClip != null ? animationClip.length : 1f);
         if (EditorGUI.EndChangeCheck())
-        {
-            SampleBlendShapesOnly();
-        }
+            ApplyShapeKeys(); // 슬라이더: 쉐이프키만 실시간 미리보기
 
         EditorGUILayout.EndVertical();
+        EditorGUI.EndDisabledGroup();
 
-        GUILayout.Space(5);
+        GUILayout.Space(8);
 
-        var prevBg = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
-        if (GUILayout.Button(SK_TEXT[4], new GUIStyle(GUI.skin.button) { fontStyle = FontStyle.Bold, normal = { textColor = Color.white } }, GUILayout.Height(38)))
+        // ─── 적용 버튼 3개 ───
+        EditorGUI.BeginDisabledGroup(targetAvatarRoot == null || animationClip == null);
+
+        var btnStyle = new GUIStyle(GUI.skin.button)
         {
-            SampleBlendShapesOnly();
-            Debug.Log($"[Avi Editor] {targetAvatarRoot.name} — {SK_TEXT[5]}");
+            fontSize    = 12,
+            fontStyle   = FontStyle.Bold,
+            fixedHeight = 36,
+            normal      = { textColor = Color.white },
+            hover       = { textColor = Color.white },
+        };
+        var prevBg = GUI.backgroundColor;
+
+        EditorGUILayout.BeginHorizontal();
+
+        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+        if (GUILayout.Button(SK_TEXT[4], btnStyle))
+        {
+            ApplyShapeKeys();
+            Debug.Log($"[Avi Editor] {targetAvatarRoot.name} — {SK_TEXT[7]}");
         }
+
+        GUI.backgroundColor = new Color(0.25f, 0.65f, 0.60f);
+        if (GUILayout.Button(SK_TEXT[5], btnStyle))
+        {
+            ApplyPose();
+            Debug.Log($"[Avi Editor] {targetAvatarRoot.name} — {SK_TEXT[8]}");
+        }
+
+        GUI.backgroundColor = new Color(0.21f, 0.21f, 0.24f);
+        if (GUILayout.Button(SK_TEXT[6], new GUIStyle(btnStyle)
+            { normal = { textColor = new Color(0.30f, 0.82f, 0.76f) }, hover = { textColor = Color.white } }))
+        {
+            ApplyShapeKeys();
+            ApplyPose();
+            Debug.Log($"[Avi Editor] {targetAvatarRoot.name} — {SK_TEXT[9]}");
+        }
+
+        EditorGUILayout.EndHorizontal();
         GUI.backgroundColor = prevBg;
 
         EditorGUI.EndDisabledGroup();
 
         GUILayout.Space(5);
 
-        // ─── 안내 메시지 ───
-        EditorGUILayout.HelpBox(SK_TEXT[6], MessageType.Info);
+        // ─── 복원 버튼 ───
+        EditorGUI.BeginDisabledGroup(!_hasSnapshot);
+        GUI.backgroundColor = new Color(0.21f, 0.21f, 0.24f);
+        if (GUILayout.Button(SK_TEXT[10], new GUIStyle(GUI.skin.button)
+        {
+            fontSize    = 12,
+            fontStyle   = FontStyle.Bold,
+            fixedHeight = 30,
+            normal      = { textColor = new Color(0.85f, 0.85f, 0.85f) },
+            hover       = { textColor = Color.white },
+        }))
+        {
+            RestoreSnapshot();
+            Debug.Log($"[Avi Editor] {SK_TEXT[11]}");
+        }
+        GUI.backgroundColor = prevBg;
+        EditorGUI.EndDisabledGroup();
+
+        GUILayout.Space(5);
+        EditorGUILayout.HelpBox(SK_TEXT[12], MessageType.Info);
     }
 
-    /// <summary>
-    /// 애니메이션 클립에서 blendShape 커브만 골라서 SkinnedMeshRenderer에 적용합니다.
-    /// </summary>
-    private void SampleBlendShapesOnly()
+    // ─── 쉐이프키 적용 ───
+    private void ApplyShapeKeys()
     {
         if (targetAvatarRoot == null || animationClip == null) return;
 
-        EditorCurveBinding[] bindings = AnimationUtility.GetCurveBindings(animationClip);
-
-        foreach (var binding in bindings)
+        foreach (var b in AnimationUtility.GetCurveBindings(animationClip))
         {
-            if (!binding.propertyName.StartsWith("blendShape.")) continue;
-
-            AnimationCurve curve = AnimationUtility.GetEditorCurve(animationClip, binding);
+            if (!b.propertyName.StartsWith("blendShape.")) continue;
+            var curve = AnimationUtility.GetEditorCurve(animationClip, b);
             if (curve == null) continue;
 
-            float value = curve.Evaluate(clipTime);
-
-            Transform targetTransform;
-            if (string.IsNullOrEmpty(binding.path))
-                targetTransform = targetAvatarRoot.transform;
-            else
-                targetTransform = targetAvatarRoot.transform.Find(binding.path);
-
-            if (targetTransform == null) continue;
-
-            SkinnedMeshRenderer smr = targetTransform.GetComponent<SkinnedMeshRenderer>();
+            var t = string.IsNullOrEmpty(b.path) ? targetAvatarRoot.transform : targetAvatarRoot.transform.Find(b.path);
+            if (t == null) continue;
+            var smr = t.GetComponent<SkinnedMeshRenderer>();
             if (smr == null || smr.sharedMesh == null) continue;
+            int idx = smr.sharedMesh.GetBlendShapeIndex(b.propertyName.Substring("blendShape.".Length));
+            if (idx < 0) continue;
 
-            string shapeName = binding.propertyName.Substring("blendShape.".Length);
-            int index = smr.sharedMesh.GetBlendShapeIndex(shapeName);
-            if (index < 0) continue;
+            Undo.RecordObject(smr, "Avi Editor Freeze ShapeKey");
+            smr.SetBlendShapeWeight(idx, curve.Evaluate(clipTime));
+        }
+    }
 
-            Undo.RecordObject(smr, "Sample BlendShape Pose");
-            smr.SetBlendShapeWeight(index, value);
+    // ─── 포즈 적용 ───
+    private void ApplyPose()
+    {
+        if (targetAvatarRoot == null || animationClip == null) return;
+
+        var samples = new Dictionary<string, TransformSample>();
+        foreach (var b in AnimationUtility.GetCurveBindings(animationClip))
+        {
+            if (b.propertyName.StartsWith("blendShape.")) continue;
+            if (b.type != typeof(Transform)) continue;
+            var curve = AnimationUtility.GetEditorCurve(animationClip, b);
+            if (curve == null) continue;
+            if (!samples.ContainsKey(b.path)) samples[b.path] = new TransformSample();
+            samples[b.path].Set(b.propertyName, curve.Evaluate(clipTime));
+        }
+        foreach (var kvp in samples)
+        {
+            var t = string.IsNullOrEmpty(kvp.Key) ? targetAvatarRoot.transform : targetAvatarRoot.transform.Find(kvp.Key);
+            if (t == null) continue;
+            Undo.RecordObject(t, "Avi Editor Freeze Pose");
+            kvp.Value.ApplyTo(t);
+        }
+    }
+
+    // ─── 스냅샷 ───
+    private void TakeSnapshot()
+    {
+        _snapShapeKeys.Clear();
+        _snapTransforms.Clear();
+        if (targetAvatarRoot == null) { _hasSnapshot = false; return; }
+
+        foreach (var smr in targetAvatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+        {
+            if (smr.sharedMesh == null) continue;
+            int cnt = smr.sharedMesh.blendShapeCount;
+            var w = new float[cnt];
+            for (int i = 0; i < cnt; i++) w[i] = smr.GetBlendShapeWeight(i);
+            _snapShapeKeys[smr] = w;
+        }
+        foreach (Transform t in targetAvatarRoot.GetComponentsInChildren<Transform>(true))
+            _snapTransforms[t] = (t.localPosition, t.localRotation, t.localScale);
+
+        _hasSnapshot = true;
+    }
+
+    private void RestoreSnapshot()
+    {
+        foreach (var kvp in _snapShapeKeys)
+        {
+            if (kvp.Key == null) continue;
+            Undo.RecordObject(kvp.Key, "Avi Editor Restore");
+            for (int i = 0; i < kvp.Value.Length; i++) kvp.Key.SetBlendShapeWeight(i, kvp.Value[i]);
+        }
+        foreach (var kvp in _snapTransforms)
+        {
+            if (kvp.Key == null) continue;
+            Undo.RecordObject(kvp.Key, "Avi Editor Restore");
+            kvp.Key.localPosition = kvp.Value.pos;
+            kvp.Key.localRotation = kvp.Value.rot;
+            kvp.Key.localScale    = kvp.Value.scl;
+        }
+    }
+
+    // ─── Transform 샘플 누적기 ───
+    private class TransformSample
+    {
+        float? px,py,pz, rx,ry,rz,rw, ex,ey,ez, sx,sy,sz;
+        public void Set(string p, float v)
+        {
+            switch (p)
+            {
+                case "localPosition.x": case "m_LocalPosition.x": px=v; break;
+                case "localPosition.y": case "m_LocalPosition.y": py=v; break;
+                case "localPosition.z": case "m_LocalPosition.z": pz=v; break;
+                case "localRotation.x": case "m_LocalRotation.x": rx=v; break;
+                case "localRotation.y": case "m_LocalRotation.y": ry=v; break;
+                case "localRotation.z": case "m_LocalRotation.z": rz=v; break;
+                case "localRotation.w": case "m_LocalRotation.w": rw=v; break;
+                case "localEulerAnglesRaw.x": ex=v; break;
+                case "localEulerAnglesRaw.y": ey=v; break;
+                case "localEulerAnglesRaw.z": ez=v; break;
+                case "localScale.x": case "m_LocalScale.x": sx=v; break;
+                case "localScale.y": case "m_LocalScale.y": sy=v; break;
+                case "localScale.z": case "m_LocalScale.z": sz=v; break;
+            }
+        }
+        public void ApplyTo(Transform t)
+        {
+            if (px.HasValue||py.HasValue||pz.HasValue)
+            { var p=t.localPosition; if(px.HasValue)p.x=px.Value; if(py.HasValue)p.y=py.Value; if(pz.HasValue)p.z=pz.Value; t.localPosition=p; }
+            if (rx.HasValue&&ry.HasValue&&rz.HasValue&&rw.HasValue)
+                t.localRotation=new Quaternion(rx.Value,ry.Value,rz.Value,rw.Value);
+            else if (ex.HasValue||ey.HasValue||ez.HasValue)
+            { var e=t.localEulerAngles; if(ex.HasValue)e.x=ex.Value; if(ey.HasValue)e.y=ey.Value; if(ez.HasValue)e.z=ez.Value; t.localEulerAngles=e; }
+            if (sx.HasValue||sy.HasValue||sz.HasValue)
+            { var s=t.localScale; if(sx.HasValue)s.x=sx.Value; if(sy.HasValue)s.y=sy.Value; if(sz.HasValue)s.z=sz.Value; t.localScale=s; }
         }
     }
 
@@ -563,13 +704,19 @@ public class ArmatureScalerEditor : EditorWindow
             case LanguagePreset.Korean:
                 SK_TEXT = new string[]
                 {
-                    "대상 설정",
-                    "대상 오브젝트 (Root)",
-                    "애니메이션 클립",
-                    "시점 조절",
-                    "이 포즈로 쉐이프키 저장 (Save Pose)",
-                    "쉐이프키 포즈 고정 완료!",
-                    "본(Transform) 위치는 변경되지 않습니다.\n애니메이션 클립 내 쉐이프키 값만 적용됩니다.",
+                    "대상 설정",                    // 0
+                    "대상 오브젝트 (Root)",          // 1
+                    "애니메이션 클립",               // 2
+                    "시점 조절",                    // 3
+                    "쉐이프키만 적용",               // 4
+                    "포즈만 적용",                   // 5
+                    "전체 적용",                    // 6
+                    "쉐이프키 적용 완료!",           // 7
+                    "포즈 적용 완료!",               // 8
+                    "전체 적용 완료!",               // 9
+                    "↩  원본으로 복원",             // 10
+                    "원본 상태로 복원했습니다.",      // 11
+                    "슬라이더로 미리보기, 버튼으로 씬에 적용합니다.", // 12
                 };
                 break;
             case LanguagePreset.Japanese:
@@ -579,9 +726,15 @@ public class ArmatureScalerEditor : EditorWindow
                     "対象オブジェクト (Root)",
                     "アニメーションクリップ",
                     "タイミング調整",
-                    "このポーズでシェイプキーを保存 (Save Pose)",
-                    "シェイプキーポーズを保存しました！",
-                    "ボーン(Transform)は変更されません。\nアニメーションクリップ内のシェイプキー値のみ適用されます。",
+                    "シェイプキーのみ",
+                    "ポーズのみ",
+                    "すべて適用",
+                    "シェイプキーを適用しました。",
+                    "ポーズを適用しました。",
+                    "すべて適用しました。",
+                    "↩  元に戻す",
+                    "元の状態に戻しました。",
+                    "スライダーでプレビュー、ボタンでシーンに適用します。",
                 };
                 break;
             default:
@@ -591,9 +744,15 @@ public class ArmatureScalerEditor : EditorWindow
                     "Target Object (Root)",
                     "Animation Clip",
                     "Time Adjustment",
-                    "Save BlendShape Pose",
-                    "BlendShape pose saved!",
-                    "Bone (Transform) positions are NOT changed.\nOnly BlendShape values from the animation clip are applied.",
+                    "Shape Keys Only",
+                    "Pose Only",
+                    "Apply All",
+                    "Shape Keys: applied.",
+                    "Pose: applied.",
+                    "All: applied.",
+                    "↩  Restore Original",
+                    "Restored to original state.",
+                    "Slide to preview. Buttons apply to scene.",
                 };
                 break;
         }
