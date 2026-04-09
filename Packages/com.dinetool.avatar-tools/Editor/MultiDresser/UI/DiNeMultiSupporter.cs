@@ -10,8 +10,8 @@ public class DiNeMultiSupporter : Editor
     private Font      titleFont;
     private int selectedLayerIndex = 0; 
     
-    private enum Language { Korean, English, Japanese }
-    private static readonly string[] LangButtonLabels = { "🇰🇷 한국어", "🇺🇸 English", "🇯🇵 日本語" };
+    private enum Language { English, Korean, Japanese }
+    private static readonly string[] LangButtonLabels = { "English", "한국어", "日本語" };
     
     private Language currentLanguage
     {
