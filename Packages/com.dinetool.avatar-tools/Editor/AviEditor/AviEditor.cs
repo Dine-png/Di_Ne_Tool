@@ -61,6 +61,7 @@ public class ArmatureScalerEditor : EditorWindow
     private string                   _exprNewClipName = "New Expression";
     private float[]                  _exprShapeValues;
     private Vector2                  _exprShapeScroll;
+    private Vector2                  _exprMainScroll;
     private string                   _exprShapeSearch = "";
     // VRChat FX
     private UnityEditor.Animations.AnimatorController _exprFxController;
@@ -1642,6 +1643,8 @@ public class ArmatureScalerEditor : EditorWindow
             return;
         }
 
+        _exprMainScroll = EditorGUILayout.BeginScrollView(_exprMainScroll);
+
         // ── 얼굴 프리뷰 ──
         DrawFacePreview();
         GUILayout.Space(5);
@@ -1657,6 +1660,7 @@ public class ArmatureScalerEditor : EditorWindow
         // ── 쉐이프키 슬라이더 ──
         DrawExpressionShapeKeys(prevBg);
 
+        EditorGUILayout.EndScrollView();
         GUI.backgroundColor = prevBg;
     }
 
@@ -1917,7 +1921,7 @@ public class ArmatureScalerEditor : EditorWindow
         EditorGUILayout.EndHorizontal();
         GUILayout.Space(3);
 
-        _exprShapeScroll = EditorGUILayout.BeginScrollView(_exprShapeScroll, GUILayout.Height(260));
+        _exprShapeScroll = EditorGUILayout.BeginScrollView(_exprShapeScroll);
 
         string searchLower = _exprShapeSearch.ToLower();
         for (int i = 0; i < count; i++)
@@ -2082,8 +2086,15 @@ public class ArmatureScalerEditor : EditorWindow
     {
         if (targetAvatarRoot == null) return;
 
-        // VRCAvatarDescriptor 시도 (VRC SDK 있을 때)
-        var vrcDescType = System.Type.GetType("VRC.SDK3.Avatars.Components.VRCAvatarDescriptor, VRC.SDK3.Avatars");
+        // ① VRCAvatarDescriptor 리플렉션 (SDK3 설치된 경우)
+        //    SDK 어셈블리 이름이 프로젝트마다 다를 수 있어 모든 로드된 어셈블리를 순회
+        System.Type vrcDescType = null;
+        foreach (var asm in System.AppDomain.CurrentDomain.GetAssemblies())
+        {
+            vrcDescType = asm.GetType("VRC.SDK3.Avatars.Components.VRCAvatarDescriptor");
+            if (vrcDescType != null) break;
+        }
+
         if (vrcDescType != null)
         {
             var desc = targetAvatarRoot.GetComponent(vrcDescType);
@@ -2098,32 +2109,75 @@ public class ArmatureScalerEditor : EditorWindow
                     {
                         foreach (var layer in layers)
                         {
-                            var typeProp = layer.GetType().GetField("type",
+                            var layerType = layer.GetType();
+                            var typeProp  = layerType.GetField("type",
                                 System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                            var animProp = layer.GetType().GetField("animatorController",
+                            var animProp  = layerType.GetField("animatorController",
+                                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                            var defProp   = layerType.GetField("isDefault",
                                 System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
                             if (typeProp == null || animProp == null) continue;
-                            int typeVal = (int)typeProp.GetValue(layer);
-                            if (typeVal == 4) // FX = 4
-                            {
-                                var ctrl = animProp.GetValue(layer) as UnityEditor.Animations.AnimatorController;
-                                if (ctrl != null) { _exprFxController = ctrl; return; }
-                            }
+
+                            // enum → string 비교 (값이 환경에 따라 달라질 수 있어 이름으로 비교)
+                            string typeStr = typeProp.GetValue(layer).ToString();
+                            if (typeStr != "FX") continue;
+
+                            // isDefault == true이면 기본 컨트롤러(없는 것), false면 커스텀 할당
+                            bool isDef = defProp != null && (bool)defProp.GetValue(layer);
+                            if (isDef) continue;
+
+                            var ctrl = animProp.GetValue(layer) as UnityEditor.Animations.AnimatorController;
+                            if (ctrl != null) { _exprFxController = ctrl; return; }
                         }
                     }
                 }
             }
         }
 
-        // 폴백: 모든 Animator에서 FX 레이어 이름 검색
+        // ② 폴백 A: 아바타 루트 Animator의 runtimeAnimatorController에서 FX 레이어 탐색
+        var rootAnimator = targetAvatarRoot.GetComponent<Animator>();
+        if (rootAnimator != null)
+        {
+            var ctrl = rootAnimator.runtimeAnimatorController as UnityEditor.Animations.AnimatorController;
+            if (ctrl != null)
+            {
+                foreach (var layer in ctrl.layers)
+                {
+                    string n = layer.name.ToLower();
+                    if (n.Contains("left hand") || n.Contains("right hand") || n == "fx")
+                    {
+                        _exprFxController = ctrl;
+                        return;
+                    }
+                }
+            }
+        }
+
+        // ③ 폴백 B: 자식 포함 모든 Animator 순회
         foreach (var anim in targetAvatarRoot.GetComponentsInChildren<Animator>(true))
         {
             var ctrl = anim.runtimeAnimatorController as UnityEditor.Animations.AnimatorController;
             if (ctrl == null) continue;
+            bool hasHand = false;
             foreach (var layer in ctrl.layers)
             {
                 string n = layer.name.ToLower();
-                if (n.Contains("fx") || n.Contains("left hand") || n.Contains("right hand"))
+                if (n.Contains("left hand") || n.Contains("right hand")) { hasHand = true; break; }
+            }
+            if (hasHand) { _exprFxController = ctrl; return; }
+        }
+
+        // ④ 폴백 C: 프로젝트 내 FX 이름 포함 AnimatorController 검색
+        string[] guids = AssetDatabase.FindAssets("t:AnimatorController FX", new[] { "Assets" });
+        foreach (var guid in guids)
+        {
+            string p = AssetDatabase.GUIDToAssetPath(guid);
+            var ctrl = AssetDatabase.LoadAssetAtPath<UnityEditor.Animations.AnimatorController>(p);
+            if (ctrl == null) continue;
+            foreach (var layer in ctrl.layers)
+            {
+                string n = layer.name.ToLower();
+                if (n.Contains("left hand") || n.Contains("right hand"))
                 {
                     _exprFxController = ctrl;
                     return;
@@ -2131,7 +2185,7 @@ public class ArmatureScalerEditor : EditorWindow
             }
         }
 
-        Debug.LogWarning("[Avi Editor] FX controller not found.");
+        Debug.LogWarning("[Avi Editor] FX controller not found. Please assign it manually.");
     }
 
     // ── 헬퍼: Left/Right Hand 레이어 이름 목록 ───
