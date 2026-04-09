@@ -10,7 +10,7 @@ public class DiNePackagePatcher : EditorWindow
     private LanguagePreset language = LanguagePreset.Korean;
 
     private string selectedFolderPath = "";
-    private string targetFolderName = "_1_ImportedPackages";
+    private string targetFolderName = "_1_Patch";
     private List<string> foundPackages = new List<string>();
     private Vector2 packageScrollPos;
 
@@ -27,7 +27,7 @@ public class DiNePackagePatcher : EditorWindow
     private static string[] preImportFolders;
     private static int totalPackagesToImport = 0;
     private static int currentlyProcessedPackages = 0;
-    private static string pendingTargetFolderName = "_1_ImportedPackages";
+    private static string pendingTargetFolderName = "_1_Patch";
     private static DiNePackagePatcher activeWindow;
 
     [MenuItem("DiNe/EX/Package Patcher", false, 100)]
@@ -112,6 +112,15 @@ public class DiNePackagePatcher : EditorWindow
         EditorGUILayout.LabelField(UI_TEXT[1], GUILayout.Width(130)); // 이동 폴더명
         targetFolderName = EditorGUILayout.TextField(targetFolderName);
         EditorGUILayout.EndHorizontal();
+
+        // 동일 폴더 존재 경고
+        if (!string.IsNullOrEmpty(targetFolderName) && AssetDatabase.IsValidFolder("Assets/" + targetFolderName))
+        {
+            GUILayout.Space(2);
+            GUILayout.Label(UI_TEXT[12], new GUIStyle(EditorStyles.miniLabel)
+                { normal = { textColor = new Color(1f, 0.3f, 0.3f) }, fontStyle = FontStyle.Bold, wordWrap = true });
+        }
+
         EditorGUILayout.EndVertical();
 
         GUILayout.Space(5);
@@ -359,6 +368,7 @@ public class DiNePackagePatcher : EditorWindow
                     "임포트 중...",                   // 9
                     "임포트 및 정리 시작",             // 10
                     "모든 임포트 및 정리 완료!",        // 11
+                    "⚠ 동일한 이름의 폴더가 이미 존재합니다. 실행 시 기존 폴더 안에 병합됩니다.", // 12
                 };
                 break;
             case LanguagePreset.Japanese:
@@ -376,6 +386,7 @@ public class DiNePackagePatcher : EditorWindow
                     "インポート中...",
                     "インポートして整理を開始",
                     "全インポート・整理が完了しました！",
+                    "⚠ 同名のフォルダが既に存在します。実行すると既存フォルダに統合されます。", // 12
                 };
                 break;
             default: // English
@@ -393,6 +404,7 @@ public class DiNePackagePatcher : EditorWindow
                     "Importing...",
                     "Start Import & Organize",
                     "All imports & organization complete!",
+                    "⚠ A folder with this name already exists. Files will be merged into it.", // 12
                 };
                 break;
         }
