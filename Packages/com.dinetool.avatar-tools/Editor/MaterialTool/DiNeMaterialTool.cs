@@ -70,10 +70,6 @@ public class DiNeMaterialTool : EditorWindow
         /* 44 */ new[] { "Apply",      "적용",              "適用"           },
         /* 45 */ new[] { "Done — Removed {1} texture(s) from {0} material(s).", "완료 — {0}개 마테리얼에서 {1}개 텍스쳐를 제거했습니다.", "完了 — {0}個のマテリアルから {1}個のテクスチャを削除しました。" },
         /* 46 */ new[] { "Preview Result",           "미리보기 결과 확인",          "プレビュー結果を確認"              },
-        /* 58 */ new[] { "Disable Feature",          "기능 비활성화",               "機能を無効化"                      },
-        /* 59 */ new[] { "Sections",                 "섹션",                        "セクション"                        },
-        /* 60 */ new[] { "Select All",               "전체 선택",                   "全て選択"                          },
-        /* 61 */ new[] { "Deselect All",             "전체 해제",                   "全て解除"                          },
         // ── VRAM ──
         /* 47 */ new[] { "VRAM Optimize",      "VRAM 최적화",        "VRAM最適化"               },
         /* 48 */ new[] { "Total VRAM",         "총 VRAM 사용량",      "VRAM合計"                 },
@@ -84,10 +80,17 @@ public class DiNeMaterialTool : EditorWindow
                          "{0}個のテクスチャの圧縮フォーマットや最大解像度を変更します。\nこの操作は元に戻せません。\n\n続けますか？" },
         /* 52 */ new[] { "Done — Optimized {0} texture(s), saved {1}", "완료 — {0}개 텍스처 최적화, {1} 절약", "完了 — {0}個のテクスチャを最適化、{1}削減" },
         /* 53 */ new[] { "No textures found.",  "텍스처를 찾을 수 없습니다.",  "テクスチャが見つかりません。" },
-        /* 54 */ new[] { "No optimizable textures.", "최적화 가능한 텍스처가 없습니다.", "最適化可能なテクスチャがありません。" },
-        /* 55 */ new[] { "Format",             "포맷",               "フォーマット"              },
-        /* 56 */ new[] { "Size",               "해상도",             "解像度"                   },
-        /* 57 */ new[] { "Material",           "마테리얼",           "マテリアル"                },
+        /* 54 */ new[] { "Format",             "포맷",               "フォーマット"              },
+        // ── Diet extra (58+) ──
+        /* 55 */ new[] { "_unused_55_",        "_unused_55_",        "_unused_55_"               },
+        /* 56 */ new[] { "_unused_56_",        "_unused_56_",        "_unused_56_"               },
+        /* 57 */ new[] { "_unused_57_",        "_unused_57_",        "_unused_57_"               },
+        /* 58 */ new[] { "Disable Feature",    "기능 비활성화",       "機能を無効化"              },
+        /* 59 */ new[] { "Sections",           "섹션",               "セクション"                },
+        /* 60 */ new[] { "Select All",         "전체 선택",           "全て選択"                  },
+        /* 61 */ new[] { "Deselect All",       "전체 해제",           "全て解除"                  },
+        /* 62 */ new[] { "Remove Textures Only", "텍스쳐만 제거",     "テクスチャのみ削除"         },
+        /* 63 */ new[] { "Remove + Disable",   "제거 + 기능 끄기",    "削除＋機能を無効化"         },
     };
     private string T(int i) => UI[i][L];
     private string Tf(int i, params object[] a) => string.Format(UI[i][L], a);
@@ -192,7 +195,6 @@ public class DiNeMaterialTool : EditorWindow
     private Vector2            _dietScroll;
     private Vector2            _dietMatScroll;
     private bool[]             _dietEnabled;   // section checkbox (enabled = should clean)
-    private bool[]             _dietDisable;   // "disable feature" toggle per section
 
     // ══════════════════════════════════════════════════════════════════════════
     //  State — VRAM Mode
@@ -291,8 +293,7 @@ public class DiNeMaterialTool : EditorWindow
         if (_dietEnabled == null || _dietEnabled.Length != SECTIONS.Length)
         {
             _dietEnabled = new bool[SECTIONS.Length];
-            _dietDisable = new bool[SECTIONS.Length];
-            // default: Shadow/AO, Outline, MatCap, Rim, Emission on
+            // default: Shadow/AO, Outline, Normal, MatCap, Rim, Emission on
             for (int i = 0; i < SECTIONS.Length; i++)
                 _dietEnabled[i] = i < 6;
         }
@@ -729,20 +730,12 @@ public class DiNeMaterialTool : EditorWindow
 
             // Prop count hint
             GUILayout.Label($"({sec.TexProps.Length})", subStyle, GUILayout.Width(28));
-
-            // Disable Feature toggle (only if toggle prop exists)
+            // Toggle prop indicator
             if (sec.Toggle != null)
-            {
-                GUI.enabled = _dietEnabled[i];
-                GUILayout.Space(6);
-                bool newDis = GUILayout.Toggle(_dietDisable[i], T(58), GUILayout.Width(110));
-                if (newDis != _dietDisable[i]) _dietDisable[i] = newDis;
-                GUI.enabled = true;
-            }
+                GUILayout.Label("⚡", new GUIStyle(EditorStyles.miniLabel)
+                    { normal = { textColor = new Color(0.85f, 0.55f, 0.55f) } }, GUILayout.Width(18));
             else
-            {
-                GUILayout.Space(116);
-            }
+                GUILayout.Space(18);
 
             EditorGUILayout.EndHorizontal();
         }
@@ -750,15 +743,32 @@ public class DiNeMaterialTool : EditorWindow
 
     private void DrawDietActionButton()
     {
+        bool canApply = _dietScanned && _dietMats.Any(m => m.Selected && m.HasDiet);
         var btn = new GUIStyle(GUI.skin.button)
-            { fontSize = 15, fontStyle = FontStyle.Bold, normal = { textColor = Color.white }, hover = { textColor = Color.white } };
+            { fontSize = 13, fontStyle = FontStyle.Bold, normal = { textColor = Color.white }, hover = { textColor = Color.white } };
         var prev = GUI.backgroundColor;
 
-        bool canApply = _dietScanned && _dietMats.Any(m => m.Selected && m.HasDiet);
+        // ⚡ 표시 섹션이 하나라도 enabled 되어 있으면 두 번째 버튼 활성
+        bool hasToggleSections = System.Linq.Enumerable.Range(0, SECTIONS.Length)
+            .Any(i => _dietEnabled[i] && SECTIONS[i].Toggle != null);
+
         GUI.enabled = canApply;
-        GUI.backgroundColor = _previewOnly ? ColWarn : ColDanger;
-        if (GUILayout.Button(_previewOnly ? T(46) : T(34), btn, GUILayout.Height(38)))
-            ApplyDiet();
+        EditorGUILayout.BeginHorizontal();
+
+        // 버튼 1: 텍스쳐만 제거
+        GUI.backgroundColor = _previewOnly ? ColWarn : new Color(0.55f, 0.35f, 0.35f);
+        if (GUILayout.Button(_previewOnly ? T(46) : T(62), btn, GUILayout.Height(36)))
+            ApplyDiet(disableFeatures: false);
+
+        // 버튼 2: 제거 + 기능 끄기 (toggle 있는 섹션이 있을 때만)
+        if (hasToggleSections)
+        {
+            GUI.backgroundColor = _previewOnly ? ColWarn : ColDanger;
+            if (GUILayout.Button(_previewOnly ? T(46) : T(63), btn, GUILayout.Height(36), GUILayout.Width(160)))
+                ApplyDiet(disableFeatures: true);
+        }
+
+        EditorGUILayout.EndHorizontal();
         GUI.backgroundColor = prev;
         GUI.enabled = true;
     }
@@ -873,12 +883,6 @@ public class DiNeMaterialTool : EditorWindow
                     GUILayout.Space(2);
                 }
 
-                // Show "Disable Feature" indicator if set
-                if (sec.Toggle != null && _dietDisable[res.SectionIndex])
-                {
-                    EditorGUILayout.LabelField($"  → {sec.Toggle} = 0  ({T(58)})",
-                        new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = new Color(0.85f, 0.50f, 0.50f) } });
-                }
                 GUILayout.Space(4);
             }
 
@@ -1095,7 +1099,7 @@ public class DiNeMaterialTool : EditorWindow
         }
     }
 
-    private void ApplyDiet()
+    private void ApplyDiet(bool disableFeatures)
     {
         var targets = _dietMats.Where(m => m.Selected && m.HasDiet).ToList();
         if (targets.Count == 0) { SetStatus(T(39), false); return; }
@@ -1105,7 +1109,8 @@ public class DiNeMaterialTool : EditorWindow
             SetStatus(Tf(40, targets.Count, total), true);
             return;
         }
-        bool ok = EditorUtility.DisplayDialog(T(41), Tf(42, targets.Count) + "\n" + T(43), T(44), T(25));
+        string dialogTitle = disableFeatures ? T(63) : T(62);
+        bool ok = EditorUtility.DisplayDialog(dialogTitle, Tf(42, targets.Count) + "\n" + T(43), T(44), T(25));
         if (!ok) return;
 
         Undo.RecordObjects(targets.Select(m => (Object)m.Material).ToArray(), "DiNe Diet Tool");
@@ -1119,7 +1124,7 @@ public class DiNeMaterialTool : EditorWindow
                 foreach (string prop in res.Props)
                 { info.Material.SetTexture(prop, null); removed++; }
                 // Disable feature toggle if requested
-                if (_dietDisable[res.SectionIndex] && sec.Toggle != null && info.Material.HasProperty(sec.Toggle))
+                if (disableFeatures && sec.Toggle != null && info.Material.HasProperty(sec.Toggle))
                     info.Material.SetFloat(sec.Toggle, 0f);
             }
             EditorUtility.SetDirty(info.Material);
@@ -1154,18 +1159,16 @@ public class DiNeMaterialTool : EditorWindow
         var optimizable = _vramTextures.Where(t => t.CanOptimizeFormat || t.CanOptimizeSize).ToList();
         long totalSavings = optimizable.Sum(t => t.FormatSavings + t.SizeSavings);
 
-        GUI.enabled = optimizable.Count > 0;
-        prev = GUI.backgroundColor;
-        GUI.backgroundColor = optimizable.Count > 0 ? ColApply : new Color(0.35f, 0.35f, 0.38f);
-        var btnStyle = new GUIStyle(GUI.skin.button)
-            { fontSize = 13, fontStyle = FontStyle.Bold, normal = { textColor = Color.white }, hover = { textColor = Color.white } };
-        string btnLabel = optimizable.Count > 0
-            ? $"{T(50)}  ({optimizable.Count})  → -{FormatBytes(totalSavings)}"
-            : T(54);
-        if (GUILayout.Button(btnLabel, btnStyle, GUILayout.Height(38)))
-            VRAMOptimizeAll(optimizable);
-        GUI.backgroundColor = prev;
-        GUI.enabled = true;
+        if (optimizable.Count > 0)
+        {
+            prev = GUI.backgroundColor;
+            GUI.backgroundColor = ColApply;
+            var btnStyle = new GUIStyle(GUI.skin.button)
+                { fontSize = 13, fontStyle = FontStyle.Bold, normal = { textColor = Color.white }, hover = { textColor = Color.white } };
+            if (GUILayout.Button($"{T(50)}  ({optimizable.Count})  → -{FormatBytes(totalSavings)}", btnStyle, GUILayout.Height(38)))
+                VRAMOptimizeAll(optimizable);
+            GUI.backgroundColor = prev;
+        }
 
         HLine();
 
@@ -1237,21 +1240,15 @@ public class DiNeMaterialTool : EditorWindow
             GUILayout.Width(80));
         EditorGUILayout.EndHorizontal();
 
-        // 줄 2: 해상도 드롭다운 + 포맷 드롭다운 + Mat 버튼
+        // 줄 2: 포맷 드롭다운
         var importer = !string.IsNullOrEmpty(info.AssetPath) ? AssetImporter.GetAtPath(info.AssetPath) as TextureImporter : null;
         EditorGUILayout.BeginHorizontal();
 
         if (importer != null && info.Texture is Texture2D)
         {
-            int curSizeIdx = System.Array.IndexOf(_sizeOptions, importer.maxTextureSize);
-            if (curSizeIdx < 0) curSizeIdx = _sizeOptions.Length - 1;
-            int newSizeIdx = EditorGUILayout.Popup(curSizeIdx, _sizeNames, GUILayout.Width(55));
-            if (newSizeIdx != curSizeIdx)
-                VRAMChangeSize(info, _sizeOptions[newSizeIdx]);
-
             int curFmtIdx = System.Array.IndexOf(_formatOptions, (TextureImporterFormat)info.Format);
             if (curFmtIdx < 0) curFmtIdx = 0;
-            int newFmtIdx = EditorGUILayout.Popup(curFmtIdx, _formatNames, GUILayout.Width(70));
+            int newFmtIdx = EditorGUILayout.Popup(curFmtIdx, _formatNames);
             if (newFmtIdx != curFmtIdx)
             {
                 info.SuggestedFormat = _formatOptions[newFmtIdx];
@@ -1261,35 +1258,12 @@ public class DiNeMaterialTool : EditorWindow
         else
         {
             GUILayout.Label(info.FormatString, new GUIStyle(EditorStyles.miniLabel)
-                { normal = { textColor = ColSubText } }, GUILayout.Width(70));
-        }
-
-        GUILayout.FlexibleSpace();
-
-        if (info.UsedByMaterials.Count > 0)
-        {
-            EditorGUILayout.BeginVertical();
-            if (GUILayout.Button(T(57), new GUIStyle(EditorStyles.miniButton)
-                { fontStyle = FontStyle.Bold }, GUILayout.Width(64), GUILayout.Height(14)))
-                info.MaterialDropdown = !info.MaterialDropdown;
-            GUILayout.Label($"×{info.UsedByMaterials.Count}", new GUIStyle(EditorStyles.centeredGreyMiniLabel)
-                { normal = { textColor = ColSubText } }, GUILayout.Width(64));
-            EditorGUILayout.EndVertical();
+                { normal = { textColor = ColSubText } });
         }
 
         EditorGUILayout.EndHorizontal();
         EditorGUILayout.EndVertical();
         EditorGUILayout.EndHorizontal();
-
-        // 머티리얼 리스트
-        if (info.MaterialDropdown && info.UsedByMaterials.Count > 0)
-        {
-            GUILayout.Space(2);
-            EditorGUI.indentLevel++;
-            foreach (var mat in info.UsedByMaterials)
-                EditorGUILayout.ObjectField(mat, typeof(Material), false, GUILayout.Height(18));
-            EditorGUI.indentLevel--;
-        }
 
         EditorGUILayout.EndVertical();
         GUILayout.Space(2);
