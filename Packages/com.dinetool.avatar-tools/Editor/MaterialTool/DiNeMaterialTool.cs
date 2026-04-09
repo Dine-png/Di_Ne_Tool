@@ -83,6 +83,7 @@ public class DiNeMaterialTool : EditorWindow
         /* 54 */ new[] { "No optimizable textures.", "최적화 가능한 텍스처가 없습니다.", "最適化可能なテクスチャがありません。" },
         /* 55 */ new[] { "Format",             "포맷",               "フォーマット"              },
         /* 56 */ new[] { "Size",               "해상도",             "解像度"                   },
+        /* 57 */ new[] { "Material",           "마테리얼",           "マテリアル"                },
     };
     private string T(int i) => UI[i][L];
     private string Tf(int i, params object[] a) => string.Format(UI[i][L], a);
@@ -1059,8 +1060,15 @@ public class DiNeMaterialTool : EditorWindow
 
         if (Event.current.type == EventType.MouseDown && Event.current.button == 0 && thumbRect.Contains(Event.current.mousePosition))
         {
-            EditorGUIUtility.PingObject(info.Texture);
-            Selection.activeObject = info.Texture;
+            if (Event.current.clickCount == 2)
+            {
+                DiNeTexturePreviewWindow.Open(info.Texture);
+            }
+            else
+            {
+                EditorGUIUtility.PingObject(info.Texture);
+                Selection.activeObject = info.Texture;
+            }
             Event.current.Use();
         }
         EditorGUIUtility.AddCursorRect(thumbRect, MouseCursor.Link);
@@ -1110,9 +1118,13 @@ public class DiNeMaterialTool : EditorWindow
 
         if (info.UsedByMaterials.Count > 0)
         {
-            if (GUILayout.Button($"Mat ×{info.UsedByMaterials.Count}", EditorStyles.miniButton,
-                GUILayout.Width(60), GUILayout.Height(16)))
+            EditorGUILayout.BeginVertical();
+            if (GUILayout.Button(T(57), new GUIStyle(EditorStyles.miniButton)
+                { fontStyle = FontStyle.Bold }, GUILayout.Width(64), GUILayout.Height(14)))
                 info.MaterialDropdown = !info.MaterialDropdown;
+            GUILayout.Label($"×{info.UsedByMaterials.Count}", new GUIStyle(EditorStyles.centeredGreyMiniLabel)
+                { normal = { textColor = ColSubText } }, GUILayout.Width(64));
+            EditorGUILayout.EndVertical();
         }
 
         EditorGUILayout.EndHorizontal();
