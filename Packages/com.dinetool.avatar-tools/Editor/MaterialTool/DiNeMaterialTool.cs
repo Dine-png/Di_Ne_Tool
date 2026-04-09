@@ -1049,13 +1049,13 @@ public class DiNeMaterialTool : EditorWindow
 
         // 썸네일 (클릭 시 프로젝트에서 선택)
         Rect thumbRect = GUILayoutUtility.GetRect(40, 40, GUILayout.Width(40), GUILayout.Height(40));
-        if (info.Texture is Texture2D t2d)
-        {
-            Texture2D thumb = AssetPreview.GetAssetPreview(info.Texture);
-            if (thumb != null) GUI.DrawTexture(thumbRect, thumb, ScaleMode.ScaleToFit);
-            else { EditorGUI.DrawPreviewTexture(thumbRect, t2d); Repaint(); }
-        }
-        else GUI.Box(thumbRect, "?");
+        Texture2D thumb = AssetPreview.GetAssetPreview(info.Texture);
+        if (thumb != null)
+            GUI.DrawTexture(thumbRect, thumb, ScaleMode.ScaleToFit);
+        else if (info.Texture is Texture2D t2d)
+            { EditorGUI.DrawPreviewTexture(thumbRect, t2d); Repaint(); }
+        else
+            { GUI.Box(thumbRect, ""); Repaint(); }
 
         if (Event.current.type == EventType.MouseDown && Event.current.button == 0 && thumbRect.Contains(Event.current.mousePosition))
         {
