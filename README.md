@@ -2,7 +2,7 @@
 
 Professional-grade **Unity Editor tools** for VRChat avatar customization and optimization. Built for creators who demand efficiency and precision.
 
-![Unity 2019+](https://img.shields.io/badge/Unity-2019%2B-black?logo=unity&style=flat)
+![Unity 2022.3](https://img.shields.io/badge/Unity-2022.3%2B-black?logo=unity&style=flat)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat)
 ![Languages](https://img.shields.io/badge/Languages-EN%20%2F%20KO%20%2F%20JP-blue?style=flat)
 

@@ -8,7 +8,7 @@ public class DiNeMaterialTool : EditorWindow
     // ══════════════════════════════════════════════════════════════════════════
     //  Enums
     // ══════════════════════════════════════════════════════════════════════════
-    private enum ToolMode { PresetApply, AORemove, VRAMOptimize }
+    private enum ToolMode { PresetApply, Diet, VRAMOptimize }
     private enum Lang { English, Korean, Japanese }
 
     private ToolMode _mode = ToolMode.PresetApply;
@@ -21,7 +21,7 @@ public class DiNeMaterialTool : EditorWindow
     private static readonly string[][] UI =
     {
         /* 00 */ new[] { "Preset Apply",        "프리셋 적용",         "プリセット適用"           },
-        /* 01 */ new[] { "AO Remove",           "AO 제거",            "AO削除"                  },
+        /* 01 */ new[] { "Diet",                "다이어트",           "ダイエット"              },
         // ── Common ──
         /* 02 */ new[] { "Target Settings",     "대상 설정",           "対象設定"                },
         /* 03 */ new[] { "Target Object",       "대상 오브젝트",       "対象オブジェクト"         },
@@ -55,21 +55,25 @@ public class DiNeMaterialTool : EditorWindow
         /* 30 */ new[] { "Floats",   "플로트", "フロート"   },
         /* 31 */ new[] { "Vectors",  "벡터",   "ベクター"   },
         /* 32 */ new[] { "Textures", "텍스쳐", "テクスチャー" },
-        // ── AO ──
-        /* 33 */ new[] { "Scan",                "스캔",                "スキャン"                 },
-        /* 34 */ new[] { "Remove AO Textures",  "AO 텍스처 제거",      "AOテクスチャを削除"        },
-        /* 35 */ new[] { "LilToon: {0} found / With AO: {1}", "LilToon 마테리얼: {0}개 / AO 존재: {1}개", "LilToon: {0}個 / AO あり: {1}個" },
+        // ── Diet ──
+        /* 33 */ new[] { "Select Sections",          "섹션 선택",                  "セクション選択"                    },
+        /* 34 */ new[] { "Apply Diet",               "다이어트 적용",               "ダイエット適用"                    },
+        /* 35 */ new[] { "LilToon: {0} found / Affected: {1}", "LilToon 마테리얼: {0}개 / 대상: {1}개", "LilToon: {0}個 / 対象: {1}個" },
         /* 36 */ new[] { "No LilToon materials found.", "LilToon 마테리얼을 찾을 수 없습니다.", "LilToonマテリアルが見つかりません。" },
-        /* 37 */ new[] { "AO Textures",         "AO 텍스쳐",           "AOテクスチャ"              },
-        /* 38 */ new[] { "Scan complete — {0} LilToon material(s), {1} with AO texture(s)", "스캔 완료 — LilToon {0}개, AO 보유 {1}개", "スキャン完了 — LilToon {0}個, AO あり {1}個" },
-        /* 39 */ new[] { "No AO textures to remove.", "제거할 AO 텍스처가 없습니다.", "削除するAOテクスチャがありません。" },
-        /* 40 */ new[] { "[Preview] {1} AO texture(s) in {0} material(s) would be removed.", "[미리보기] {0}개 마테리얼에서 총 {1}개 AO 텍스처가 제거될 예정입니다.", "[プレビュー] {0}個のマテリアルから計 {1}個のAOテクスチャが削除される予定です。" },
-        /* 41 */ new[] { "Remove AO Textures",  "AO 텍스처 제거",      "AOテクスチャの削除"        },
-        /* 42 */ new[] { "This will remove AO textures from {0} material(s).\nSupports Undo.", "{0}개 마테리얼에서 AO 텍스처를 제거합니다.\nUndo로 되돌릴 수 있습니다.", "{0}個のマテリアルからAOテクスチャを削除します。\nUndoで元に戻せます。" },
-        /* 43 */ new[] { "Continue?", "계속하시겠습니까?", "続けますか？" },
-        /* 44 */ new[] { "Remove",   "제거",   "削除"     },
-        /* 45 */ new[] { "Done — Removed {1} AO texture(s) from {0} material(s).", "완료 — {0}개 마테리얼에서 {1}개 AO 텍스처를 제거했습니다.", "完了 — {0}個のマテリアルから {1}個のAOテクスチャを削除しました。" },
-        /* 46 */ new[] { "Preview Result", "미리보기 결과 확인", "プレビュー結果を確認" },
+        /* 37 */ new[] { "Textures to remove:",      "제거할 텍스쳐:",              "削除するテクスチャ:"               },
+        /* 38 */ new[] { "Scan complete — {0} LilToon material(s), {1} affected", "스캔 완료 — LilToon {0}개, 대상 {1}개", "スキャン完了 — LilToon {0}個, 対象 {1}個" },
+        /* 39 */ new[] { "No textures to remove.", "제거할 텍스쳐가 없습니다.", "削除するテクスチャがありません。" },
+        /* 40 */ new[] { "[Preview] {1} texture(s) in {0} material(s) would be removed.", "[미리보기] {0}개 마테리얼에서 총 {1}개 텍스쳐가 제거될 예정입니다.", "[プレビュー] {0}個のマテリアルから計 {1}個のテクスチャが削除される予定です。" },
+        /* 41 */ new[] { "Apply Diet",               "다이어트 적용",               "ダイエット適用"                    },
+        /* 42 */ new[] { "Remove textures from {0} material(s).\nSupports Undo.", "{0}개 마테리얼에서 텍스쳐를 제거합니다.\nUndo로 되돌릴 수 있습니다.", "{0}個のマテリアルからテクスチャを削除します。\nUndoで元に戻せます。" },
+        /* 43 */ new[] { "Continue?",  "계속하시겠습니까?", "続けますか？"  },
+        /* 44 */ new[] { "Apply",      "적용",              "適用"           },
+        /* 45 */ new[] { "Done — Removed {1} texture(s) from {0} material(s).", "완료 — {0}개 마테리얼에서 {1}개 텍스쳐를 제거했습니다.", "完了 — {0}個のマテリアルから {1}個のテクスチャを削除しました。" },
+        /* 46 */ new[] { "Preview Result",           "미리보기 결과 확인",          "プレビュー結果を確認"              },
+        /* 58 */ new[] { "Disable Feature",          "기능 비활성화",               "機能を無効化"                      },
+        /* 59 */ new[] { "Sections",                 "섹션",                        "セクション"                        },
+        /* 60 */ new[] { "Select All",               "전체 선택",                   "全て選択"                          },
+        /* 61 */ new[] { "Deselect All",             "전체 해제",                   "全て解除"                          },
         // ── VRAM ──
         /* 47 */ new[] { "VRAM Optimize",      "VRAM 최적화",        "VRAM最適化"               },
         /* 48 */ new[] { "Total VRAM",         "총 VRAM 사용량",      "VRAM合計"                 },
@@ -119,10 +123,29 @@ public class DiNeMaterialTool : EditorWindow
     private static readonly Color ColLine    = new Color(0.30f, 0.30f, 0.35f, 0.8f);
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  AO Properties
+    //  Diet — Section Definitions
     // ══════════════════════════════════════════════════════════════════════════
-    private static readonly string[] LILTOON_AO_PROPS =
-        { "_ShadowStrengthMask", "_ShadowBorderMask", "_ShadowBlurMask" };
+    private struct SectionDef
+    {
+        public string[] Names;    // [EN, KO, JP]
+        public string[] TexProps; // texture property names
+        public string   Toggle;   // float toggle prop to zero when DisableFeature=true (null = none)
+        public SectionDef(string[] n, string[] t, string tog = null) { Names = n; TexProps = t; Toggle = tog; }
+    }
+
+    private static readonly SectionDef[] SECTIONS = new[]
+    {
+        new SectionDef(new[]{"Shadow / AO",  "쉐도우 / AO",  "シャドウ / AO"},  new[]{"_ShadowStrengthMask","_ShadowBorderMask","_ShadowBlurMask"}),
+        new SectionDef(new[]{"Outline",      "아웃라인",      "アウトライン"},    new[]{"_OutlineWidthMask","_OutlineVectorTex"}, "_UseOutline"),
+        new SectionDef(new[]{"Normal Map",   "노멀 맵",       "ノーマルマップ"},  new[]{"_BumpMap","_Bump2ndMap"}),
+        new SectionDef(new[]{"MatCap",       "맷캡",          "マットキャップ"},  new[]{"_MatCapTex","_MatCapBlendMask","_MatCap2ndTex","_MatCap2ndBlendMask"}, "_UseMatCap"),
+        new SectionDef(new[]{"Rim Light",    "림라이트",      "リムライト"},      new[]{"_RimColorTex"}, "_UseRim"),
+        new SectionDef(new[]{"Emission",     "에미션",        "エミッション"},    new[]{"_EmissionMap","_Emission2ndMap"}, "_UseEmission"),
+        new SectionDef(new[]{"Glitter",      "글리터",        "グリッター"},      new[]{"_GlitterColorTex"}, "_UseGlitter"),
+        new SectionDef(new[]{"Backlight",    "백라이트",      "バックライト"},    new[]{"_BacklightColorTex"}, "_UseBacklight"),
+        new SectionDef(new[]{"Parallax",     "시차",          "パララックス"},    new[]{"_ParallaxMap"}, "_UseParallax"),
+        new SectionDef(new[]{"Dissolve",     "디졸브",        "ディゾルブ"},      new[]{"_DissolveMask","_DissolveNoiseMask"}, "_UseDissolve"),
+    };
 
     // ══════════════════════════════════════════════════════════════════════════
     //  State — Common
@@ -162,12 +185,14 @@ public class DiNeMaterialTool : EditorWindow
     private Vector2            _presetMatScroll;
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  State — AO Mode
+    //  State — Diet Mode
     // ══════════════════════════════════════════════════════════════════════════
-    private List<MaterialInfo> _aoMats    = new List<MaterialInfo>();
-    private bool               _aoScanned = false;
-    private Vector2            _aoScroll;
-    private Vector2            _aoMatScroll;
+    private List<MaterialInfo> _dietMats    = new List<MaterialInfo>();
+    private bool               _dietScanned = false;
+    private Vector2            _dietScroll;
+    private Vector2            _dietMatScroll;
+    private bool[]             _dietEnabled;   // section checkbox (enabled = should clean)
+    private bool[]             _dietDisable;   // "disable feature" toggle per section
 
     // ══════════════════════════════════════════════════════════════════════════
     //  State — VRAM Mode
@@ -226,6 +251,13 @@ public class DiNeMaterialTool : EditorWindow
     // ══════════════════════════════════════════════════════════════════════════
     //  Shared Material Info
     // ══════════════════════════════════════════════════════════════════════════
+    private class DietSectionResult
+    {
+        public int           SectionIndex;
+        public List<string>  Props    = new List<string>();
+        public List<Texture> Textures = new List<Texture>();
+    }
+
     private class MaterialInfo
     {
         public Material      Material;
@@ -233,9 +265,10 @@ public class DiNeMaterialTool : EditorWindow
         public string        ShaderName;
         public bool          Selected;
         public bool          Foldout = true;
-        public List<string>  AOProperties = new List<string>();
-        public List<Texture> AOTextures   = new List<Texture>();
-        public bool HasAO => AOProperties.Count > 0;
+        // Diet mode
+        public List<DietSectionResult> DietResults = new List<DietSectionResult>();
+        public int  TotalDietCount => DietResults.Sum(r => r.Props.Count);
+        public bool HasDiet        => TotalDietCount > 0;
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -255,6 +288,14 @@ public class DiNeMaterialTool : EditorWindow
         _tabIcon    = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
         _titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
         titleContent = new GUIContent("Material", _tabIcon);
+        if (_dietEnabled == null || _dietEnabled.Length != SECTIONS.Length)
+        {
+            _dietEnabled = new bool[SECTIONS.Length];
+            _dietDisable = new bool[SECTIONS.Length];
+            // default: Shadow/AO, Outline, MatCap, Rim, Emission on
+            for (int i = 0; i < SECTIONS.Length; i++)
+                _dietEnabled[i] = i < 6;
+        }
         LoadSettings();
         ScanLibrary();
     }
@@ -276,8 +317,8 @@ public class DiNeMaterialTool : EditorWindow
 
         if (_mode == ToolMode.PresetApply)
             DrawPresetMode();
-        else if (_mode == ToolMode.AORemove)
-            DrawAOMode();
+        else if (_mode == ToolMode.Diet)
+            DrawDietMode();
         else
             DrawVRAMMode();
 
@@ -399,9 +440,9 @@ public class DiNeMaterialTool : EditorWindow
 
     private void AutoScan()
     {
-        if (_targetObject == null) { _presetMats.Clear(); _presetScanned = false; _aoMats.Clear(); _aoScanned = false; _vramTextures.Clear(); _vramScanned = false; _status = ""; return; }
+        if (_targetObject == null) { _presetMats.Clear(); _presetScanned = false; _dietMats.Clear(); _dietScanned = false; _vramTextures.Clear(); _vramScanned = false; _status = ""; return; }
         if (_mode == ToolMode.PresetApply) PresetScanMaterials();
-        else if (_mode == ToolMode.AORemove) AOScanMaterials();
+        else if (_mode == ToolMode.Diet) DietScanMaterials();
         else VRAMScanTextures();
     }
 
@@ -636,81 +677,136 @@ public class DiNeMaterialTool : EditorWindow
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  AO MODE
+    //  DIET MODE — UI
     // ══════════════════════════════════════════════════════════════════════════
-    private void DrawAOMode()
+    private void DrawDietMode()
     {
-        DrawAOActions();
+        DrawDietSectionPanel();
+        HLine();
+        DrawDietActionButton();
 
-        if (_aoScanned)
+        if (_dietScanned)
         {
             HLine();
-            DrawAOMaterialResults();
+            DrawDietResults();
         }
     }
 
-    private void DrawAOActions()
+    private void DrawDietSectionPanel()
+    {
+        SectionLabel(T(59));
+        GUILayout.Space(4);
+
+        // Select All / Deselect All
+        EditorGUILayout.BeginHorizontal();
+        GUILayout.FlexibleSpace();
+        if (GUILayout.Button(T(60), EditorStyles.miniButton, GUILayout.Width(72)))
+            { for (int i = 0; i < _dietEnabled.Length; i++) _dietEnabled[i] = true; DietScanMaterials(); }
+        if (GUILayout.Button(T(61), EditorStyles.miniButton, GUILayout.Width(72)))
+            { for (int i = 0; i < _dietEnabled.Length; i++) _dietEnabled[i] = false; DietScanMaterials(); }
+        EditorGUILayout.EndHorizontal();
+        GUILayout.Space(4);
+
+        var labelStyle = new GUIStyle(EditorStyles.label) { fontSize = 12, fontStyle = FontStyle.Bold };
+        var subStyle   = new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = ColSubText } };
+        var disStyle   = new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = new Color(0.85f, 0.55f, 0.55f) } };
+
+        for (int i = 0; i < SECTIONS.Length; i++)
+        {
+            var sec = SECTIONS[i];
+            var prev = GUI.backgroundColor;
+            GUI.backgroundColor = _dietEnabled[i] ? new Color(0.22f, 0.30f, 0.28f) : ColCard;
+            EditorGUILayout.BeginHorizontal("box");
+            GUI.backgroundColor = prev;
+
+            // Section enable toggle
+            bool newEn = GUILayout.Toggle(_dietEnabled[i], "", GUILayout.Width(18));
+            if (newEn != _dietEnabled[i]) { _dietEnabled[i] = newEn; DietScanMaterials(); }
+
+            GUILayout.Space(4);
+            // Section name
+            GUILayout.Label(sec.Names[L], _dietEnabled[i] ? labelStyle : subStyle, GUILayout.ExpandWidth(true));
+
+            // Prop count hint
+            GUILayout.Label($"({sec.TexProps.Length})", subStyle, GUILayout.Width(28));
+
+            // Disable Feature toggle (only if toggle prop exists)
+            if (sec.Toggle != null)
+            {
+                GUI.enabled = _dietEnabled[i];
+                GUILayout.Space(6);
+                bool newDis = GUILayout.Toggle(_dietDisable[i], T(58), GUILayout.Width(110));
+                if (newDis != _dietDisable[i]) _dietDisable[i] = newDis;
+                GUI.enabled = true;
+            }
+            else
+            {
+                GUILayout.Space(116);
+            }
+
+            EditorGUILayout.EndHorizontal();
+        }
+    }
+
+    private void DrawDietActionButton()
     {
         var btn = new GUIStyle(GUI.skin.button)
             { fontSize = 15, fontStyle = FontStyle.Bold, normal = { textColor = Color.white }, hover = { textColor = Color.white } };
         var prev = GUI.backgroundColor;
 
-        bool canRemove = _aoScanned && _aoMats.Any(m => m.Selected && m.HasAO);
-        GUI.enabled = canRemove;
+        bool canApply = _dietScanned && _dietMats.Any(m => m.Selected && m.HasDiet);
+        GUI.enabled = canApply;
         GUI.backgroundColor = _previewOnly ? ColWarn : ColDanger;
         if (GUILayout.Button(_previewOnly ? T(46) : T(34), btn, GUILayout.Height(38)))
-            RemoveAOTextures();
+            ApplyDiet();
         GUI.backgroundColor = prev;
         GUI.enabled = true;
     }
 
-    private void DrawAOMaterialResults()
+    private void DrawDietResults()
     {
-        int lilCount = _aoMats.Count(m => m.ShaderName != null);
-        int aoCount  = _aoMats.Count(m => m.HasAO);
+        int lilCount = _dietMats.Count;
+        int affected = _dietMats.Count(m => m.HasDiet);
 
         var prev = GUI.backgroundColor;
         GUI.backgroundColor = ColCard;
         EditorGUILayout.BeginVertical("box");
         GUI.backgroundColor = prev;
-        EditorGUILayout.LabelField(Tf(35, lilCount, aoCount), new GUIStyle(EditorStyles.boldLabel) { fontSize = 11 });
+        EditorGUILayout.LabelField(Tf(35, lilCount, affected), new GUIStyle(EditorStyles.boldLabel) { fontSize = 11 });
         GUILayout.Space(5);
-        DrawSelectButtons(_aoMats, true);
+        DrawSelectButtons(_dietMats, true);
         EditorGUILayout.EndVertical();
 
         if (lilCount == 0) { EditorGUILayout.HelpBox(T(36), MessageType.Info); return; }
 
-        _aoMatScroll = EditorGUILayout.BeginScrollView(_aoMatScroll);
-        foreach (var info in _aoMats) DrawMaterialCard(info, true);
+        _dietMatScroll = EditorGUILayout.BeginScrollView(_dietMatScroll);
+        foreach (var info in _dietMats) DrawDietCard(info);
         EditorGUILayout.EndScrollView();
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  Material Card (NoMoreAO style)
-    // ══════════════════════════════════════════════════════════════════════════
-    private void DrawMaterialCard(MaterialInfo info, bool showAO)
+    private void DrawDietCard(MaterialInfo info)
     {
-        bool hasAO = info.HasAO;
-        if (showAO && !hasAO) info.Selected = false;
+        if (!info.HasDiet) info.Selected = false;
 
+        var prev = GUI.backgroundColor;
+        GUI.backgroundColor = ColCard;
         EditorGUILayout.BeginVertical("box");
+        GUI.backgroundColor = prev;
 
-        // Header row
+        // ── Header row ──
         EditorGUILayout.BeginHorizontal();
-        GUI.enabled = !showAO || hasAO;
+        GUI.enabled = info.HasDiet;
         info.Selected = GUILayout.Toggle(info.Selected, "", GUILayout.Width(20), GUILayout.Height(20));
         GUI.enabled = true;
         GUILayout.Space(2);
 
-        if (showAO)
+        // Badge
+        var badge = new GUIStyle(EditorStyles.miniLabel)
         {
-            var badge = new GUIStyle(EditorStyles.miniLabel)
-            {
-                fontStyle = FontStyle.Bold, fontSize = 10, alignment = TextAnchor.MiddleCenter,
-                normal = { textColor = hasAO ? new Color(1f, 0.55f, 0.2f) : new Color(0.4f, 0.85f, 0.4f) }
-            };
-            GUILayout.Label(hasAO ? $"AO ×{info.AOProperties.Count}" : "Clean", badge, GUILayout.Width(54), GUILayout.Height(20));
-        }
+            fontStyle = FontStyle.Bold, fontSize = 10, alignment = TextAnchor.MiddleCenter,
+            normal = { textColor = info.HasDiet ? new Color(1f, 0.55f, 0.2f) : new Color(0.4f, 0.85f, 0.4f) }
+        };
+        GUILayout.Label(info.HasDiet ? $"×{info.TotalDietCount}" : "Clean", badge, GUILayout.Width(38), GUILayout.Height(20));
 
         info.Foldout = EditorGUILayout.Foldout(info.Foldout, info.Material.name, true,
             new GUIStyle(EditorStyles.foldout) { fontStyle = FontStyle.Bold, fontSize = 12 });
@@ -721,8 +817,8 @@ public class DiNeMaterialTool : EditorWindow
             EditorGUIUtility.PingObject(info.Material);
         EditorGUILayout.EndHorizontal();
 
-        // Card content
-        if (info.Foldout)
+        // ── Card content ──
+        if (info.Foldout && info.HasDiet)
         {
             GUILayout.Space(3);
             GuiLine(1, 2);
@@ -731,64 +827,98 @@ public class DiNeMaterialTool : EditorWindow
 
             EditorGUILayout.LabelField(TruncatePath(info.Path, 54),
                 new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = new Color(0.6f, 0.6f, 0.6f) } });
-            if (!showAO && info.ShaderName != null)
-                EditorGUILayout.LabelField(info.ShaderName,
-                    new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = new Color(0.45f, 0.72f, 1f) } });
+            GUILayout.Space(6);
 
-            if (showAO && hasAO)
+            foreach (var res in info.DietResults)
             {
-                GUILayout.Space(6);
-                EditorGUILayout.LabelField(T(37), new GUIStyle(EditorStyles.boldLabel)
-                    { fontSize = 11, normal = { textColor = new Color(0.95f, 0.6f, 0.3f) } });
-                GUILayout.Space(4);
+                var sec = SECTIONS[res.SectionIndex];
+                // Section sub-header
+                EditorGUILayout.LabelField($"▸  {sec.Names[L]}", new GUIStyle(EditorStyles.boldLabel)
+                    { fontSize = 11, normal = { textColor = new Color(0.95f, 0.75f, 0.35f) } });
 
-                for (int i = 0; i < info.AOProperties.Count; i++)
+                for (int j = 0; j < res.Props.Count; j++)
                 {
                     EditorGUILayout.BeginVertical("box");
-                    EditorGUILayout.LabelField($"• {info.AOProperties[i]}",
-                        new GUIStyle(EditorStyles.boldLabel) { fontSize = 11 });
-                    GUILayout.Space(3);
+                    EditorGUILayout.LabelField($"  {res.Props[j]}",
+                        new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = new Color(0.75f, 0.75f, 0.8f) } });
 
-                    EditorGUILayout.BeginHorizontal();
-                    if (info.AOTextures[i] != null)
+                    if (res.Textures[j] != null)
                     {
-                        Rect previewRect = GUILayoutUtility.GetRect(72, 72, GUILayout.Width(72), GUILayout.Height(72));
-                        Texture2D thumb = AssetPreview.GetAssetPreview(info.AOTextures[i]);
+                        EditorGUILayout.BeginHorizontal();
+                        Rect previewRect = GUILayoutUtility.GetRect(56, 56, GUILayout.Width(56), GUILayout.Height(56));
+                        Texture2D thumb = AssetPreview.GetAssetPreview(res.Textures[j]);
                         if (thumb != null)
                             GUI.DrawTexture(previewRect, thumb, ScaleMode.ScaleToFit);
-                        else if (info.AOTextures[i] is Texture2D raw)
-                        { EditorGUI.DrawPreviewTexture(previewRect, raw); Repaint(); }
+                        else if (res.Textures[j] is Texture2D raw)
+                            { EditorGUI.DrawPreviewTexture(previewRect, raw); Repaint(); }
                         else
-                            GUI.Box(previewRect, "?");
+                            { GUI.Box(previewRect, ""); Repaint(); }
 
-                        GUILayout.Space(8);
+                        if (Event.current.type == EventType.MouseDown && previewRect.Contains(Event.current.mousePosition))
+                        { EditorGUIUtility.PingObject(res.Textures[j]); Event.current.Use(); }
+
+                        GUILayout.Space(6);
                         EditorGUILayout.BeginVertical();
                         GUILayout.FlexibleSpace();
-                        EditorGUILayout.LabelField(info.AOTextures[i].name,
+                        EditorGUILayout.LabelField(res.Textures[j].name,
                             new GUIStyle(EditorStyles.boldLabel) { fontSize = 11 });
-                        if (info.AOTextures[i] is Texture2D t2d)
+                        if (res.Textures[j] is Texture2D t2d)
                             EditorGUILayout.LabelField($"{t2d.width} × {t2d.height}  |  {t2d.format}",
-                                new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = new Color(0.6f, 0.6f, 0.6f) } });
-                        GUILayout.Space(4);
-                        EditorGUILayout.ObjectField(info.AOTextures[i], typeof(Texture), false, GUILayout.Height(18));
+                                new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = ColSubText } });
                         GUILayout.FlexibleSpace();
                         EditorGUILayout.EndVertical();
+                        EditorGUILayout.EndHorizontal();
                     }
-                    else
-                    {
-                        EditorGUILayout.LabelField("(null)",
-                            new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = new Color(0.55f, 0.55f, 0.55f) } });
-                    }
-                    EditorGUILayout.EndHorizontal();
                     EditorGUILayout.EndVertical();
-                    GUILayout.Space(3);
+                    GUILayout.Space(2);
                 }
+
+                // Show "Disable Feature" indicator if set
+                if (sec.Toggle != null && _dietDisable[res.SectionIndex])
+                {
+                    EditorGUILayout.LabelField($"  → {sec.Toggle} = 0  ({T(58)})",
+                        new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = new Color(0.85f, 0.50f, 0.50f) } });
+                }
+                GUILayout.Space(4);
             }
 
             EditorGUI.indentLevel--;
             GUILayout.Space(2);
         }
 
+        EditorGUILayout.EndVertical();
+        GUILayout.Space(3);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Material Card (Preset mode)
+    // ══════════════════════════════════════════════════════════════════════════
+    private void DrawMaterialCard(MaterialInfo info, bool _ = false)
+    {
+        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.BeginHorizontal();
+        info.Selected = GUILayout.Toggle(info.Selected, "", GUILayout.Width(20), GUILayout.Height(20));
+        GUILayout.Space(2);
+        info.Foldout = EditorGUILayout.Foldout(info.Foldout, info.Material.name, true,
+            new GUIStyle(EditorStyles.foldout) { fontStyle = FontStyle.Bold, fontSize = 12 });
+        GUILayout.FlexibleSpace();
+        if (GUILayout.Button(T(18), new GUIStyle(EditorStyles.miniButton)
+            { fontSize = 11, fontStyle = FontStyle.Bold }, GUILayout.Width(46), GUILayout.Height(22)))
+            EditorGUIUtility.PingObject(info.Material);
+        EditorGUILayout.EndHorizontal();
+
+        if (info.Foldout)
+        {
+            GUILayout.Space(3); GuiLine(1, 2); GUILayout.Space(4);
+            EditorGUI.indentLevel++;
+            EditorGUILayout.LabelField(TruncatePath(info.Path, 54),
+                new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = new Color(0.6f, 0.6f, 0.6f) } });
+            if (info.ShaderName != null)
+                EditorGUILayout.LabelField(info.ShaderName,
+                    new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = new Color(0.45f, 0.72f, 1f) } });
+            EditorGUI.indentLevel--;
+            GUILayout.Space(2);
+        }
         EditorGUILayout.EndVertical();
         GUILayout.Space(3);
     }
@@ -912,11 +1042,11 @@ public class DiNeMaterialTool : EditorWindow
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  AO Logic
+    //  Diet Logic
     // ══════════════════════════════════════════════════════════════════════════
-    private void AOScanMaterials()
+    private void DietScanMaterials()
     {
-        _aoMats.Clear(); _aoScanned = false;
+        _dietMats.Clear(); _dietScanned = false;
         if (_targetObject == null) { SetStatus(T(19), true); return; }
         Renderer[] renderers = _includeChildren
             ? _targetObject.GetComponentsInChildren<Renderer>(_includeInactive)
@@ -926,58 +1056,78 @@ public class DiNeMaterialTool : EditorWindow
             foreach (var mat in r.sharedMaterials)
             {
                 if (mat == null || !seen.Add(mat.GetInstanceID())) continue;
-                bool isLil = IsLilToon(mat);
-                if (!isLil) continue;
-                var info = new MaterialInfo { Material = mat, Path = AssetDatabase.GetAssetPath(mat), ShaderName = mat.shader.name, Selected = false };
-                CollectAOProperties(mat, info);
-                info.Selected = info.HasAO;
-                _aoMats.Add(info);
+                if (!IsLilToon(mat)) continue;
+                var info = new MaterialInfo
+                {
+                    Material = mat,
+                    Path     = AssetDatabase.GetAssetPath(mat),
+                    ShaderName = mat.shader.name,
+                    Selected = false
+                };
+                CollectDietProperties(mat, info);
+                info.Selected = info.HasDiet;
+                _dietMats.Add(info);
             }
-        _aoMats = _aoMats.OrderByDescending(m => m.HasAO).ThenByDescending(m => m.AOProperties.Count).ToList();
-        _aoScanned = true;
-        int lilCount = _aoMats.Count;
-        int aoCount = _aoMats.Count(m => m.HasAO);
-        SetStatus(Tf(38, lilCount, aoCount), aoCount > 0);
+        _dietMats = _dietMats.OrderByDescending(m => m.TotalDietCount).ToList();
+        _dietScanned = true;
+        int affected = _dietMats.Count(m => m.HasDiet);
+        SetStatus(Tf(38, _dietMats.Count, affected), affected > 0);
         Repaint();
     }
 
-    private void CollectAOProperties(Material mat, MaterialInfo info)
+    private void CollectDietProperties(Material mat, MaterialInfo info)
     {
-        foreach (string prop in LILTOON_AO_PROPS)
+        for (int si = 0; si < SECTIONS.Length; si++)
         {
-            if (!mat.HasProperty(prop)) continue;
-            var tex = mat.GetTexture(prop);
-            if (tex == null) continue;
-            info.AOProperties.Add(prop);
-            info.AOTextures.Add(tex);
+            if (!_dietEnabled[si]) continue;
+            var sec = SECTIONS[si];
+            var res = new DietSectionResult { SectionIndex = si };
+            foreach (string prop in sec.TexProps)
+            {
+                if (!mat.HasProperty(prop)) continue;
+                var tex = mat.GetTexture(prop);
+                if (tex == null) continue;
+                res.Props.Add(prop);
+                res.Textures.Add(tex);
+            }
+            if (res.Props.Count > 0)
+                info.DietResults.Add(res);
         }
     }
 
-    private void RemoveAOTextures()
+    private void ApplyDiet()
     {
-        var targets = _aoMats.Where(m => m.Selected && m.HasAO).ToList();
+        var targets = _dietMats.Where(m => m.Selected && m.HasDiet).ToList();
         if (targets.Count == 0) { SetStatus(T(39), false); return; }
         if (_previewOnly)
         {
-            int total = targets.Sum(m => m.AOProperties.Count);
+            int total = targets.Sum(m => m.TotalDietCount);
             SetStatus(Tf(40, targets.Count, total), true);
             return;
         }
         bool ok = EditorUtility.DisplayDialog(T(41), Tf(42, targets.Count) + "\n" + T(43), T(44), T(25));
         if (!ok) return;
 
-        Undo.RecordObjects(targets.Select(m => (Object)m.Material).ToArray(), "DiNe Material Tool AO Remove");
+        Undo.RecordObjects(targets.Select(m => (Object)m.Material).ToArray(), "DiNe Diet Tool");
         int removed = 0;
         foreach (var info in targets)
         {
-            foreach (string prop in info.AOProperties)
-            { info.Material.SetTexture(prop, null); removed++; }
+            foreach (var res in info.DietResults)
+            {
+                var sec = SECTIONS[res.SectionIndex];
+                // Remove textures
+                foreach (string prop in res.Props)
+                { info.Material.SetTexture(prop, null); removed++; }
+                // Disable feature toggle if requested
+                if (_dietDisable[res.SectionIndex] && sec.Toggle != null && info.Material.HasProperty(sec.Toggle))
+                    info.Material.SetFloat(sec.Toggle, 0f);
+            }
             EditorUtility.SetDirty(info.Material);
         }
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
         SetStatus(Tf(45, targets.Count, removed), false);
-        AOScanMaterials();
+        DietScanMaterials();
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -1369,7 +1519,7 @@ public class DiNeMaterialTool : EditorWindow
         GUILayout.Label(text, new GUIStyle(EditorStyles.centeredGreyMiniLabel)
             { fontStyle = FontStyle.Italic, fontSize = 11, wordWrap = true });
 
-    private void DrawSelectButtons(List<MaterialInfo> mats, bool aoMode = false)
+    private void DrawSelectButtons(List<MaterialInfo> mats, bool dietMode = false)
     {
         var selBtn = new GUIStyle(GUI.skin.button)
             { fontSize = 12, fontStyle = FontStyle.Bold, normal = { textColor = Color.white }, hover = { textColor = Color.white } };
@@ -1377,7 +1527,7 @@ public class DiNeMaterialTool : EditorWindow
         var prev = GUI.backgroundColor;
         GUI.backgroundColor = ColSelect;
         if (GUILayout.Button(T(16), selBtn, GUILayout.Height(28)))
-            mats.ForEach(m => m.Selected = !aoMode || m.HasAO);
+            mats.ForEach(m => m.Selected = !dietMode || m.HasDiet);
         GUI.backgroundColor = ColDanger;
         if (GUILayout.Button(T(17), selBtn, GUILayout.Height(28)))
             mats.ForEach(m => m.Selected = false);
