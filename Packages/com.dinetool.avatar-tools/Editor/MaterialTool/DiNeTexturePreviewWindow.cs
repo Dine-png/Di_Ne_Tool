@@ -13,21 +13,30 @@ public class DiNeTexturePreviewWindow : EditorWindow
         win.titleContent = new GUIContent(texture.name);
         win._texture = texture;
 
-        // FHD 기준 1/6 크기의 창 (약 320×320)
+        // FHD 기준 1/6 크기에 텍스처 비율 적용
         const float toolbarH = 32f;
-        float winW = 1920f / 6f;           // 320
-        float winH = 1080f / 6f + toolbarH; // 180 + 32 = 212 → 정사각 느낌으로 winW 사용
-        winH = winW + toolbarH;            // 320 + 32 = 352
+        const float maxArea  = 1920f / 6f; // 기준 변 길이 320px
 
-        win.minSize = new Vector2(160, 160);
+        float aspect = (float)texture.width / texture.height;
+        float winW, winH;
+        if (aspect >= 1f)
+        {
+            winW = maxArea;
+            winH = maxArea / aspect + toolbarH;
+        }
+        else
+        {
+            winH = maxArea + toolbarH;
+            winW = maxArea * aspect;
+        }
+
+        win._zoom = maxArea / Mathf.Max(texture.width, texture.height);
+        win.minSize = new Vector2(120, 120);
         win.position = new Rect(
             (Screen.currentResolution.width  - winW) * 0.5f,
             (Screen.currentResolution.height - winH) * 0.5f,
             winW, winH
         );
-
-        // 초기 줌을 창에 맞게 설정
-        win._zoom = Mathf.Min(winW / texture.width, (winH - toolbarH) / texture.height);
 
         win.ShowUtility();
     }
