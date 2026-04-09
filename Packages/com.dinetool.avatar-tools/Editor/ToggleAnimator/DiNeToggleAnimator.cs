@@ -17,8 +17,13 @@ public class DiNeToggleAnimator : EditorWindow
     private static readonly Color ColUnset    = new Color(0.27f, 0.27f, 0.30f);
     private static readonly Color ColHeaderBg = new Color(0.16f, 0.16f, 0.19f);
 
+    // ─── Language ───────────────────────────────────────────────
+    private enum Lang { English, Korean, Japanese }
+    private Lang _lang = Lang.Korean;
+
     // ─── Layout ─────────────────────────────────────────────────
     private const float SIDEBAR_W  = 42f;
+    private const float LANG_W     = 28f;   // 언어 버튼 열 폭
     private const float LABEL_W    = 190f;
     private const float COL_W      = 90f;
     private const float ROW_H      = 26f;
@@ -56,10 +61,13 @@ public class DiNeToggleAnimator : EditorWindow
     void OnEnable()
     {
         _titleFont = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
-        _iconTex   = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
-        titleContent = new GUIContent("Toggle Animator",
-            _iconTex != null ? _iconTex : EditorGUIUtility.IconContent("AnimationClip Icon").image as Texture2D);
+        _iconTex   = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
+        titleContent = new GUIContent("Toggle Animator", _iconTex);
     }
+
+    // ─── Localization helper ─────────────────────────────────────
+    private string T(string en, string kr, string jp) =>
+        _lang == Lang.Korean ? kr : _lang == Lang.Japanese ? jp : en;
 
     // ────────────────────────────────────────────────────────────
     //  OnGUI
@@ -86,8 +94,14 @@ public class DiNeToggleAnimator : EditorWindow
         // Vertical title — character stacking (guaranteed to work)
         DrawSidebarTitle("Toggle\nAnimator", SIDEBAR_W - 8f, SIDEBAR_W + 10f);
 
+        // ── Language button column ────────────────────────────────
+        float langX = SIDEBAR_W;
+        EditorGUI.DrawRect(new Rect(langX, 0, LANG_W, winH), new Color(0.19f, 0.19f, 0.22f));
+        EditorGUI.DrawRect(new Rect(langX + LANG_W - 1, 0, 1, winH), new Color(0.30f, 0.82f, 0.76f, 0.18f));
+        DrawLangButtons(langX, winH, prevBg);
+
         // ── Main area ─────────────────────────────────────────────
-        Rect mainRect = new Rect(SIDEBAR_W, 0, position.width - SIDEBAR_W, winH);
+        Rect mainRect = new Rect(SIDEBAR_W + LANG_W, 0, position.width - SIDEBAR_W - LANG_W, winH);
         GUILayout.BeginArea(mainRect);
         GUILayout.BeginVertical();
         GUILayout.Space(6);
@@ -143,6 +157,35 @@ public class DiNeToggleAnimator : EditorWindow
     }
 
     // ────────────────────────────────────────────────────────────
+    //  Language buttons (vertical column)
+    // ────────────────────────────────────────────────────────────
+    private void DrawLangButtons(float x, float winH, Color prevBg)
+    {
+        string[] labels = { "EN", "KR", "JP" };
+        Lang[]   langs  = { Lang.English, Lang.Korean, Lang.Japanese };
+
+        float btnH   = 32f;
+        float startY = (winH - btnH * 3 - 4f) * 0.5f; // 세로 중앙 정렬
+
+        for (int i = 0; i < 3; i++)
+        {
+            bool active = _lang == langs[i];
+            GUI.backgroundColor = active ? ColMint : ColDark;
+            var style = new GUIStyle(GUI.skin.button)
+            {
+                fontSize  = 9,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                normal    = { textColor = active ? ColDeep : new Color(0.55f, 0.55f, 0.58f) },
+                hover     = { textColor = active ? ColDeep : Color.white },
+            };
+            if (GUI.Button(new Rect(x + 2, startY + i * (btnH + 2), LANG_W - 4, btnH), labels[i], style))
+                _lang = langs[i];
+            GUI.backgroundColor = prevBg;
+        }
+    }
+
+    // ────────────────────────────────────────────────────────────
     //  Setup Section
     // ────────────────────────────────────────────────────────────
     private void DrawSetupSection(Color prevBg)
@@ -153,14 +196,14 @@ public class DiNeToggleAnimator : EditorWindow
 
         // Avatar root
         EditorGUILayout.BeginHorizontal();
-        EditorGUILayout.LabelField("Avatar Root", EditorStyles.boldLabel, GUILayout.Width(88));
+        EditorGUILayout.LabelField(T("Avatar Root", "아바타 루트", "アバタールート"), EditorStyles.boldLabel, GUILayout.Width(96));
         EditorGUI.BeginChangeCheck();
         _avatarRoot = (GameObject)EditorGUILayout.ObjectField(_avatarRoot, typeof(GameObject), true);
         if (EditorGUI.EndChangeCheck() && _previewClipIdx >= 0) PreviewClip(_previewClipIdx);
         EditorGUILayout.EndHorizontal();
 
         GUILayout.Space(5);
-        EditorGUILayout.LabelField("Animation Clips", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField(T("Animation Clips", "애니메이션 클립", "アニメーションクリップ"), EditorStyles.boldLabel);
 
         // ── Clip list (3 rows visible, rest scrollable) ───────────
         float clipRowH  = 22f;
@@ -223,7 +266,9 @@ public class DiNeToggleAnimator : EditorWindow
         EditorGUI.DrawRect(dropRect, isClipOver ? new Color(0.20f, 0.58f, 0.54f, 0.25f) : new Color(0.15f, 0.15f, 0.18f));
         DrawBorder(dropRect, isClipOver ? ColMint : new Color(0.32f, 0.32f, 0.36f), 1);
         GUI.Label(dropRect,
-            "⊕  Animation Clip 을 여기에 끌어다 놓으세요  (여러 개 동시 가능)",
+            T("⊕  Drop Animation Clips here  (multiple at once)",
+              "⊕  Animation Clip 을 여기에 끌어다 놓으세요  (여러 개 동시 가능)",
+              "⊕  アニメーションクリップをここにドロップ  (複数同時可)"),
             new GUIStyle(GUI.skin.label)
             {
                 alignment = TextAnchor.MiddleCenter, fontSize = 11,
@@ -237,7 +282,7 @@ public class DiNeToggleAnimator : EditorWindow
         // Add / Save All row
         EditorGUILayout.BeginHorizontal();
         GUI.backgroundColor = ColDark;
-        if (GUILayout.Button("＋  클립 추가", GUILayout.Height(24)))
+        if (GUILayout.Button(T("＋  Add Clip", "＋  클립 추가", "＋  クリップ追加"), GUILayout.Height(24)))
         {
             _clips.Add(null);
             foreach (var row in _grid) row.Add(null);
@@ -245,7 +290,7 @@ public class DiNeToggleAnimator : EditorWindow
         if (_isDirty)
         {
             GUI.backgroundColor = ColMint;
-            if (GUILayout.Button("✔  Save All",
+            if (GUILayout.Button(T("✔  Save All", "✔  저장", "✔  保存"),
                 new GUIStyle(GUI.skin.button)
                 {
                     fontSize = 11, fontStyle = FontStyle.Bold,
@@ -316,8 +361,11 @@ public class DiNeToggleAnimator : EditorWindow
         if (_rows.Count == 0)
         {
             GUILayout.Space(8);
-            EditorGUILayout.LabelField("← GameObject를 창에 끌어다 놓으면 행이 추가됩니다.",
-                new GUIStyle(EditorStyles.centeredGreyMiniLabel) { fontSize = 11 });
+            EditorGUILayout.LabelField(
+                    T("← Drag a GameObject into the window to add rows.",
+                      "← GameObject를 창에 끌어다 놓으면 행이 추가됩니다.",
+                      "← GameObjectをここにドラッグして行を追加します。"),
+                    new GUIStyle(EditorStyles.centeredGreyMiniLabel) { fontSize = 11 });
             GUILayout.Space(8);
         }
 
@@ -384,7 +432,9 @@ public class DiNeToggleAnimator : EditorWindow
         EditorGUI.DrawRect(goDropRect, isGoOver ? new Color(0.20f, 0.55f, 0.50f, 0.25f) : new Color(0.14f, 0.14f, 0.17f));
         DrawBorder(goDropRect, isGoOver ? ColMint : new Color(0.30f, 0.30f, 0.34f), 1);
         GUI.Label(goDropRect,
-            "⊕  GameObject 를 여기에 드래그해서 행 추가",
+            T("⊕  Drag GameObject here to add row",
+              "⊕  GameObject 를 여기에 드래그해서 행 추가",
+              "⊕  GameObjectをドラッグして行追加"),
             new GUIStyle(GUI.skin.label)
             {
                 alignment = TextAnchor.MiddleCenter, fontSize = 11,
@@ -411,12 +461,12 @@ public class DiNeToggleAnimator : EditorWindow
             hover     = { textColor = Color.white },
         };
         EditorGUILayout.BeginHorizontal();
-        if (GUILayout.Button("Fill Missing → OFF", bs, GUILayout.Height(26)))
-        { FillMissing(false); SetStatus("미지정(—) 셀 전부 OFF 로 채웠습니다."); }
-        if (GUILayout.Button("Smart Fill", bs, GUILayout.Height(26)))
-        { SmartFill(); SetStatus("Smart Fill: ON 있는 행의 나머지를 OFF 처리."); }
-        if (GUILayout.Button("Invert All", bs, GUILayout.Height(26)))
-        { InvertAll(); SetStatus("전체 ON ↔ OFF 반전 완료."); }
+        if (GUILayout.Button(T("Fill Missing → OFF", "미지정 → OFF", "未設定→OFF"), bs, GUILayout.Height(26)))
+        { FillMissing(false); SetStatus(T("Filled all unset cells with OFF.", "미지정(—) 셀 전부 OFF 로 채웠습니다.", "未設定セルをすべてOFFにしました。")); }
+        if (GUILayout.Button(T("Smart Fill", "Smart Fill", "スマートフィル"), bs, GUILayout.Height(26)))
+        { SmartFill(); SetStatus(T("Smart Fill: set OFF where ON exists in other clips.", "Smart Fill: ON 있는 행의 나머지를 OFF 처리.", "スマートフィル完了。")); }
+        if (GUILayout.Button(T("Invert All", "전체 반전", "全て反転"), bs, GUILayout.Height(26)))
+        { InvertAll(); SetStatus(T("Inverted all ON ↔ OFF.", "전체 ON ↔ OFF 반전 완료.", "全てのON↔OFFを反転しました。")); }
         GUI.backgroundColor = prevBg;
         EditorGUILayout.EndHorizontal();
     }
