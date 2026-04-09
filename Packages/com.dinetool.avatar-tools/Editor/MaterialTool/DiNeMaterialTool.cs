@@ -1121,11 +1121,18 @@ public class DiNeMaterialTool : EditorWindow
                 };
                 CollectDietProperties(mat, info);
                 bool wasSel = prevSelected.Contains(mat.GetInstanceID());
-                // HasDiet이면 선택, 이전에 선택된 마테리얼이면 기능 끄기 버튼을 위해 유지
-                info.Selected = info.HasDiet || (wasSel && HasEnabledToggles(info));
+                // 텍스쳐 제거 대상이거나 기능이 켜져있으면 자동 선택
+                // (재스캔 시 이전에 선택 해제한 것은 유지)
+                bool hasAction = info.HasDiet || HasEnabledToggles(info);
+                bool prevDeselected = prevSelected.Count > 0 && !prevSelected.Contains(mat.GetInstanceID());
+                info.Selected = hasAction && !prevDeselected;
                 _dietMats.Add(info);
             }
-        _dietMats = _dietMats.OrderByDescending(m => m.TotalDietCount).ToList();
+        // 정렬: 액션 있는 것(ON) 최상단 알파벳순, 그 아래 클린 알파벳순
+        _dietMats = _dietMats
+            .OrderByDescending(m => m.HasDiet || HasEnabledToggles(m))
+            .ThenBy(m => m.Material.name)
+            .ToList();
         _dietScanned = true;
         int affected = _dietMats.Count(m => m.HasDiet);
         SetStatus(Tf(38, _dietMats.Count, affected), affected > 0);
@@ -1587,7 +1594,7 @@ public class DiNeMaterialTool : EditorWindow
         var prev = GUI.backgroundColor;
         GUI.backgroundColor = ColSelect;
         if (GUILayout.Button(T(16), selBtn, GUILayout.Height(28)))
-            mats.ForEach(m => m.Selected = !dietMode || m.HasDiet);
+            mats.ForEach(m => m.Selected = !dietMode || m.HasDiet || HasEnabledToggles(m));
         GUI.backgroundColor = ColDanger;
         if (GUILayout.Button(T(17), selBtn, GUILayout.Height(28)))
             mats.ForEach(m => m.Selected = false);
