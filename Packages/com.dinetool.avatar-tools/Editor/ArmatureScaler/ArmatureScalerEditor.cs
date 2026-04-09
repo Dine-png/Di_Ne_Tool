@@ -197,7 +197,7 @@ public class ArmatureScalerEditor : EditorWindow
             fontSize  = 36,
             normal    = new GUIStyleState() { textColor = Color.white }
         };
-        float iconSize = windowIcon != null ? windowIcon.height * 2f / 3f : 48;
+        float iconSize = 72f;
         GUILayout.Label(windowIcon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
         GUILayout.Space(6);
         GUILayout.Label("Avi Editor", titleStyle, GUILayout.Height(iconSize));

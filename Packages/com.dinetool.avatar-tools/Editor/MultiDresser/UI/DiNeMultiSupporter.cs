@@ -549,7 +549,7 @@ public class DiNeMultiSupporter : Editor
         EditorGUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
         GUIStyle titleStyle = new GUIStyle(EditorStyles.label) { font = titleFont, alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold, fontSize = 36 };
-        float iconSize = windowIcon != null ? windowIcon.height * 2f / 3f : 48;
+        float iconSize = 72f;
         GUILayout.Label(windowIcon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
         GUILayout.Space(6);
         GUILayout.Label(titleText, titleStyle, GUILayout.Height(iconSize));

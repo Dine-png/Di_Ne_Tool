@@ -355,7 +355,7 @@ public class DiNeMaterialTool : EditorWindow
             fontStyle = FontStyle.Bold, fontSize = 36,
             normal = { textColor = Color.white }
         };
-        float iconSize = _windowIcon != null ? _windowIcon.height * 2f / 3f : 48;
+        float iconSize = 72f;
         GUILayout.Label(_windowIcon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
         GUILayout.Space(6);
         GUILayout.Label("Material Tool", style, GUILayout.Height(iconSize));
