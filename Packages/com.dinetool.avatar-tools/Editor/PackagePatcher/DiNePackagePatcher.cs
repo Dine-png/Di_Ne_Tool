@@ -79,20 +79,26 @@ public class DiNePackagePatcher : EditorWindow
 
         // --- 타이틀 바 ---
         EditorGUILayout.BeginVertical("box");
-        GUILayout.Space(10);
         EditorGUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
-        GUIStyle titleStyle = new GUIStyle(EditorStyles.label) { font = titleFont, alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold, fontSize = 42, normal = { textColor = Color.white } };
-        float iconSize = 84f;
+        GUIStyle titleStyle = new GUIStyle(EditorStyles.label)
+        {
+            font      = titleFont,
+            alignment = TextAnchor.MiddleCenter,
+            fontStyle = FontStyle.Bold,
+            fontSize  = 36,
+            normal    = new GUIStyleState() { textColor = Color.white }
+        };
+        float iconSize = 72f;
         if (windowIcon != null) GUILayout.Label(windowIcon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
-        GUILayout.Space(12);
+        GUILayout.Space(6);
         GUILayout.Label("Package Patcher", titleStyle, GUILayout.Height(iconSize));
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
-        GUILayout.Space(8);
-        GUIStyle descStyle = new GUIStyle(EditorStyles.centeredGreyMiniLabel) { wordWrap = true, fontSize = 11, normal = { textColor = new Color(0.7f, 0.7f, 0.7f) } };
-        GUILayout.Label(UI_TEXT[13], descStyle);
-        GUILayout.Space(12);
+        GUILayout.Space(4);
+        GUILayout.Label(UI_TEXT[13], new GUIStyle(EditorStyles.wordWrappedLabel)
+            { alignment = TextAnchor.MiddleCenter, fontSize = 12, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } });
+        GUILayout.Space(5);
         EditorGUILayout.EndVertical();
 
         GUILayout.Space(5);
@@ -199,7 +205,20 @@ public class DiNePackagePatcher : EditorWindow
                     DragAndDrop.AcceptDrag();
                     foreach (string path in DragAndDrop.paths)
                     {
-                        string fullPath = Path.GetFullPath(path);
+                        if (string.IsNullOrEmpty(path)) continue;
+
+                        // 유니코드/특수문자 경로: Path.GetFullPath가 실패할 수 있으므로 try-catch
+                        string fullPath;
+                        try { fullPath = Path.GetFullPath(path); }
+                        catch { fullPath = path; }
+
+                        // GetFullPath 결과가 실제로 존재하지 않으면 원본 경로도 시도
+                        if (!Directory.Exists(fullPath) && !File.Exists(fullPath))
+                        {
+                            if (Directory.Exists(path) || File.Exists(path))
+                                fullPath = path;
+                        }
+
                         if (Directory.Exists(fullPath)) AddFromPath(fullPath, true);
                         else ProcessFile(fullPath);
                     }
@@ -289,18 +308,30 @@ public class DiNePackagePatcher : EditorWindow
                     Debug.LogError($"[DiNe] ZIP 추출 실패: {item.DisplayName}\n{e.Message}"); 
                 }
             }
-            else 
+            else
             {
-                string fullPath = Path.GetFullPath(item.SourcePath);
-                if (File.Exists(fullPath)) 
+                // 유니코드 경로 대응: GetFullPath 실패 시 원본 경로 사용
+                string fullPath;
+                try { fullPath = Path.GetFullPath(item.SourcePath); }
+                catch { fullPath = item.SourcePath; }
+
+                // File.Exists가 특수문자 경로에서 false를 반환하는 경우, 원본 경로도 시도
+                if (!File.Exists(fullPath) && File.Exists(item.SourcePath))
+                    fullPath = item.SourcePath;
+
+                if (File.Exists(fullPath))
                 {
                     try {
                         // 특수문자 에러를 피하기 위해 원본 파일을 안전한 이름으로 임시 폴더에 복사
                         File.Copy(fullPath, safeTempPath, true);
                         importQueue.Enqueue(Path.GetFullPath(safeTempPath));
                     } catch (System.Exception e) {
-                        Debug.LogError($"[DiNe] 안전 복사 실패: {item.DisplayName}\n{e.Message}");
+                        Debug.LogError($"[DiNe] 안전 복사 실패: {item.DisplayName} | 경로: {fullPath}\n{e.Message}");
                     }
+                }
+                else
+                {
+                    Debug.LogError($"[DiNe] 파일을 찾을 수 없습니다: {item.DisplayName} | 경로: {fullPath}");
                 }
             }
         }
@@ -390,6 +421,9 @@ public class DiNePackagePatcher : EditorWindow
         {
             case LanguagePreset.Korean:
                 UI_TEXT = new string[] { "설정", "정리 폴더명", "소스", "여기에 파일/폴더를 드래그하세요", "패키지 목록", "리스트가 비어 있습니다.", "", "", "상태", "임포트 중...", "선택 항목 임포트 시작", "모든 작업 완료!", "", "패키지 파일을 드래그하여 설치하고, 한 폴더에 정리하세요." };
+                break;
+            case LanguagePreset.Japanese:
+                UI_TEXT = new string[] { "設定", "整理フォルダ名", "ソース", "ここにファイル/フォルダをドラッグ", "パッケージ一覧", "リストが空です。", "", "", "ステータス", "インポート中...", "選択項目をインポート開始", "全て完了！", "", "パッケージファイルをドラッグしてインストールし、一つのフォルダにまとめます。" };
                 break;
             default:
                 UI_TEXT = new string[] { "Settings", "Target Folder", "Source", "Drag files/folders here", "Package List", "List is empty.", "", "", "Status", "Importing...", "Start Import Selected", "All Done!", "", "Drag and drop packages to install and organize them." };

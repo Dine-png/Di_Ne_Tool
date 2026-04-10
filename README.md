@@ -20,22 +20,29 @@ Alternatively, download the `.unitypackage` and import directly into your projec
 ## 🛠️ Tools Overview
 
 ### 🎪 Avi Editor
-**Combined armature scaling and blend shape freezing in one tabbed interface**
+**All-in-one avatar editing suite with Armature, ShapeKey, and Expression tabs**
 
 **Location:** `DiNe → Avi Editor`
 
-**Features:**
-- 📏 **Armature Scaler** - Scale character bones with uniform or per-axis precision
-- ❄️ **Shape Key Freezer** - Freeze blend shapes (shape keys) at specific keyframes from animation clips
-- 🎯 Simultaneous preview and modification
-- ⚡ Undo/Redo support for all changes
-- 🌍 Full localization (English, 한국어, 日本語)
+#### 🦴 Armature Tab
+- Scale, rotate, and position individual bones with per-axis precision
+- Supports all standard humanoid bones including shoulders, neck, breast, and butt physics bones
+- **Avatar Info Panel** — displays real-time stats when an avatar is assigned:
+  - Mesh memory, vertex/triangle count, blend shape count, bone count
+  - Material and texture count with accurate VRAM usage
+- Persistent avatar assignment across tool switches
+- Refresh button (↺) to re-scan the avatar at any time
 
-**Usage:**
-1. Select your avatar in the scene
-2. Open `DiNe → Avi Editor` from the menu
-3. Choose **Armature** tab to scale bones, or **Shape Key** tab to freeze blend shapes
-4. For Shape Key: Select animation clip → Choose frame → Click "Freeze"
+#### ❄️ ShapeKey Tab
+- Animate and preview blend shapes using an animation clip timeline
+- Slider bar stays in sync even after Ctrl+Z (Undo)
+- Face preview camera with automatic near-clip tuning to isolate the face mesh
+
+#### 🎭 Expression Tab
+- Create and edit expression animation clips directly in the tool
+- Load existing clips to tweak values with sliders
+- **Gesture ShapeKey Inclusion** — optional feature that automatically adds all shapekeys used in other gesture animations at value `0`, preventing expression blending artifacts
+- VRChat FX Controller integration — replace gesture slots directly from within the tool
 
 ---
 
@@ -44,87 +51,95 @@ Alternatively, download the `.unitypackage` and import directly into your projec
 
 **Location:** `DiNe → Material Tool`
 
-**Tabs:**
-
 #### 🏷️ Preset Apply
 Apply LilToon shader presets to selected materials
 - Drag-and-drop preset assignment
-- Batch processing multiple materials
-- Instant material updates
+- Batch processing for multiple materials at once
+- Instant material preview
 
-#### ✂️ AO Remove
-Remove Ambient Occlusion texture from materials
-- Detects AO texture usage
-- Cleans unused texture references
-- Optimizes material performance
+#### ✂️ Diet
+Detect and remove unused textures from LilToon materials
+- Sections are individually toggleable: **Shadow / AO**, **Shadow Mask**, **Outline**, **Normal Map**, **MatCap**, **Rim Light**, **Emission**, **Glitter**, **Backlight**, **Parallax**, **Dissolve**
+- Two removal modes:
+  - **Texture Only** — removes assigned textures while leaving feature toggles intact
+  - **Texture + Disable Feature** — removes textures AND turns off the corresponding feature toggle (only available when the feature is actually enabled)
+- Material cards show badge indicators (texture count / feature ON / Clean)
 
 #### ⚙️ VRAM Optimize
-**Intelligent texture optimization engine**
+**Accurate texture VRAM analysis and optimization engine**
 
-- **Automatic VRAM Calculation** - Scans all textures in scene renderers
-- **Format Compression** - Smart format selection:
-  - Textures with alpha channel → **BC7** (better quality)
-  - Opaque textures → **DXT1** (smaller size)
-- **Resolution Scaling** - Downscale high-resolution textures
-- **Real-time Estimates** - Preview VRAM savings before optimization
-- **Batch Processing** - Optimize all textures with one click
+- **Precise VRAM Calculation** — uses BPP × pixel count × mipmap chain formula, matching in-game values
+- **Platform Override Aware** — reads Windows Standalone platform override resolution instead of default texture size
+- **Format Compression** — suggests optimal format per texture (BC7 for alpha, DXT1 for opaque, etc.)
+- **Resolution Scaling** — downscale high-res textures with live savings preview
+- **Batch Optimize** — apply all suggestions in one click
+- **Texture Preview Window** — double-click any thumbnail to open a full preview with zoom, 1:1, and fit controls
 
 **Memory Calculation Method:**
 ```
-VRAM = (width × height × BPP / 8) × mipmap_factor
+VRAM = Σ (mip_width × mip_height × BPP / 8)  for each mipmap level
 ```
-- Each mipmap level: 1/4 memory of previous level
-- Supports 60+ texture formats with accurate BPP data
-
-**Double-click any texture thumbnail** to launch the **Texture Preview Window** with:
-- Scrollable view with checkerboard alpha visualization
-- Zoom controls (0.1x - 4.0x)
-- 1:1 and Fit buttons for quick navigation
-- Mouse wheel zoom support
+Supports 60+ texture formats with accurate BPP data based on GPU memory layout.
 
 ---
 
 ### 📦 Package Patcher
 **Batch import and organize Unity packages with intelligent folder management**
 
-**Location:** `DiNe → Package Patcher`
+**Location:** `DiNe → EX → Package Patcher`
 
 **Features:**
-- 📂 Drag-and-drop .unitypackage files
-- 🔄 Auto-organize imports into designated folder
-- ✅ Folder existence detection with warnings
-- 📋 Import history tracking
-- 🌍 Localized UI
+- 📂 Drag-and-drop `.unitypackage` files or entire folders
+- 🗜️ **ZIP support** — automatically detects and extracts `.unitypackage` files nested inside `.zip` archives
+- 🔤 **Unicode / special character filename handling** — safely copies files to an ASCII temp path before importing, preventing import failures caused by Japanese, Korean, or special characters (e.g. `♡`) in filenames
+- 🗂️ Auto-organizes all imported folders into a single designated target folder
+- ✅ Select / deselect individual packages before importing
+- 🌍 Full 3-language localization
 
 **Workflow:**
-1. Select target folder for imports
-2. Drag packages into the list
-3. Click "Import All" to batch process
-4. All packages organized in chosen folder automatically
+1. Set target folder name (default: `_1_Patch`)
+2. Drag packages or ZIP files into the list
+3. Select the packages to import
+4. Click "Start Import" — all imports are processed sequentially and organized automatically
 
 ---
 
 ### 📸 Screen Saver
-**High-quality screenshot capture directly from Unity Editor**
+**Unity Editor screen saver and icon generation utility**
 
 **Location:** `DiNe → Screen Saver`
 
 **Features:**
-- 🖼️ Capture Editor viewport as PNG
-- 💾 Save to designated folder with auto-naming
-- 🎬 Batch screenshot support
-- 🎯 Scene-aware capture
+- 🖼️ Unity Editor screen saver to protect your display during idle time
+- 🎨 Avatar icon generation directly from the editor
+- 💾 Auto-save with configurable output path
 - 🌍 Localized interface
 
 ---
 
-### 👗 Multi Dresser (In Development)
-**Advanced avatar multi-material and outfit switching system**
+### 👗 Multi Dresser
+**FX toggle generator for avatar clothing and accessories**
+
+**Location:** Add `DiNeMultiSupporter` component to your avatar
 
 **Features:**
-- Multiple outfit presets
-- Quick-switch between configurations
-- Material variation support
+- Generate VRChat FX layer toggles for multiple outfits and accessories
+- Enable/disable individual items with per-item control
+- Batch generation with automatic animator layer setup
+- 🌍 Full 3-language localization
+
+---
+
+### ❄️ ShapeKey Freezer
+**Freeze blend shape values from an animation clip into the mesh**
+
+**Location:** `DiNe → EX → ShapeKey Freezer`
+
+**Features:**
+- Select an animation clip and scrub to the desired frame
+- Bake the blend shape weights at that frame permanently into the mesh
+- Non-destructive workflow — original mesh is preserved until confirmed
+- 🌍 Localized interface
 
 ---
 
@@ -132,25 +147,26 @@ VRAM = (width × height × BPP / 8) × mipmap_factor
 
 ✨ **Multi-Language Support**
 - English, 한국어 (Korean), 日本語 (Japanese)
-- Auto-detects system language
-- Manual override in settings
+- Manual language selection in every tool
 
-⚡ **Performance First**
-- Cached texture scanning for large scenes
-- Real-time VRAM calculation
-- Optimized for avatars with 100+ textures
+⚡ **Accurate VRAM Calculation**
+- BPP × pixel × mipmap formula — matches in-game VRChat memory usage
+- Platform override resolution support (Windows Standalone)
+- Shared calculation core across Avi Editor and Material Tool
 
 🎨 **Professional UI**
-- Clean, organized editor windows
-- Color-coded indicators
-- Responsive toolbar controls
-- Persistent settings via EditorPrefs
+- Unified title and layout style across all tools
+- Color-coded VRAM indicators (green → yellow → red)
+- Persistent settings survive domain reloads and tool switches
 
-🔧 **Integration**
-- Works seamlessly with VRChat SDK
-- Compatible with LilToon shaders
-- Supports standard Unity materials
-- Undo/Redo system integration
+🔧 **VRChat Integration**
+- Works seamlessly with VRChat SDK3
+- FX Controller clip replacement from within the Expression tab
+- Compatible with LilToon, Poiyomi, and standard Unity materials
+
+🔁 **Undo / Redo Support**
+- Full undo history for armature edits, shapekey changes, and material modifications
+- Slider UI stays in sync after Ctrl+Z
 
 ---
 
@@ -172,46 +188,63 @@ VRAM = (width × height × BPP / 8) × mipmap_factor
 ## 🚀 Getting Started
 
 ### Requirements
-- **Unity 2019.4 LTS or later**
+- **Unity 2022.3 LTS or later**
 - **VRChat SDK3** (recommended, not required for core tools)
-- **LilToon shader** (optional, for Material Tool presets)
+- **LilToon shader** (optional, for Material Tool presets and Diet mode)
 
 ### Quick Setup
 1. Add to VCC using the button above, OR
 2. Import the `.unitypackage` into your project
-3. Open any tool from `DiNe` menu
-4. UI automatically localizes to your system language
+3. Open any tool from the `DiNe` menu
 
 ### First Steps
-- **Start with:** Material Tool → VRAM Optimize to analyze your avatar
-- **Then use:** Avi Editor to fine-tune armature if needed
-- **Optimize:** Review VRAM card, adjust format/resolution, hit "Optimize All"
+- **Start with:** `Material Tool → VRAM Optimize` to analyze your avatar's texture memory
+- **Clean up:** `Material Tool → Diet` to remove unused textures from LilToon materials
+- **Fine-tune:** `Avi Editor → Armature` to adjust bone proportions
+- **Create expressions:** `Avi Editor → Expression` to build and assign face animations
 
 ---
 
 ## 🔧 Troubleshooting
 
-**Textures show "?" in preview?**
-- Some format types don't generate thumbnails in Editor
-- Use the double-click texture preview window instead
+**Package won't import (filename contains Japanese or special characters)?**
+- Enable the **"임포트 창 강제 표시"** option in Package Patcher as a fallback
+- The tool automatically copies files to a safe temp path — check the Console for path error details
 
-**VRAM numbers seem wrong?**
-- Editor view differs from runtime memory
-- Check in-game performance with VRChat's built-in tools
-- Mipmap chain is automatically included in calculations
+**VRAM numbers differ from other tools?**
+- Di Ne Tool uses a BPP × mipmap formula that matches in-game GPU memory
+- Make sure your Windows Standalone platform override is set correctly in Texture Import Settings
+
+**Slider doesn't move after Ctrl+Z in ShapeKey tab?**
+- This is fixed in the current version via `Undo.undoRedoPerformed` sync
+- If it persists, re-assign the avatar to refresh the SMR reference
+
+**Expression blending causes distorted faces?**
+- Enable **"재스쳐 클립의 쉐이프키 0값 포함"** in the Expression tab before saving
+- This writes all gesture-used shapekeys at `0` in the new clip, preventing bleed-through
 
 **Window won't open?**
-- Check `Window → DiNe` menu appears
-- Restart Unity if menu items not visible
-- Verify correct project is open
+- Check the `DiNe` menu appears in the top menu bar
+- Restart Unity if menu items are not visible
 
 ---
 
 ## 📝 Version History
 
+**v1.1**
+- Avi Editor: Avatar Info Panel with real-time mesh/VRAM stats
+- Avi Editor: Expression tab with FX Controller integration and gesture shapekey inclusion
+- Avi Editor: Undo/Redo slider sync in ShapeKey tab
+- Avi Editor: Persistent avatar assignment across tool switches
+- Material Tool: Diet mode split into Shadow/AO and Shadow Mask as separate sections
+- Material Tool: Right button (Disable Feature) now inactive when feature is already off
+- Material Tool: VRAM calculation unified with accurate BPP formula, platform override resolution support
+- Package Patcher: ZIP file support and Unicode filename handling
+- UI: Title bar style unified across all tools
+
 **v1.0** - Initial release
 - Avi Editor with Armature & Shape Key tabs
-- Material Tool with Preset Apply, AO Remove, VRAM Optimize
+- Material Tool with Preset Apply, Diet, VRAM Optimize
 - Package Patcher with folder management
 - Screen Saver utility
 - Full 3-language localization
@@ -221,21 +254,18 @@ VRAM = (width × height × BPP / 8) × mipmap_factor
 ## 💡 Tips & Tricks
 
 💭 **Avatar Optimization Priority:**
-1. Remove unused textures and materials (AO Remove)
-2. Reduce high-resolution textures (VRAM Optimize → Size)
+1. Remove unused textures (Material Tool → Diet)
+2. Reduce high-resolution textures (VRAM Optimize → Resolution)
 3. Switch to compressed formats (VRAM Optimize → Format)
-4. Test in VRChat world performance
+4. Check the Avatar Info Panel in Avi Editor for a quick overall summary
 
-💭 **VRAM Optimize Best Practices:**
-- Always preview savings before batch processing
-- Test in your target world (performance varies by location)
-- Keep originals backed up before format changes
-- Consider texture quality vs. file size trade-off
+💭 **Expression Workflow:**
+- Use the **Gesture ShapeKey Inclusion** option whenever your avatar has multiple expression animations
+- Always save with "Save as New" first, then overwrite once confirmed
 
-💭 **Shape Key Freezing:**
-- Works best with single-keyframe animations
-- Remember to save your scene before freezing
-- Frozen values become part of the mesh permanently
+💭 **Package Patcher:**
+- Drop an entire folder to batch-detect all `.unitypackage` and `.zip` files at once
+- Use the select/deselect buttons to filter what gets imported
 
 ---
 
