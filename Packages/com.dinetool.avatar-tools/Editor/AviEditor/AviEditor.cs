@@ -595,7 +595,25 @@ public class ArmatureScalerEditor : EditorWindow
         EditorGUILayout.BeginVertical("box");
         EditorGUILayout.LabelField(SK_TEXT[0], EditorStyles.boldLabel);
         GUILayout.Space(3);
+        
+        EditorGUILayout.BeginHorizontal();
         targetAvatarRoot = (GameObject)EditorGUILayout.ObjectField(SK_TEXT[1], targetAvatarRoot, typeof(GameObject), true);
+
+        EditorGUI.BeginDisabledGroup(targetAvatarRoot == null);
+        var _prevBg = GUI.backgroundColor;
+        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+        if (GUILayout.Button("↺", GUILayout.Width(28), GUILayout.Height(18)))
+        {
+            if (targetAvatarRoot != null)
+            {
+                TakeSnapshot();
+                Debug.Log("[Avi Editor] 스냅샷(초기 포즈/쉐이프키)을 새로고침했습니다.");
+            }
+        }
+        GUI.backgroundColor = _prevBg;
+        EditorGUI.EndDisabledGroup();
+        EditorGUILayout.EndHorizontal();
+
         animationClip    = (AnimationClip)EditorGUILayout.ObjectField(SK_TEXT[2], animationClip, typeof(AnimationClip), false);
         EditorGUILayout.EndVertical();
 
@@ -633,7 +651,7 @@ public class ArmatureScalerEditor : EditorWindow
             normal      = { textColor = Color.white },
             hover       = { textColor = Color.white },
         };
-        var prevBg = GUI.backgroundColor;
+        var prevBgGroup = GUI.backgroundColor;
 
         EditorGUILayout.BeginHorizontal();
 
@@ -661,7 +679,7 @@ public class ArmatureScalerEditor : EditorWindow
         }
 
         EditorGUILayout.EndHorizontal();
-        GUI.backgroundColor = prevBg;
+        GUI.backgroundColor = prevBgGroup;
 
         EditorGUI.EndDisabledGroup();
 
@@ -682,7 +700,7 @@ public class ArmatureScalerEditor : EditorWindow
             RestoreToOriginal();
             Debug.Log($"[Avi Editor] {SK_TEXT[11]}");
         }
-        GUI.backgroundColor = prevBg;
+        GUI.backgroundColor = prevBgGroup;
         EditorGUI.EndDisabledGroup();
 
         GUILayout.Space(5);
@@ -712,26 +730,46 @@ public class ArmatureScalerEditor : EditorWindow
         }
     }
 
+    // --- 수정한 ApplyPose 부분 ---
     private void ApplyPose()
     {
         if (targetAvatarRoot == null || animationClip == null) return;
 
-        var samples = new Dictionary<string, TransformSample>();
-        foreach (var b in AnimationUtility.GetCurveBindings(animationClip))
+        // Undo 기록을 타겟 아바타 하위 전체로 잡습니다. (SampleAnimation이 많은 본을 수정할 수 있으므로)
+        Undo.RegisterFullObjectHierarchyUndo(targetAvatarRoot, "Avi Editor Freeze Pose");
+
+        // 1. 현재 쉐이프키 상태 백업
+        var smrs = targetAvatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        var backupWeights = new Dictionary<SkinnedMeshRenderer, float[]>();
+        foreach (var smr in smrs)
         {
-            if (b.propertyName.StartsWith("blendShape.")) continue;
-            if (b.type != typeof(Transform)) continue;
-            var curve = AnimationUtility.GetEditorCurve(animationClip, b);
-            if (curve == null) continue;
-            if (!samples.ContainsKey(b.path)) samples[b.path] = new TransformSample();
-            samples[b.path].Set(b.propertyName, curve.Evaluate(clipTime));
+            if (smr.sharedMesh == null) continue;
+            int count = smr.sharedMesh.blendShapeCount;
+            var weights = new float[count];
+            for (int i = 0; i < count; i++) weights[i] = smr.GetBlendShapeWeight(i);
+            backupWeights[smr] = weights;
         }
-        foreach (var kvp in samples)
+
+        // 2. Unity 내장 기능으로 애니메이션 전체 적용 
+        // (이 기능을 쓰면 휴머노이드 머슬 데이터가 포함된 포즈도 정상적으로 적용됩니다)
+        animationClip.SampleAnimation(targetAvatarRoot, clipTime);
+
+        // 3. 쉐이프키 상태 복원 (포즈는 남기고 쉐이프키는 SampleAnimation 이전 상태로 되돌림)
+        foreach (var kvp in backupWeights)
         {
-            var t = string.IsNullOrEmpty(kvp.Key) ? targetAvatarRoot.transform : targetAvatarRoot.transform.Find(kvp.Key);
-            if (t == null) continue;
-            Undo.RecordObject(t, "Avi Editor Freeze Pose");
-            kvp.Value.ApplyTo(t);
+            var smr = kvp.Key;
+            var weights = kvp.Value;
+            for (int i = 0; i < weights.Length; i++)
+            {
+                smr.SetBlendShapeWeight(i, weights[i]);
+            }
+            ForceUpdateScene(smr);
+        }
+
+        // 전체 Transform 변경사항 씬 반영
+        var allTransforms = targetAvatarRoot.GetComponentsInChildren<Transform>(true);
+        foreach (var t in allTransforms)
+        {
             ForceUpdateScene(t);
         }
     }
@@ -757,17 +795,14 @@ public class ArmatureScalerEditor : EditorWindow
         _hasSnapshot = true;
     }
 
-    // ─── 핵심 변경 부분: 원본 초기화 로직 ───
     private void RestoreToOriginal()
     {
         if (targetAvatarRoot == null) return;
 
-        // 현재 오브젝트가 프리팹 인스턴스인지 확인
         bool isPrefab = PrefabUtility.IsPartOfPrefabInstance(targetAvatarRoot);
 
         if (isPrefab)
         {
-            // 1. 프리팹인 경우: SMR과 Transform의 모든 오버라이드(변경사항)를 프리팹 원본 파일 상태로 되돌림
             foreach (var smr in targetAvatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
             {
                 PrefabUtility.RevertObjectOverride(smr, InteractionMode.UserAction);
@@ -779,10 +814,6 @@ public class ArmatureScalerEditor : EditorWindow
         }
         else
         {
-            // 2. 프리팹이 아닌(Unpacked) 일반 오브젝트인 경우: 
-            // 쉐이프키는 무조건 0으로 밀고, 포즈는 기억해둔 초기 스냅샷(T포즈)으로 되돌림
-            
-            // 쉐이프키 0으로 덮기
             foreach (var smr in targetAvatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
             {
                 if (smr.sharedMesh == null) continue;
@@ -795,7 +826,6 @@ public class ArmatureScalerEditor : EditorWindow
                 ForceUpdateScene(smr);
             }
 
-            // 기억해둔 T포즈 덮기
             foreach (var kvp in _snapTransforms)
             {
                 if (kvp.Key == null) continue;
@@ -807,50 +837,13 @@ public class ArmatureScalerEditor : EditorWindow
             }
         }
 
-        // 씬 뷰 즉시 새로고침
         if (SceneView.lastActiveSceneView != null)
         {
             SceneView.lastActiveSceneView.Repaint();
         }
 
-        // UI 슬라이더 초기화
         clipTime = 0f;
         GUI.FocusControl(null);
-    }
-
-    private class TransformSample
-    {
-        float? px,py,pz, rx,ry,rz,rw, ex,ey,ez, sx,sy,sz;
-        public void Set(string p, float v)
-        {
-            switch (p)
-            {
-                case "localPosition.x": case "m_LocalPosition.x": px=v; break;
-                case "localPosition.y": case "m_LocalPosition.y": py=v; break;
-                case "localPosition.z": case "m_LocalPosition.z": pz=v; break;
-                case "localRotation.x": case "m_LocalRotation.x": rx=v; break;
-                case "localRotation.y": case "m_LocalRotation.y": ry=v; break;
-                case "localRotation.z": case "m_LocalRotation.z": rz=v; break;
-                case "localRotation.w": case "m_LocalRotation.w": rw=v; break;
-                case "localEulerAnglesRaw.x": ex=v; break;
-                case "localEulerAnglesRaw.y": ey=v; break;
-                case "localEulerAnglesRaw.z": ez=v; break;
-                case "localScale.x": case "m_LocalScale.x": sx=v; break;
-                case "localScale.y": case "m_LocalScale.y": sy=v; break;
-                case "localScale.z": case "m_LocalScale.z": sz=v; break;
-            }
-        }
-        public void ApplyTo(Transform t)
-        {
-            if (px.HasValue||py.HasValue||pz.HasValue)
-            { var p=t.localPosition; if(px.HasValue)p.x=px.Value; if(py.HasValue)p.y=py.Value; if(pz.HasValue)p.z=pz.Value; t.localPosition=p; }
-            if (rx.HasValue&&ry.HasValue&&rz.HasValue&&rw.HasValue)
-                t.localRotation=new Quaternion(rx.Value,ry.Value,rz.Value,rw.Value);
-            else if (ex.HasValue||ey.HasValue||ez.HasValue)
-            { var e=t.localEulerAngles; if(ex.HasValue)e.x=ex.Value; if(ey.HasValue)e.y=ey.Value; if(ez.HasValue)e.z=ez.Value; t.localEulerAngles=e; }
-            if (sx.HasValue||sy.HasValue||sz.HasValue)
-            { var s=t.localScale; if(sx.HasValue)s.x=sx.Value; if(sy.HasValue)s.y=sy.Value; if(sz.HasValue)s.z=sz.Value; t.localScale=s; }
-        }
     }
 
     private void SetShapeKeyLanguage(LanguagePreset lang)
@@ -1894,6 +1887,8 @@ public class ArmatureScalerEditor : EditorWindow
         EditorGUILayout.BeginVertical("box");
         EditorGUILayout.LabelField(language == LanguagePreset.Korean  ? "대상 설정"
                                  : language == LanguagePreset.Japanese ? "対象設定" : "Target", EditorStyles.boldLabel);
+        
+        EditorGUILayout.BeginHorizontal();
         EditorGUI.BeginChangeCheck();
         targetAvatarRoot = (GameObject)EditorGUILayout.ObjectField(
             language == LanguagePreset.Korean  ? "아바타 루트"
@@ -1904,6 +1899,19 @@ public class ArmatureScalerEditor : EditorWindow
             RefreshBodySmr();
             _facePreviewDirty = true;
         }
+
+        EditorGUI.BeginDisabledGroup(targetAvatarRoot == null);
+        var _prevBgExpr = GUI.backgroundColor;
+        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+        if (GUILayout.Button("↺", GUILayout.Width(28), GUILayout.Height(18)))
+        {
+            RefreshBodySmr();
+            _facePreviewDirty = true;
+            Debug.Log("[Avi Editor] 표정 타겟 메쉬와 FX 컨트롤러를 새로고침했습니다.");
+        }
+        GUI.backgroundColor = _prevBgExpr;
+        EditorGUI.EndDisabledGroup();
+        EditorGUILayout.EndHorizontal();
 
         if (_bodySmr == null && targetAvatarRoot != null)
             EditorGUILayout.HelpBox(
