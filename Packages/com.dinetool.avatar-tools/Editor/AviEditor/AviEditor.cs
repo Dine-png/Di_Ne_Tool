@@ -40,6 +40,25 @@ public class ArmatureScalerEditor : EditorWindow
     private string selectedPresetName = "";
     private Vector2 presetScrollPosition;
 
+    // ─── 아바타 정보 ───
+    private struct AvatarInfo
+    {
+        public int   meshCount;
+        public int   totalVertices;
+        public int   totalTriangles;
+        public int   totalBlendShapes;
+        public int   materialCount;
+        public int   boneCount;
+        public long  meshMemoryBytes;
+        public int   textureCount;
+        public long  textureMemoryBytes;
+        public int   skinnedMeshCount;
+        public int   staticMeshCount;
+    }
+    private AvatarInfo  _avatarInfo;
+    private bool        _avatarInfoReady;
+    private bool        _avatarInfoFoldout = true;
+
     // ─── Animation Freezer 필드 ───
     private AnimationClip animationClip;
     private float clipTime = 0.0f;
@@ -110,11 +129,59 @@ public class ArmatureScalerEditor : EditorWindow
         RefreshPresetList();
         
         EditorApplication.update += OnEditorUpdate;
+        Undo.undoRedoPerformed += OnUndoRedo;
     }
-    
+
     void OnDisable()
     {
         EditorApplication.update -= OnEditorUpdate;
+        Undo.undoRedoPerformed -= OnUndoRedo;
+    }
+
+    private void OnUndoRedo()
+    {
+        if (currentMode != EditorMode.ShapeKey || animationClip == null || targetAvatarRoot == null)
+        {
+            Repaint();
+            return;
+        }
+
+        // 실제 SMR 값에서 clipTime 역산
+        AnimationCurve firstCurve = null;
+        SkinnedMeshRenderer firstSmr = null;
+        int firstIdx = -1;
+
+        foreach (var b in AnimationUtility.GetCurveBindings(animationClip))
+        {
+            if (!b.propertyName.StartsWith("blendShape.")) continue;
+            var tr = string.IsNullOrEmpty(b.path) ? targetAvatarRoot.transform : targetAvatarRoot.transform.Find(b.path);
+            if (tr == null) continue;
+            var smr = tr.GetComponent<SkinnedMeshRenderer>();
+            if (smr == null || smr.sharedMesh == null) continue;
+            int idx = smr.sharedMesh.GetBlendShapeIndex(b.propertyName.Substring("blendShape.".Length));
+            if (idx < 0) continue;
+            firstCurve = AnimationUtility.GetEditorCurve(animationClip, b);
+            firstSmr = smr;
+            firstIdx = idx;
+            break;
+        }
+
+        if (firstCurve != null && firstSmr != null && firstIdx >= 0)
+        {
+            float currentVal = firstSmr.GetBlendShapeWeight(firstIdx);
+            float bestTime = clipTime;
+            float bestDiff = float.MaxValue;
+            int steps = 200;
+            for (int i = 0; i <= steps; i++)
+            {
+                float t = animationClip.length * i / steps;
+                float diff = Mathf.Abs(firstCurve.Evaluate(t) - currentVal);
+                if (diff < bestDiff) { bestDiff = diff; bestTime = t; }
+            }
+            clipTime = bestTime;
+        }
+
+        Repaint();
     }
 
     private void OnEditorUpdate()
@@ -283,9 +350,10 @@ public class ArmatureScalerEditor : EditorWindow
     private void DrawArmatureGUI()
     {
         
+        EditorGUILayout.BeginHorizontal();
         EditorGUI.BeginChangeCheck();
         targetAvatarRoot = (GameObject)EditorGUILayout.ObjectField(UI_TEXT[0], targetAvatarRoot, typeof(GameObject), true);
-        
+
         if (EditorGUI.EndChangeCheck())
         {
             if (targetAvatarRoot != null)
@@ -293,15 +361,33 @@ public class ArmatureScalerEditor : EditorWindow
                 boneMapping = ArmatureScalerCore.AssignBoneMappings(targetAvatarRoot);
                 LoadCurrentValues();
                 selectedPart = HumanoidBodyPart.None;
+                _avatarInfo = CalcAvatarInfo(targetAvatarRoot);
+                _avatarInfoReady = true;
             }
             else
             {
                 boneMapping = null;
                 selectedPart = HumanoidBodyPart.None;
                 InitializeValues();
+                _avatarInfoReady = false;
             }
         }
-        
+
+        EditorGUI.BeginDisabledGroup(targetAvatarRoot == null);
+        if (GUILayout.Button("↺", GUILayout.Width(28)))
+        {
+            boneMapping = ArmatureScalerCore.AssignBoneMappings(targetAvatarRoot);
+            LoadCurrentValues();
+            selectedPart = HumanoidBodyPart.None;
+            _avatarInfo = CalcAvatarInfo(targetAvatarRoot);
+            _avatarInfoReady = true;
+        }
+        EditorGUI.EndDisabledGroup();
+        EditorGUILayout.EndHorizontal();
+
+        if (_avatarInfoReady)
+            DrawAvatarInfo();
+
         EditorGUILayout.BeginVertical("box");
         EditorGUILayout.LabelField(UI_TEXT[27], EditorStyles.boldLabel);
         
@@ -1011,6 +1097,175 @@ public class ArmatureScalerEditor : EditorWindow
         return result;
     }
     
+    // ─── 아바타 정보 계산/표시 ───
+
+    private AvatarInfo CalcAvatarInfo(GameObject root)
+    {
+        var info = new AvatarInfo();
+        if (root == null) return info;
+
+        var smrs   = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        var mfs    = root.GetComponentsInChildren<MeshFilter>(true);
+        var allBones = new HashSet<Transform>();
+
+        var matSet = new HashSet<Material>();
+        var texSet = new HashSet<Texture>();
+
+        // Skinned meshes
+        foreach (var smr in smrs)
+        {
+            if (smr.sharedMesh == null) continue;
+            info.skinnedMeshCount++;
+            info.totalVertices   += smr.sharedMesh.vertexCount;
+            info.totalTriangles  += (int)(smr.sharedMesh.triangles.LongLength / 3);
+            info.totalBlendShapes += smr.sharedMesh.blendShapeCount;
+            info.meshMemoryBytes += UnityEngine.Profiling.Profiler.GetRuntimeMemorySizeLong(smr.sharedMesh);
+            foreach (var m in smr.sharedMaterials) if (m != null) matSet.Add(m);
+            if (smr.bones != null) foreach (var b in smr.bones) if (b != null) allBones.Add(b);
+        }
+
+        // Static meshes
+        foreach (var mf in mfs)
+        {
+            if (mf.sharedMesh == null) continue;
+            info.staticMeshCount++;
+            info.totalVertices  += mf.sharedMesh.vertexCount;
+            info.totalTriangles += (int)(mf.sharedMesh.triangles.LongLength / 3);
+            info.meshMemoryBytes += UnityEngine.Profiling.Profiler.GetRuntimeMemorySizeLong(mf.sharedMesh);
+            var mr = mf.GetComponent<MeshRenderer>();
+            if (mr != null) foreach (var m in mr.sharedMaterials) if (m != null) matSet.Add(m);
+        }
+
+        // 텍스처
+        foreach (var mat in matSet)
+        {
+            if (mat == null) continue;
+            var shader = mat.shader;
+            if (shader == null) continue;
+            int propCount = ShaderUtil.GetPropertyCount(shader);
+            for (int i = 0; i < propCount; i++)
+            {
+                if (ShaderUtil.GetPropertyType(shader, i) != ShaderUtil.ShaderPropertyType.TexEnv) continue;
+                string propName = ShaderUtil.GetPropertyName(shader, i);
+                var tex = mat.GetTexture(propName);
+                if (tex != null && texSet.Add(tex))
+                    info.textureMemoryBytes += UnityEngine.Profiling.Profiler.GetRuntimeMemorySizeLong(tex);
+            }
+        }
+
+        info.meshCount      = info.skinnedMeshCount + info.staticMeshCount;
+        info.materialCount  = matSet.Count;
+        info.boneCount      = allBones.Count;
+        info.textureCount   = texSet.Count;
+        return info;
+    }
+
+    private void DrawAvatarInfo()
+    {
+        EditorGUILayout.BeginVertical("box");
+        _avatarInfoFoldout = EditorGUILayout.Foldout(_avatarInfoFoldout,
+            language == LanguagePreset.Korean  ? "아바타 정보"
+          : language == LanguagePreset.Japanese ? "アバター情報" : "Avatar Info", true);
+
+        if (!_avatarInfoFoldout) { EditorGUILayout.EndVertical(); return; }
+
+        var i = _avatarInfo;
+
+        // 라벨 스타일
+        var labelStyle = new GUIStyle(EditorStyles.miniLabel) { richText = true };
+        var valueStyle = new GUIStyle(EditorStyles.miniLabel)
+            { alignment = TextAnchor.MiddleRight, richText = true };
+
+        void Row(string label, string value, Color col)
+        {
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label(label, labelStyle);
+            GUILayout.FlexibleSpace();
+            string colored = $"<color=#{ColorUtility.ToHtmlStringRGB(col)}>{value}</color>";
+            GUILayout.Label(colored, valueStyle);
+            EditorGUILayout.EndHorizontal();
+        }
+
+        string FmtBytes(long bytes)
+        {
+            if (bytes >= 1024 * 1024) return $"{bytes / (1024f * 1024f):F1} MB";
+            if (bytes >= 1024)        return $"{bytes / 1024f:F1} KB";
+            return $"{bytes} B";
+        }
+
+        Color WarnColor(int val, int warn, int error) =>
+            val >= error ? new Color(1f, 0.35f, 0.35f) :
+            val >= warn  ? new Color(1f, 0.8f, 0.2f)   :
+            new Color(0.5f, 1f, 0.6f);
+
+        Color WarnColorL(long val, long warn, long error) =>
+            val >= error ? new Color(1f, 0.35f, 0.35f) :
+            val >= warn  ? new Color(1f, 0.8f, 0.2f)   :
+            new Color(0.5f, 1f, 0.6f);
+
+        GUILayout.Space(2);
+
+        // 메쉬
+        string meshLabel = language == LanguagePreset.Korean  ? "메쉬 수"
+                         : language == LanguagePreset.Japanese ? "メッシュ数" : "Meshes";
+        Row(meshLabel, $"{i.meshCount}  (Skinned {i.skinnedMeshCount} / Static {i.staticMeshCount})",
+            WarnColor(i.meshCount, 8, 16));
+
+        // 버텍스
+        string vtxLabel = language == LanguagePreset.Korean  ? "버텍스"
+                        : language == LanguagePreset.Japanese ? "頂点数" : "Vertices";
+        Row(vtxLabel, $"{i.totalVertices:N0}", WarnColor(i.totalVertices, 70000, 120000));
+
+        // 폴리곤
+        string triLabel = language == LanguagePreset.Korean  ? "폴리곤 (tri)"
+                        : language == LanguagePreset.Japanese ? "ポリゴン" : "Polygons (tri)";
+        Row(triLabel, $"{i.totalTriangles:N0}", WarnColor(i.totalTriangles, 70000, 120000));
+
+        // 블렌드쉐이프
+        string bsLabel = language == LanguagePreset.Korean  ? "블렌드쉐이프"
+                       : language == LanguagePreset.Japanese ? "ブレンドシェイプ" : "Blend Shapes";
+        Row(bsLabel, $"{i.totalBlendShapes}", WarnColor(i.totalBlendShapes, 200, 500));
+
+        // 본
+        string boneLabel = language == LanguagePreset.Korean  ? "본 수"
+                         : language == LanguagePreset.Japanese ? "ボーン数" : "Bones";
+        Row(boneLabel, $"{i.boneCount}", WarnColor(i.boneCount, 256, 512));
+
+        // 머티리얼
+        string matLabel = language == LanguagePreset.Korean  ? "머티리얼"
+                        : language == LanguagePreset.Japanese ? "マテリアル" : "Materials";
+        Row(matLabel, $"{i.materialCount}", WarnColor(i.materialCount, 8, 16));
+
+        // 텍스처
+        string texLabel = language == LanguagePreset.Korean  ? "텍스처"
+                        : language == LanguagePreset.Japanese ? "テクスチャ" : "Textures";
+        Row(texLabel, $"{i.textureCount}", WarnColor(i.textureCount, 20, 40));
+
+        GUILayout.Space(3);
+
+        // 메쉬 메모리
+        string meshMemLabel = language == LanguagePreset.Korean  ? "메쉬 메모리"
+                            : language == LanguagePreset.Japanese ? "メッシュメモリ" : "Mesh Memory";
+        Row(meshMemLabel, FmtBytes(i.meshMemoryBytes),
+            WarnColorL(i.meshMemoryBytes, 20 * 1024 * 1024, 50 * 1024 * 1024));
+
+        // 텍스처 메모리
+        string texMemLabel = language == LanguagePreset.Korean  ? "텍스처 메모리"
+                           : language == LanguagePreset.Japanese ? "テクスチャメモリ" : "Texture Memory";
+        Row(texMemLabel, FmtBytes(i.textureMemoryBytes),
+            WarnColorL(i.textureMemoryBytes, 60 * 1024 * 1024, 100 * 1024 * 1024));
+
+        // 총 메모리
+        long totalMem = i.meshMemoryBytes + i.textureMemoryBytes;
+        string totalMemLabel = language == LanguagePreset.Korean  ? "총 메모리 (추정)"
+                             : language == LanguagePreset.Japanese ? "合計メモリ (推定)" : "Total Memory (est.)";
+        Row($"<b>{totalMemLabel}</b>", $"<b>{FmtBytes(totalMem)}</b>",
+            WarnColorL(totalMem, 80 * 1024 * 1024, 150 * 1024 * 1024));
+
+        GUILayout.Space(2);
+        EditorGUILayout.EndVertical();
+    }
+
     // ─── 인체 실루엣 UI ───
 
     private string GetShortLabel(HumanoidBodyPart part)
@@ -1362,7 +1617,8 @@ public class ArmatureScalerEditor : EditorWindow
                     "미발견", "선택한 프리셋 삭제", "프리셋 ‘", "’를 정말로 삭제하시겠습니까?",
                     "삭제", "취소", "사이즈 초기화", "로테이션 조절", "로테이션",
                     "스케일만 불러오기", "로테이션만 불러오기",
-                    "포지션 조절", "포지션", "포지션만 불러오기" // 41, 42, 43 추가
+                    "포지션 조절", "포지션", "포지션만 불러오기", // 41, 42, 43
+                    "목", "왼쪽 어깨", "오른쪽 어깨" // 44, 45, 46
                 };
                 break;
             case LanguagePreset.Japanese:
@@ -1378,7 +1634,8 @@ public class ArmatureScalerEditor : EditorWindow
                     "未発見", "選択したプリセットを削除", "プリセット「", "」を本当に削除しますか？",
                     "削除", "キャンセル", "サイズリセット", "回転調整", "回転",
                     "スケールのみロード", "回転のみロード",
-                    "位置調整", "位置", "位置のみロード" // 41, 42, 43 추가
+                    "位置調整", "位置", "位置のみロード", // 41, 42, 43
+                    "首", "左肩", "右肩" // 44, 45, 46
                 };
                 break;
             case LanguagePreset.English:
@@ -1395,7 +1652,8 @@ public class ArmatureScalerEditor : EditorWindow
                     "Not Found", "Delete Selected Preset", "Are you sure you want to delete the preset '", "'?",
                     "Delete", "Cancel", "Reset Scales", "Rotation Adjustment", "Rotation",
                     "Load Scale Only", "Load Rotation Only",
-                    "Position Adjustment", "Position", "Load Position Only" // 41, 42, 43 추가
+                    "Position Adjustment", "Position", "Load Position Only", // 41, 42, 43
+                    "Neck", "Left Shoulder", "Right Shoulder" // 44, 45, 46
                 };
                 break;
         }
@@ -1716,7 +1974,7 @@ public class ArmatureScalerEditor : EditorWindow
         cam.clearFlags         = CameraClearFlags.SolidColor;
         cam.orthographic       = false;
         cam.fieldOfView        = 22f;
-        cam.nearClipPlane      = 0.01f;
+        cam.nearClipPlane      = 0.15f;  // 팽창된 바디 메쉬가 카메라를 둘러싸도 클리핑되도록
         cam.farClipPlane       = 100f;
         cam.targetTexture      = _faceRT;
         cam.cullingMask        = -1;
@@ -2045,6 +2303,10 @@ public class ArmatureScalerEditor : EditorWindow
         _bodySmr = null;
         _exprShapeValues = null;
         if (targetAvatarRoot == null) return;
+
+        // Expression 탭에서 직접 할당한 경우 boneMapping 보장
+        if (boneMapping == null)
+            boneMapping = ArmatureScalerCore.AssignBoneMappings(targetAvatarRoot);
 
         foreach (var smr in targetAvatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
         {
