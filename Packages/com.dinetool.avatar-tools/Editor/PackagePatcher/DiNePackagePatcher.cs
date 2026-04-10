@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.IO.Compression;
 using System.Text;
+using System.Text.RegularExpressions; // 정규식 사용을 위해 추가
 
 public class DiNePackagePatcher : EditorWindow
 {
@@ -131,6 +132,34 @@ public class DiNePackagePatcher : EditorWindow
         EditorGUILayout.EndVertical();
 
         GUILayout.Space(5);
+
+        // ── 파일 직접 선택 버튼 ──
+        EditorGUILayout.BeginHorizontal();
+        var prevBgBrowse = GUI.backgroundColor;
+        GUI.backgroundColor = new Color(0.28f, 0.42f, 0.55f);
+        if (GUILayout.Button(UI_TEXT[20], GUILayout.Height(26)))
+        {
+            string picked = EditorUtility.OpenFilePanel(UI_TEXT[20], "", "unitypackage,zip");
+            if (!string.IsNullOrEmpty(picked))
+            {
+                ProcessFile(picked);
+                Repaint();
+            }
+        }
+        GUI.backgroundColor = new Color(0.28f, 0.38f, 0.28f);
+        if (GUILayout.Button(UI_TEXT[21], GUILayout.Height(26)))
+        {
+            string pickedDir = EditorUtility.OpenFolderPanel(UI_TEXT[21], "", "");
+            if (!string.IsNullOrEmpty(pickedDir))
+            {
+                AddFromPath(pickedDir, true);
+                Repaint();
+            }
+        }
+        GUI.backgroundColor = prevBgBrowse;
+        EditorGUILayout.EndHorizontal();
+
+        GUILayout.Space(4);
 
         // ── 드래그 앤 드롭 영역 ──
         Rect dropArea = GUILayoutUtility.GetRect(0f, 70f, GUILayout.ExpandWidth(true));
@@ -280,6 +309,14 @@ public class DiNePackagePatcher : EditorWindow
 
     // ════════════════════════════════════════════════════════════
 
+    // 특수문자 검열 유틸리티 메서드 추가
+    private static string SanitizeText(string input)
+    {
+        if (string.IsNullOrEmpty(input)) return input;
+        // 영문, 숫자, 한글, 다국어 문자 및 기본적인 경로/특수 기호만 남기고 하트(♥), 이모지 등 인식 오류를 일으키는 문자 제거
+        return Regex.Replace(input, @"[^\w\s\.\-\_\:\/\\\(\)\[\]\{\}\+\=\,\!\@\#\$\%\^\&\*]", "");
+    }
+
     private static void DrawBorder(Rect r, Color c, float t)
     {
         EditorGUI.DrawRect(new Rect(r.x,          r.y,          r.width, t),        c);
@@ -300,12 +337,15 @@ public class DiNePackagePatcher : EditorWindow
                 if (evt.type == EventType.DragPerform)
                 {
                     DragAndDrop.AcceptDrag();
+                    Debug.Log($"[DiNe] DragAndDrop.paths count: {DragAndDrop.paths.Length}");
                     foreach (string path in DragAndDrop.paths)
                     {
+                        Debug.Log($"[DiNe] Drag path raw: '{path}'  len={path?.Length}");
                         if (string.IsNullOrEmpty(path)) continue;
                         string fullPath;
                         try { fullPath = Path.GetFullPath(path); }
-                        catch { fullPath = path; }
+                        catch (System.Exception e) { Debug.LogWarning($"[DiNe] GetFullPath failed: {e.Message}  using raw"); fullPath = path; }
+                        Debug.Log($"[DiNe] fullPath: '{fullPath}'  exists={File.Exists(fullPath)}  dirExists={Directory.Exists(fullPath)}");
                         if (!Directory.Exists(fullPath) && !File.Exists(fullPath))
                             if (Directory.Exists(path) || File.Exists(path))
                                 fullPath = path;
@@ -335,7 +375,8 @@ public class DiNePackagePatcher : EditorWindow
         string ext = Path.GetExtension(path).ToLower();
         if (ext == ".zip")
         {
-            int[] codepages = { 932, 51949 };
+            // UTF-8 (65001) 추가: 압축 파일 내부에 특수문자가 있을 때 깨지지 않고 정상 인식되도록 처리
+            int[] codepages = { 65001, 932, 51949 };
             foreach (int cp in codepages)
             {
                 try
@@ -346,7 +387,11 @@ public class DiNePackagePatcher : EditorWindow
                         {
                             if (entry.FullName.ToLower().EndsWith(".unitypackage"))
                                 if (!foundPackages.Any(p => p.SourcePath == path && p.PackagePathInZip == entry.FullName))
-                                    foundPackages.Add(new PackageItem(path, entry.FullName, true, entry.FullName));
+                                {
+                                    // UI 표시용 이름 검열 (Sanitize)
+                                    string safeName = SanitizeText(entry.FullName);
+                                    foundPackages.Add(new PackageItem(path, safeName, true, entry.FullName));
+                                }
                         }
                         return;
                     }
@@ -357,7 +402,11 @@ public class DiNePackagePatcher : EditorWindow
         else if (ext == ".unitypackage")
         {
             if (!foundPackages.Any(p => p.SourcePath == path && !p.IsFromZip))
-                foundPackages.Add(new PackageItem(path, Path.GetFileName(path), false));
+            {
+                // UI 표시용 이름 검열 (Sanitize)
+                string safeName = SanitizeText(Path.GetFileName(path));
+                foundPackages.Add(new PackageItem(path, safeName, false));
+            }
         }
     }
 
@@ -375,7 +424,10 @@ public class DiNePackagePatcher : EditorWindow
 
         if (!Directory.Exists(tempExtractPath)) Directory.CreateDirectory(tempExtractPath);
         preImportFolders       = AssetDatabase.GetSubFolders("Assets");
-        pendingTargetFolderName = targetFolderName;
+        
+        // 대상 폴더 이름 검열 (폴더 생성 시 특수문자로 인해 뻗는 현상 방지)
+        pendingTargetFolderName = SanitizeText(targetFolderName);
+        if (string.IsNullOrWhiteSpace(pendingTargetFolderName)) pendingTargetFolderName = "_1_Patch";
 
         foreach (var item in targets)
         {
@@ -522,14 +574,14 @@ public class DiNePackagePatcher : EditorWindow
             case LanguagePreset.Korean:
                 UI_TEXT = new[]
                 {
-                    /*  0 */ "설정",
-                    /*  1 */ "정리 폴더명",
-                    /*  2 */ "소스",
-                    /*  3 */ "파일 또는 폴더를 여기에 드래그하세요",
-                    /*  4 */ "패키지 목록",
-                    /*  5 */ "리스트가 비어 있습니다",
-                    /*  6 */ "", /*  7 */ "", /*  8 */ "상태",
-                    /*  9 */ "임포트 중...",
+                    /* 0 */ "설정",
+                    /* 1 */ "정리 폴더명",
+                    /* 2 */ "소스",
+                    /* 3 */ "파일 또는 폴더를 여기에 드래그하세요",
+                    /* 4 */ "패키지 목록",
+                    /* 5 */ "리스트가 비어 있습니다",
+                    /* 6 */ "", /* 7 */ "", /* 8 */ "상태",
+                    /* 9 */ "임포트 중...",
                     /* 10 */ "선택 항목 임포트 시작",
                     /* 11 */ "모든 작업 완료!",
                     /* 12 */ "",
@@ -540,19 +592,21 @@ public class DiNePackagePatcher : EditorWindow
                     /* 17 */ "없음",
                     /* 18 */ "Clear",
                     /* 19 */ "임포트할 파일을 찾을 수 없습니다. (콘솔 창 확인)",
+                    /* 20 */ "📄  파일 직접 선택",
+                    /* 21 */ "📁  폴더 직접 선택",
                 };
                 break;
             case LanguagePreset.Japanese:
                 UI_TEXT = new[]
                 {
-                    /*  0 */ "設定",
-                    /*  1 */ "整理フォルダ名",
-                    /*  2 */ "ソース",
-                    /*  3 */ "ファイルまたはフォルダをここにドラッグ",
-                    /*  4 */ "パッケージ一覧",
-                    /*  5 */ "リストが空です",
-                    /*  6 */ "", /*  7 */ "", /*  8 */ "ステータス",
-                    /*  9 */ "インポート中...",
+                    /* 0 */ "設定",
+                    /* 1 */ "整理フォルダ名",
+                    /* 2 */ "ソース",
+                    /* 3 */ "ファイルまたはフォルダをここにドラッグ",
+                    /* 4 */ "パッケージ一覧",
+                    /* 5 */ "リストが空です",
+                    /* 6 */ "", /* 7 */ "", /* 8 */ "ステータス",
+                    /* 9 */ "インポート中...",
                     /* 10 */ "選択項目をインポート開始",
                     /* 11 */ "全て完了！",
                     /* 12 */ "",
@@ -563,19 +617,21 @@ public class DiNePackagePatcher : EditorWindow
                     /* 17 */ "解除",
                     /* 18 */ "Clear",
                     /* 19 */ "インポートするファイルが見つかりません。(コンソール確認)",
+                    /* 20 */ "📄  ファイルを直接選択",
+                    /* 21 */ "📁  フォルダを直接選択",
                 };
                 break;
             default:
                 UI_TEXT = new[]
                 {
-                    /*  0 */ "Settings",
-                    /*  1 */ "Target Folder",
-                    /*  2 */ "Source",
-                    /*  3 */ "Drag files or folders here",
-                    /*  4 */ "Package List",
-                    /*  5 */ "List is empty",
-                    /*  6 */ "", /*  7 */ "", /*  8 */ "Status",
-                    /*  9 */ "Importing...",
+                    /* 0 */ "Settings",
+                    /* 1 */ "Target Folder",
+                    /* 2 */ "Source",
+                    /* 3 */ "Drag files or folders here",
+                    /* 4 */ "Package List",
+                    /* 5 */ "List is empty",
+                    /* 6 */ "", /* 7 */ "", /* 8 */ "Status",
+                    /* 9 */ "Importing...",
                     /* 10 */ "Start Import Selected",
                     /* 11 */ "All Done!",
                     /* 12 */ "",
@@ -586,12 +642,13 @@ public class DiNePackagePatcher : EditorWindow
                     /* 17 */ "None",
                     /* 18 */ "Clear",
                     /* 19 */ "No files to import. (Check Console)",
+                    /* 20 */ "📄  Browse File",
+                    /* 21 */ "📁  Browse Folder",
                 };
                 break;
         }
     }
 
-    // GUIUtility.ExitGUI() 제거 → 언어 변경 정상 동작
     private int DrawCustomToolbar(int selected, string[] options, float height)
     {
         EditorGUILayout.BeginHorizontal();
