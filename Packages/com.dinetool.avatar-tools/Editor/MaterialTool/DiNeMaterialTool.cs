@@ -243,31 +243,8 @@ public class DiNeMaterialTool : EditorWindow
     private Vector2 _vramScroll;
     private long _vramTotal;
 
-    private static readonly Dictionary<TextureFormat, float> TEX_BPP = new Dictionary<TextureFormat, float>()
-    {
-        { TextureFormat.Alpha8, 8 }, { TextureFormat.ARGB4444, 16 }, { TextureFormat.RGB24, 24 },
-        { TextureFormat.RGBA32, 32 }, { TextureFormat.ARGB32, 32 }, { TextureFormat.RGB565, 16 },
-        { TextureFormat.R16, 16 }, { TextureFormat.DXT1, 4 }, { TextureFormat.DXT5, 8 },
-        { TextureFormat.RGBA4444, 16 }, { TextureFormat.BGRA32, 32 },
-        { TextureFormat.RHalf, 16 }, { TextureFormat.RGHalf, 32 }, { TextureFormat.RGBAHalf, 64 },
-        { TextureFormat.RFloat, 32 }, { TextureFormat.RGFloat, 64 }, { TextureFormat.RGBAFloat, 128 },
-        { TextureFormat.YUY2, 16 }, { TextureFormat.RGB9e5Float, 32 },
-        { TextureFormat.BC6H, 8 }, { TextureFormat.BC7, 8 }, { TextureFormat.BC4, 4 }, { TextureFormat.BC5, 8 },
-        { TextureFormat.DXT1Crunched, 4 }, { TextureFormat.DXT5Crunched, 8 },
-        { TextureFormat.PVRTC_RGB2, 6 }, { TextureFormat.PVRTC_RGBA2, 8 },
-        { TextureFormat.PVRTC_RGB4, 12 }, { TextureFormat.PVRTC_RGBA4, 16 },
-        { TextureFormat.ETC_RGB4, 4 }, { TextureFormat.EAC_R, 4 }, { TextureFormat.EAC_R_SIGNED, 4 },
-        { TextureFormat.EAC_RG, 8 }, { TextureFormat.EAC_RG_SIGNED, 8 },
-        { TextureFormat.ETC2_RGB, 4 }, { TextureFormat.ETC2_RGBA1, 4 }, { TextureFormat.ETC2_RGBA8, 8 },
-        { TextureFormat.ASTC_4x4, 8 }, { TextureFormat.ASTC_5x5, 5.12f }, { TextureFormat.ASTC_6x6, 3.56f },
-        { TextureFormat.ASTC_8x8, 2 }, { TextureFormat.ASTC_10x10, 1.28f }, { TextureFormat.ASTC_12x12, 0.89f },
-        { TextureFormat.RG16, 16 }, { TextureFormat.R8, 8 },
-        { TextureFormat.ETC_RGB4Crunched, 4 }, { TextureFormat.ETC2_RGBA8Crunched, 8 },
-        { TextureFormat.ASTC_HDR_4x4, 8 }, { TextureFormat.ASTC_HDR_5x5, 5.12f },
-        { TextureFormat.ASTC_HDR_6x6, 3.56f }, { TextureFormat.ASTC_HDR_8x8, 2 },
-        { TextureFormat.ASTC_HDR_10x10, 1.28f }, { TextureFormat.ASTC_HDR_12x12, 0.89f },
-        { TextureFormat.RG32, 32 }, { TextureFormat.RGB48, 48 }, { TextureFormat.RGBA64, 64 },
-    };
+    // BPP 딕셔너리는 DiNeTextureVRAM 공용 유틸로 이전됨
+    // CalcVRAMBytes도 DiNeTextureVRAM.CalcTextureVRAM 위임
 
     // ══════════════════════════════════════════════════════════════════════════
     //  Shared Material Info
@@ -1563,8 +1540,8 @@ public class DiNeMaterialTool : EditorWindow
         {
             info.Format = t2d.format;
             info.FormatString = t2d.format.ToString();
-            if (!TEX_BPP.TryGetValue(t2d.format, out info.BPP)) info.BPP = 16;
-            info.VRAMBytes = CalcVRAMBytes(tex, info.BPP);
+            if (!DiNeTextureVRAM.TryGetBPP(t2d.format, out info.BPP)) info.BPP = 16;
+            info.VRAMBytes = DiNeTextureVRAM.CalcTextureVRAM(tex);
 
             if (!string.IsNullOrEmpty(info.AssetPath))
             {
@@ -1580,9 +1557,8 @@ public class DiNeMaterialTool : EditorWindow
                         info.CanOptimizeFormat = true;
                         info.SuggestedFormat = (info.HasAlpha || importer.textureType == TextureImporterType.NormalMap)
                             ? TextureImporterFormat.BC7 : TextureImporterFormat.DXT1;
-                        TextureFormat newFmt = info.SuggestedFormat == TextureImporterFormat.BC7 ? TextureFormat.BC7 : TextureFormat.DXT1;
-                        float newBpp = TEX_BPP[newFmt];
-                        info.FormatSavings = info.VRAMBytes - CalcVRAMBytes(tex, newBpp);
+                        float newBpp = info.SuggestedFormat == TextureImporterFormat.BC7 ? 8f : 4f;
+                        info.FormatSavings = info.VRAMBytes - DiNeTextureVRAM.CalcTextureVRAMWithBPP(tex, newBpp);
                     }
 
                     // 해상도 축소 가능 여부
@@ -1590,7 +1566,7 @@ public class DiNeMaterialTool : EditorWindow
                     {
                         info.CanOptimizeSize = true;
                         float scale = 2048f / info.MaxDimension;
-                        info.SizeSavings = info.VRAMBytes - CalcVRAMBytes(tex, info.BPP, scale);
+                        info.SizeSavings = info.VRAMBytes - DiNeTextureVRAM.CalcTextureVRAMWithBPP(tex, info.BPP, scale);
                     }
                 }
             }
@@ -1599,24 +1575,10 @@ public class DiNeMaterialTool : EditorWindow
         {
             info.FormatString = tex.GetType().Name;
             info.BPP = 32;
-            info.VRAMBytes = CalcVRAMBytes(tex, info.BPP);
+            info.VRAMBytes = DiNeTextureVRAM.CalcTextureVRAM(tex);
         }
 
         return info;
-    }
-
-    private static long CalcVRAMBytes(Texture tex, float bpp, float resolutionScale = 1f)
-    {
-        int w = (int)(tex.width * resolutionScale);
-        int h = (int)(tex.height * resolutionScale);
-        long bytes = 0;
-        for (int i = 0; i < tex.mipmapCount; i++)
-        {
-            int mw = Mathf.Max(1, w >> i);
-            int mh = Mathf.Max(1, h >> i);
-            bytes += (long)Mathf.RoundToInt(mw * mh * bpp / 8f);
-        }
-        return bytes;
     }
 
     private void VRAMChangeCompression(TextureVRAMInfo info)

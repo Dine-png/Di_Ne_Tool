@@ -11,34 +11,33 @@ public class ArmatureScalerEditor : EditorWindow
 
     // ─── 에디터 모드 ───
     private enum EditorMode { Armature, ShapeKey, Expression }
-    private EditorMode currentMode = EditorMode.Armature;
+    [SerializeField] private EditorMode currentMode = EditorMode.Armature;
 
-    private GameObject targetAvatarRoot;
+    [SerializeField] private GameObject targetAvatarRoot;
 
-    private HumanoidBodyPart selectedPart = HumanoidBodyPart.None;
+    [SerializeField] private HumanoidBodyPart selectedPart = HumanoidBodyPart.None;
 
-    private Dictionary<HumanoidBodyPart, Vector3> scaleValues = new Dictionary<HumanoidBodyPart, Vector3>();
+    private Dictionary<HumanoidBodyPart, Vector3>    scaleValues    = new Dictionary<HumanoidBodyPart, Vector3>();
     private Dictionary<HumanoidBodyPart, Quaternion> rotationValues = new Dictionary<HumanoidBodyPart, Quaternion>();
-    // 추가: 포지션 값 딕셔너리
-    private Dictionary<HumanoidBodyPart, Vector3> positionValues = new Dictionary<HumanoidBodyPart, Vector3>();
+    private Dictionary<HumanoidBodyPart, Vector3>    positionValues = new Dictionary<HumanoidBodyPart, Vector3>();
 
-    private string[] UI_TEXT;
+    private string[]  UI_TEXT;
     private Texture2D windowIcon;
     private Texture2D tabIcon;
     private Font      titleFont;
-    private Vector2 scrollPosition;
+    [SerializeField] private Vector2 scrollPosition;
     private Texture2D selectedButtonTex;
 
     private Dictionary<HumanBodyBones, Transform> boneMapping;
 
-    private Vector3 lastKnownScale = Vector3.one;
+    private Vector3    lastKnownScale    = Vector3.one;
     private Quaternion lastKnownRotation = Quaternion.identity;
-    private Vector3 lastKnownPosition = Vector3.zero; // 추가
+    private Vector3    lastKnownPosition = Vector3.zero;
 
     private string[] presetFiles;
-    private int selectedPresetIndex = -1;
-    private string selectedPresetName = "";
-    private Vector2 presetScrollPosition;
+    [SerializeField] private int    selectedPresetIndex = -1;
+    [SerializeField] private string selectedPresetName  = "";
+    [SerializeField] private Vector2 presetScrollPosition;
 
     // ─── 아바타 정보 ───
     private struct AvatarInfo
@@ -57,11 +56,11 @@ public class ArmatureScalerEditor : EditorWindow
     }
     private AvatarInfo  _avatarInfo;
     private bool        _avatarInfoReady;
-    private bool        _avatarInfoFoldout = true;
+    [SerializeField] private bool _avatarInfoFoldout = true;
 
     // ─── Animation Freezer 필드 ───
-    private AnimationClip animationClip;
-    private float clipTime = 0.0f;
+    [SerializeField] private AnimationClip animationClip;
+    [SerializeField] private float clipTime = 0.0f;
     private string[] SK_TEXT;
 
     // 스냅샷
@@ -124,6 +123,8 @@ public class ArmatureScalerEditor : EditorWindow
         {
             boneMapping = ArmatureScalerCore.AssignBoneMappings(targetAvatarRoot);
             LoadCurrentValues();
+            _avatarInfo      = CalcAvatarInfo(targetAvatarRoot);
+            _avatarInfoReady = true;
         }
         
         RefreshPresetList();
@@ -374,7 +375,9 @@ public class ArmatureScalerEditor : EditorWindow
         }
 
         EditorGUI.BeginDisabledGroup(targetAvatarRoot == null);
-        if (GUILayout.Button("↺", GUILayout.Width(28)))
+        var _prevBg = GUI.backgroundColor;
+        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+        if (GUILayout.Button("↺", GUILayout.Width(28), GUILayout.Height(18)))
         {
             boneMapping = ArmatureScalerCore.AssignBoneMappings(targetAvatarRoot);
             LoadCurrentValues();
@@ -382,6 +385,7 @@ public class ArmatureScalerEditor : EditorWindow
             _avatarInfo = CalcAvatarInfo(targetAvatarRoot);
             _avatarInfoReady = true;
         }
+        GUI.backgroundColor = _prevBg;
         EditorGUI.EndDisabledGroup();
         EditorGUILayout.EndHorizontal();
 
@@ -1136,27 +1140,13 @@ public class ArmatureScalerEditor : EditorWindow
             if (mr != null) foreach (var m in mr.sharedMaterials) if (m != null) matSet.Add(m);
         }
 
-        // 텍스처
-        foreach (var mat in matSet)
-        {
-            if (mat == null) continue;
-            var shader = mat.shader;
-            if (shader == null) continue;
-            int propCount = ShaderUtil.GetPropertyCount(shader);
-            for (int i = 0; i < propCount; i++)
-            {
-                if (ShaderUtil.GetPropertyType(shader, i) != ShaderUtil.ShaderPropertyType.TexEnv) continue;
-                string propName = ShaderUtil.GetPropertyName(shader, i);
-                var tex = mat.GetTexture(propName);
-                if (tex != null && texSet.Add(tex))
-                    info.textureMemoryBytes += UnityEngine.Profiling.Profiler.GetRuntimeMemorySizeLong(tex);
-            }
-        }
+        // 텍스처 — DiNeTextureVRAM 공용 유틸로 계산
+        info.textureMemoryBytes = DiNeTextureVRAM.CalcAvatarTextureVRAM(root, out int texCount);
 
         info.meshCount      = info.skinnedMeshCount + info.staticMeshCount;
         info.materialCount  = matSet.Count;
         info.boneCount      = allBones.Count;
-        info.textureCount   = texSet.Count;
+        info.textureCount   = texCount;
         return info;
     }
 
