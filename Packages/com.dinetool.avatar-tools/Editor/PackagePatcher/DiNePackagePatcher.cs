@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.IO.Compression;
 using System.Text;
-using System.Text.RegularExpressions; // 정규식 사용을 위해 추가
 
 public class DiNePackagePatcher : EditorWindow
 {
@@ -309,12 +308,13 @@ public class DiNePackagePatcher : EditorWindow
 
     // ════════════════════════════════════════════════════════════
 
-    // 특수문자 검열 유틸리티 메서드 추가
-    private static string SanitizeText(string input)
+    // 안전한 폴더 이름 생성기 (치명적인 특수문자만 제거)
+    private static string GetSafeFolderName(string folderName)
     {
-        if (string.IsNullOrEmpty(input)) return input;
-        // 영문, 숫자, 한글, 다국어 문자 및 기본적인 경로/특수 기호만 남기고 하트(♥), 이모지 등 인식 오류를 일으키는 문자 제거
-        return Regex.Replace(input, @"[^\w\s\.\-\_\:\/\\\(\)\[\]\{\}\+\=\,\!\@\#\$\%\^\&\*]", "");
+        if (string.IsNullOrWhiteSpace(folderName)) return "_1_Patch";
+        char[] invalidChars = Path.GetInvalidFileNameChars();
+        string clean = new string(folderName.Where(c => !invalidChars.Contains(c)).ToArray());
+        return string.IsNullOrWhiteSpace(clean) ? "_1_Patch" : clean;
     }
 
     private static void DrawBorder(Rect r, Color c, float t)
@@ -337,18 +337,17 @@ public class DiNePackagePatcher : EditorWindow
                 if (evt.type == EventType.DragPerform)
                 {
                     DragAndDrop.AcceptDrag();
-                    Debug.Log($"[DiNe] DragAndDrop.paths count: {DragAndDrop.paths.Length}");
                     foreach (string path in DragAndDrop.paths)
                     {
-                        Debug.Log($"[DiNe] Drag path raw: '{path}'  len={path?.Length}");
                         if (string.IsNullOrEmpty(path)) continue;
                         string fullPath;
                         try { fullPath = Path.GetFullPath(path); }
-                        catch (System.Exception e) { Debug.LogWarning($"[DiNe] GetFullPath failed: {e.Message}  using raw"); fullPath = path; }
-                        Debug.Log($"[DiNe] fullPath: '{fullPath}'  exists={File.Exists(fullPath)}  dirExists={Directory.Exists(fullPath)}");
+                        catch { fullPath = path; }
+                        
                         if (!Directory.Exists(fullPath) && !File.Exists(fullPath))
                             if (Directory.Exists(path) || File.Exists(path))
                                 fullPath = path;
+                                
                         if (Directory.Exists(fullPath)) AddFromPath(fullPath, true);
                         else ProcessFile(fullPath);
                     }
@@ -375,37 +374,38 @@ public class DiNePackagePatcher : EditorWindow
         string ext = Path.GetExtension(path).ToLower();
         if (ext == ".zip")
         {
-            // UTF-8 (65001) 추가: 압축 파일 내부에 특수문자가 있을 때 깨지지 않고 정상 인식되도록 처리
-            int[] codepages = { 65001, 932, 51949 };
-            foreach (int cp in codepages)
+            // 인코딩 목록: 하트/이모지가 깨지지 않도록 UTF-8을 최우선으로 시도하고 안전하게 예외처리
+            List<Encoding> encodings = new List<Encoding> { Encoding.UTF8 };
+            try { encodings.Add(Encoding.GetEncoding(932)); } catch { }
+            try { encodings.Add(Encoding.GetEncoding(51949)); } catch { }
+
+            foreach (var enc in encodings)
             {
                 try
                 {
-                    using (var archive = ZipFile.Open(path, ZipArchiveMode.Read, Encoding.GetEncoding(cp)))
+                    using (var archive = ZipFile.Open(path, ZipArchiveMode.Read, enc))
                     {
                         foreach (var entry in archive.Entries)
                         {
                             if (entry.FullName.ToLower().EndsWith(".unitypackage"))
+                            {
                                 if (!foundPackages.Any(p => p.SourcePath == path && p.PackagePathInZip == entry.FullName))
                                 {
-                                    // UI 표시용 이름 검열 (Sanitize)
-                                    string safeName = SanitizeText(entry.FullName);
-                                    foundPackages.Add(new PackageItem(path, safeName, true, entry.FullName));
+                                    foundPackages.Add(new PackageItem(path, entry.FullName, true, entry.FullName));
                                 }
+                            }
                         }
-                        return;
+                        return; // 성공하면 중단
                     }
                 }
-                catch { continue; }
+                catch { continue; } // 에러 나면 다음 인코딩으로 재시도
             }
         }
         else if (ext == ".unitypackage")
         {
             if (!foundPackages.Any(p => p.SourcePath == path && !p.IsFromZip))
             {
-                // UI 표시용 이름 검열 (Sanitize)
-                string safeName = SanitizeText(Path.GetFileName(path));
-                foundPackages.Add(new PackageItem(path, safeName, false));
+                foundPackages.Add(new PackageItem(path, Path.GetFileName(path), false));
             }
         }
     }
@@ -423,11 +423,10 @@ public class DiNePackagePatcher : EditorWindow
         importQueue.Clear();
 
         if (!Directory.Exists(tempExtractPath)) Directory.CreateDirectory(tempExtractPath);
-        preImportFolders       = AssetDatabase.GetSubFolders("Assets");
+        preImportFolders = AssetDatabase.GetSubFolders("Assets");
         
-        // 대상 폴더 이름 검열 (폴더 생성 시 특수문자로 인해 뻗는 현상 방지)
-        pendingTargetFolderName = SanitizeText(targetFolderName);
-        if (string.IsNullOrWhiteSpace(pendingTargetFolderName)) pendingTargetFolderName = "_1_Patch";
+        // 대상 폴더 이름 검열 (유니티 폴더 생성 에러 방지)
+        pendingTargetFolderName = GetSafeFolderName(targetFolderName);
 
         foreach (var item in targets)
         {
