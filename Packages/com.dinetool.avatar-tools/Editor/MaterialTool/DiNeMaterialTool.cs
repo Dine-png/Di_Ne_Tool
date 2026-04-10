@@ -761,8 +761,9 @@ public class DiNeMaterialTool : EditorWindow
     {
         // 버튼 1: 지울 텍스쳐가 있는 마테리얼이 선택된 경우
         bool canRemove  = _dietScanned && _dietMats.Any(m => m.Selected && m.HasDiet);
-        // 버튼 2: 지울 텍스쳐 OR 끌 수 있는 기능 토글이 있는 마테리얼이 선택된 경우
-        bool canDisable = _dietScanned && _dietMats.Any(m => m.Selected && (m.HasDiet || HasEnabledToggles(m)));
+        // 버튼 2: 실제로 끌 수 있는 기능 토글이 있는 마테리얼이 선택된 경우만 활성화
+        // (텍스쳐만 있고 기능이 이미 꺼져있으면 비활성화)
+        bool canDisable = _dietScanned && _dietMats.Any(m => m.Selected && HasEnabledToggles(m));
 
         var btn = new GUIStyle(GUI.skin.button)
             { fontSize = 13, fontStyle = FontStyle.Bold, normal = { textColor = Color.white }, hover = { textColor = Color.white } };

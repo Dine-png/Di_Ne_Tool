@@ -89,6 +89,8 @@ public class ArmatureScalerEditor : EditorWindow
     private bool                     _exprFxPreviewMode   = false;
     private float[]                  _exprWorkingValues;
     private GameObject               _prevExprTarget;
+    // 제스처 쉐이프키 포함 옵션
+    [SerializeField] private bool    _includeGestureKeys  = true;
 
     private enum HumanoidBodyPart
     {
@@ -1987,6 +1989,19 @@ public class ArmatureScalerEditor : EditorWindow
                 _exprNewClipName);
         }
 
+        // 제스처 쉐이프키 포함 옵션
+        string gestureKeyLabel = language == LanguagePreset.Korean  ? "재스쳐 클립의 쉐이프키 0값 포함"
+                               : language == LanguagePreset.Japanese ? "ジェスチャークリップのシェイプキー0値を含める"
+                               : "Include Gesture ShapeKeys at 0";
+        string gestureKeyTooltip = language == LanguagePreset.Korean
+            ? "FX 컨트롤러의 재스쳐 애니메이션에 사용된 쉐이프키를 0값으로 함께 저장합니다.\n표정이 겹쳐 일그러지는 현상을 방지합니다."
+            : language == LanguagePreset.Japanese
+            ? "FXコントローラーのジェスチャーアニメーションで使用されているシェイプキーを0値で一緒に保存します。\n表情が重なって歪む現象を防ぎます。"
+            : "Also saves shapekeys used in gesture animations at value 0.\nPrevents expression blending artifacts.";
+        _includeGestureKeys = EditorGUILayout.ToggleLeft(
+            new GUIContent(gestureKeyLabel, gestureKeyTooltip),
+            _includeGestureKeys);
+
         EditorGUILayout.BeginHorizontal();
 
         GUI.backgroundColor = new Color(0.25f, 0.65f, 0.60f);
@@ -2337,14 +2352,22 @@ public class ArmatureScalerEditor : EditorWindow
         Undo.RecordObject(clip, "Save Expression Clip");
         clip.ClearCurves();
 
+        // 제스처 클립에 기록된 쉐이프키 이름 수집 (0값 포함 옵션)
+        HashSet<string> gestureShapeKeyNames = (_includeGestureKeys && _exprFxController != null)
+            ? CollectGestureShapeKeys(_exprFxController)
+            : new HashSet<string>();
+
         string smrPath = AnimationUtility.CalculateTransformPath(_bodySmr.transform, targetAvatarRoot.transform);
         int cnt = _bodySmr.sharedMesh.blendShapeCount;
         for (int i = 0; i < cnt; i++)
         {
             float val = _exprShapeValues != null ? _exprShapeValues[i] : _bodySmr.GetBlendShapeWeight(i);
-            if (val == 0f) continue; 
+            string shapeName = _bodySmr.sharedMesh.GetBlendShapeName(i);
 
-            string propName = "blendShape." + _bodySmr.sharedMesh.GetBlendShapeName(i);
+            // val이 0이면서 제스처 클립에 포함된 쉐이프키도 0값으로 기록
+            if (val == 0f && !gestureShapeKeyNames.Contains(shapeName)) continue;
+
+            string propName = "blendShape." + shapeName;
             var curve = AnimationCurve.Constant(0f, 0f, val);
             AnimationUtility.SetEditorCurve(clip,
                 EditorCurveBinding.FloatCurve(smrPath, typeof(SkinnedMeshRenderer), propName), curve);
@@ -2364,6 +2387,52 @@ public class ArmatureScalerEditor : EditorWindow
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
         Debug.Log($"[Avi Editor] Expression saved → {path}");
+    }
+
+    /// <summary>
+    /// FX 컨트롤러의 모든 애니메이션 클립에서 blendShape 프로퍼티 이름(shapekey명)을 수집합니다.
+    /// 값이 0이든 100이든 기록된 쉐이프키 이름을 전부 반환합니다.
+    /// </summary>
+    private HashSet<string> CollectGestureShapeKeys(UnityEditor.Animations.AnimatorController ctrl)
+    {
+        var result = new HashSet<string>();
+        var visitedClips = new HashSet<int>();
+
+        foreach (var layer in ctrl.layers)
+        {
+            CollectFromStateMachine(layer.stateMachine, result, visitedClips);
+        }
+        return result;
+    }
+
+    private void CollectFromStateMachine(
+        UnityEditor.Animations.AnimatorStateMachine sm,
+        HashSet<string> result,
+        HashSet<int> visitedClips)
+    {
+        if (sm == null) return;
+
+        foreach (var childState in sm.states)
+        {
+            var clip = childState.state.motion as AnimationClip;
+            if (clip != null && visitedClips.Add(clip.GetInstanceID()))
+                CollectShapeKeysFromClip(clip, result);
+        }
+        // 서브 스테이트 머신도 순회
+        foreach (var sub in sm.stateMachines)
+            CollectFromStateMachine(sub.stateMachine, result, visitedClips);
+    }
+
+    private void CollectShapeKeysFromClip(AnimationClip clip, HashSet<string> result)
+    {
+        foreach (var binding in AnimationUtility.GetCurveBindings(clip))
+        {
+            if (binding.type != typeof(SkinnedMeshRenderer)) continue;
+            if (!binding.propertyName.StartsWith("blendShape.")) continue;
+            // "blendShape.ShapeName" → "ShapeName"
+            string shapeName = binding.propertyName.Substring("blendShape.".Length);
+            result.Add(shapeName);
+        }
     }
 
     private void AutoFindFxController()
