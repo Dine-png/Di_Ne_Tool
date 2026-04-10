@@ -63,7 +63,7 @@ public class ArmatureScalerEditor : EditorWindow
     [SerializeField] private float clipTime = 0.0f;
     private string[] SK_TEXT;
 
-    // 스냅샷
+    // 스냅샷 (이제 일반 오브젝트의 T포즈 기억용으로 주로 쓰임)
     private Dictionary<SkinnedMeshRenderer, float[]>                          _snapShapeKeys  = new Dictionary<SkinnedMeshRenderer, float[]>();
     private Dictionary<Transform, (Vector3 pos, Quaternion rot, Vector3 scl)> _snapTransforms = new Dictionary<Transform, (Vector3, Quaternion, Vector3)>();
     private bool   _hasSnapshot;
@@ -137,6 +137,13 @@ public class ArmatureScalerEditor : EditorWindow
     {
         EditorApplication.update -= OnEditorUpdate;
         Undo.undoRedoPerformed -= OnUndoRedo;
+
+        if (_faceRT != null)
+        {
+            _faceRT.Release();
+            DestroyImmediate(_faceRT);
+            _faceRT = null;
+        }
     }
 
     private void OnUndoRedo()
@@ -147,7 +154,6 @@ public class ArmatureScalerEditor : EditorWindow
             return;
         }
 
-        // 실제 SMR 값에서 clipTime 역산
         AnimationCurve firstCurve = null;
         SkinnedMeshRenderer firstSmr = null;
         int firstIdx = -1;
@@ -195,7 +201,6 @@ public class ArmatureScalerEditor : EditorWindow
         HumanBodyBones boneType = GetBoneType(selectedPart);
         if (boneMapping.TryGetValue(boneType, out Transform boneTransform))
         {
-            // 스케일 감지
             if (boneTransform.localScale != lastKnownScale)
             {
                 scaleValues[selectedPart] = boneTransform.localScale;
@@ -203,7 +208,6 @@ public class ArmatureScalerEditor : EditorWindow
                 Repaint();
             }
 
-            // 로테이션 감지 (가능한 부위만)
             if (CanRotate(selectedPart) && boneTransform.localRotation != lastKnownRotation)
             {
                 rotationValues[selectedPart] = boneTransform.localRotation;
@@ -211,7 +215,6 @@ public class ArmatureScalerEditor : EditorWindow
                 Repaint();
             }
 
-            // 포지션 감지 (전체 가능) - 추가
             if (boneTransform.localPosition != lastKnownPosition)
             {
                 positionValues[selectedPart] = boneTransform.localPosition;
@@ -240,15 +243,12 @@ public class ArmatureScalerEditor : EditorWindow
         {
             if (part != HumanoidBodyPart.None)
             {
-                // Scale Init
                 if (!scaleValues.ContainsKey(part)) scaleValues.Add(part, Vector3.one);
                 else scaleValues[part] = Vector3.one;
                 
-                // Rotation Init
                 if (!rotationValues.ContainsKey(part)) rotationValues.Add(part, Quaternion.identity);
                 else rotationValues[part] = Quaternion.identity;
 
-                // Position Init - 추가 (기본값 0,0,0)
                 if (!positionValues.ContainsKey(part)) positionValues.Add(part, Vector3.zero);
                 else positionValues[part] = Vector3.zero;
             }
@@ -269,9 +269,22 @@ public class ArmatureScalerEditor : EditorWindow
                 Transform t = boneMapping[boneType];
                 scaleValues[part] = t.localScale;
                 rotationValues[part] = t.localRotation;
-                positionValues[part] = t.localPosition; // 포지션 로드 추가
+                positionValues[part] = t.localPosition;
             }
         }
+    }
+
+    private void ForceUpdateScene(UnityEngine.Object obj)
+    {
+        if (obj == null) return;
+        EditorUtility.SetDirty(obj);
+        
+        #if UNITY_EDITOR
+        if (PrefabUtility.IsPartOfPrefabInstance(obj))
+        {
+            PrefabUtility.RecordPrefabInstancePropertyModifications(obj);
+        }
+        #endif
     }
     
     void OnGUI()
@@ -451,33 +464,29 @@ public class ArmatureScalerEditor : EditorWindow
 
         EditorGUILayout.EndScrollView();
         
-        // --- 프리셋 불러오기 버튼 영역 (수정됨) ---
         EditorGUI.BeginDisabledGroup(selectedPresetIndex == -1);
         
-        // 1. 전체 불러오기
         if (GUILayout.Button(UI_TEXT[28]))
         {
-            LoadSelectedPreset(true, true, true); // 스케일, 로테이션, 포지션 모두
+            LoadSelectedPreset(true, true, true);
         }
 
-        // 2. 분리 적용 버튼 (3개로 확장)
         EditorGUILayout.BeginHorizontal();
-        if (GUILayout.Button(UI_TEXT[39])) // 스케일만
+        if (GUILayout.Button(UI_TEXT[39]))
         {
             LoadSelectedPreset(true, false, false);
         }
-        if (GUILayout.Button(UI_TEXT[40])) // 로테이션만
+        if (GUILayout.Button(UI_TEXT[40]))
         {
             LoadSelectedPreset(false, true, false);
         }
-        if (GUILayout.Button(UI_TEXT[43])) // 포지션만 (새로 추가됨)
+        if (GUILayout.Button(UI_TEXT[43]))
         {
             LoadSelectedPreset(false, false, true);
         }
         EditorGUILayout.EndHorizontal();
         
         EditorGUI.EndDisabledGroup();
-        // ----------------------------------------
 
         var prevBg = GUI.backgroundColor;
         GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
@@ -519,7 +528,6 @@ public class ArmatureScalerEditor : EditorWindow
 
         if (selectedPart != HumanoidBodyPart.None)
         {
-            // 1. Scale
             Vector3 scale = GetPartScale(selectedPart);
             EditorGUI.BeginChangeCheck();
             float uniformScale = EditorGUILayout.FloatField(UI_TEXT[26], scale.x);
@@ -537,20 +545,18 @@ public class ArmatureScalerEditor : EditorWindow
                 ArmatureScalerLogic.ApplyScale(boneMapping, MapToHumanBodyBones(scaleValues));
             }
 
-            // 2. Position (추가됨) - 스케일처럼 전체 적용 가능
             GUILayout.Space(10);
-            GUILayout.Label(UI_TEXT[41], EditorStyles.boldLabel); // "포지션 조절"
+            GUILayout.Label(UI_TEXT[41], EditorStyles.boldLabel);
             Vector3 position = GetPartPosition(selectedPart);
             
             EditorGUI.BeginChangeCheck();
-            Vector3 newPosition = EditorGUILayout.Vector3Field(UI_TEXT[42], position); // "포지션"
+            Vector3 newPosition = EditorGUILayout.Vector3Field(UI_TEXT[42], position);
             if (EditorGUI.EndChangeCheck())
             {
                 UpdatePartPosition(newPosition);
                 ArmatureScalerLogic.ApplyPosition(boneMapping, MapToHumanBodyBones(positionValues));
             }
             
-            // 3. Rotation (특정 부위만)
             if (CanRotate(selectedPart))
             {
                 GUILayout.Space(10);
@@ -577,14 +583,13 @@ public class ArmatureScalerEditor : EditorWindow
     // ─── 애니메이션 모드 GUI ───
     private void DrawShapeKeyGUI()
     {
-        // 타겟 변경 시 자동 스냅샷
+        // 타겟 변경 시 자동 스냅샷 (초기 T포즈 기억용)
         if (targetAvatarRoot != _prevSnapshotTarget)
         {
             _prevSnapshotTarget = targetAvatarRoot;
             if (targetAvatarRoot != null) TakeSnapshot();
         }
 
-        // ─── 대상 설정 ───
         EditorGUILayout.BeginVertical("box");
         EditorGUILayout.LabelField(SK_TEXT[0], EditorStyles.boldLabel);
         GUILayout.Space(3);
@@ -594,7 +599,6 @@ public class ArmatureScalerEditor : EditorWindow
 
         GUILayout.Space(5);
 
-        // ─── 슬라이더 ───
         EditorGUI.BeginDisabledGroup(targetAvatarRoot == null || animationClip == null);
 
         EditorGUILayout.BeginVertical("box");
@@ -610,14 +614,13 @@ public class ArmatureScalerEditor : EditorWindow
         EditorGUI.BeginChangeCheck();
         clipTime = EditorGUILayout.Slider(clipTime, 0f, animationClip != null ? animationClip.length : 1f);
         if (EditorGUI.EndChangeCheck())
-            ApplyShapeKeys(); // 슬라이더: 쉐이프키만 실시간 미리보기
+            ApplyShapeKeys();
 
         EditorGUILayout.EndVertical();
         EditorGUI.EndDisabledGroup();
 
         GUILayout.Space(8);
 
-        // ─── 적용 버튼 3개 ───
         EditorGUI.BeginDisabledGroup(targetAvatarRoot == null || animationClip == null);
 
         var btnStyle = new GUIStyle(GUI.skin.button)
@@ -662,8 +665,8 @@ public class ArmatureScalerEditor : EditorWindow
 
         GUILayout.Space(5);
 
-        // ─── 복원 버튼 ───
-        EditorGUI.BeginDisabledGroup(!_hasSnapshot);
+        // ─── 복원 버튼 (새로운 초기화 로직 적용) ───
+        EditorGUI.BeginDisabledGroup(targetAvatarRoot == null || !_hasSnapshot);
         GUI.backgroundColor = new Color(0.21f, 0.21f, 0.24f);
         if (GUILayout.Button(SK_TEXT[10], new GUIStyle(GUI.skin.button)
         {
@@ -674,7 +677,7 @@ public class ArmatureScalerEditor : EditorWindow
             hover       = { textColor = Color.white },
         }))
         {
-            RestoreSnapshot();
+            RestoreToOriginal();
             Debug.Log($"[Avi Editor] {SK_TEXT[11]}");
         }
         GUI.backgroundColor = prevBg;
@@ -684,7 +687,6 @@ public class ArmatureScalerEditor : EditorWindow
         EditorGUILayout.HelpBox(SK_TEXT[12], MessageType.Info);
     }
 
-    // ─── 쉐이프키 적용 ───
     private void ApplyShapeKeys()
     {
         if (targetAvatarRoot == null || animationClip == null) return;
@@ -704,10 +706,10 @@ public class ArmatureScalerEditor : EditorWindow
 
             Undo.RecordObject(smr, "Avi Editor Freeze ShapeKey");
             smr.SetBlendShapeWeight(idx, curve.Evaluate(clipTime));
+            ForceUpdateScene(smr);
         }
     }
 
-    // ─── 포즈 적용 ───
     private void ApplyPose()
     {
         if (targetAvatarRoot == null || animationClip == null) return;
@@ -728,10 +730,11 @@ public class ArmatureScalerEditor : EditorWindow
             if (t == null) continue;
             Undo.RecordObject(t, "Avi Editor Freeze Pose");
             kvp.Value.ApplyTo(t);
+            ForceUpdateScene(t);
         }
     }
 
-    // ─── 스냅샷 ───
+    // 아바타 할당 시 초기 T포즈 스냅샷 저장
     private void TakeSnapshot()
     {
         _snapShapeKeys.Clear();
@@ -752,25 +755,67 @@ public class ArmatureScalerEditor : EditorWindow
         _hasSnapshot = true;
     }
 
-    private void RestoreSnapshot()
+    // ─── 핵심 변경 부분: 원본 초기화 로직 ───
+    private void RestoreToOriginal()
     {
-        foreach (var kvp in _snapShapeKeys)
+        if (targetAvatarRoot == null) return;
+
+        // 현재 오브젝트가 프리팹 인스턴스인지 확인
+        bool isPrefab = PrefabUtility.IsPartOfPrefabInstance(targetAvatarRoot);
+
+        if (isPrefab)
         {
-            if (kvp.Key == null) continue;
-            Undo.RecordObject(kvp.Key, "Avi Editor Restore");
-            for (int i = 0; i < kvp.Value.Length; i++) kvp.Key.SetBlendShapeWeight(i, kvp.Value[i]);
+            // 1. 프리팹인 경우: SMR과 Transform의 모든 오버라이드(변경사항)를 프리팹 원본 파일 상태로 되돌림
+            foreach (var smr in targetAvatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                PrefabUtility.RevertObjectOverride(smr, InteractionMode.UserAction);
+            }
+            foreach (var tr in targetAvatarRoot.GetComponentsInChildren<Transform>(true))
+            {
+                PrefabUtility.RevertObjectOverride(tr, InteractionMode.UserAction);
+            }
         }
-        foreach (var kvp in _snapTransforms)
+        else
         {
-            if (kvp.Key == null) continue;
-            Undo.RecordObject(kvp.Key, "Avi Editor Restore");
-            kvp.Key.localPosition = kvp.Value.pos;
-            kvp.Key.localRotation = kvp.Value.rot;
-            kvp.Key.localScale    = kvp.Value.scl;
+            // 2. 프리팹이 아닌(Unpacked) 일반 오브젝트인 경우: 
+            // 쉐이프키는 무조건 0으로 밀고, 포즈는 기억해둔 초기 스냅샷(T포즈)으로 되돌림
+            
+            // 쉐이프키 0으로 덮기
+            foreach (var smr in targetAvatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                if (smr.sharedMesh == null) continue;
+                Undo.RecordObject(smr, "Avi Editor Restore SMR");
+                int count = smr.sharedMesh.blendShapeCount;
+                for (int i = 0; i < count; i++)
+                {
+                    smr.SetBlendShapeWeight(i, 0f);
+                }
+                ForceUpdateScene(smr);
+            }
+
+            // 기억해둔 T포즈 덮기
+            foreach (var kvp in _snapTransforms)
+            {
+                if (kvp.Key == null) continue;
+                Undo.RecordObject(kvp.Key, "Avi Editor Restore Pose");
+                kvp.Key.localPosition = kvp.Value.pos;
+                kvp.Key.localRotation = kvp.Value.rot;
+                kvp.Key.localScale    = kvp.Value.scl;
+                ForceUpdateScene(kvp.Key);
+            }
         }
+
+        // 씬 뷰 즉시 새로고침
+        if (SceneView.lastActiveSceneView != null)
+        {
+            SceneView.lastActiveSceneView.Repaint();
+        }
+
+        // UI 슬라이더 초기화
+        clipTime = 0f;
+        GUI.FocusControl(null);
     }
 
-    // ─── Transform 샘플 누적기 ───
     private class TransformSample
     {
         float? px,py,pz, rx,ry,rz,rw, ex,ey,ez, sx,sy,sz;
@@ -823,8 +868,8 @@ public class ArmatureScalerEditor : EditorWindow
                     "쉐이프키 적용 완료!",           // 7
                     "포즈 적용 완료!",               // 8
                     "전체 적용 완료!",               // 9
-                    "↩  원본으로 복원",             // 10
-                    "원본 상태로 복원했습니다.",      // 11
+                    "↩  원본 초기화 (초기 포즈/0)",    // 10
+                    "원본 상태(프리팹 또는 T포즈/쉐이프키 0)로 복원했습니다.", // 11
                     "슬라이더로 미리보기, 버튼으로 씬에 적용합니다.", // 12
                 };
                 break;
@@ -841,8 +886,8 @@ public class ArmatureScalerEditor : EditorWindow
                     "シェイプキーを適用しました。",
                     "ポーズを適用しました。",
                     "すべて適用しました。",
-                    "↩  元に戻す",
-                    "元の状態に戻しました。",
+                    "↩  元に初期化 (初期ポーズ/0)",
+                    "元の状態(プレハブまたはTポーズ/シェイプキー0)に復元しました。",
                     "スライダーでプレビュー、ボタンでシーンに適用します。",
                 };
                 break;
@@ -859,8 +904,8 @@ public class ArmatureScalerEditor : EditorWindow
                     "Shape Keys: applied.",
                     "Pose: applied.",
                     "All: applied.",
-                    "↩  Restore Original",
-                    "Restored to original state.",
+                    "↩  Initialize Original (T-Pose/0)",
+                    "Restored to original state (Prefab or T-Pose/ShapeKeys 0).",
                     "Slide to preview. Buttons apply to scene.",
                 };
                 break;
@@ -908,7 +953,7 @@ public class ArmatureScalerEditor : EditorWindow
             {
                 lastKnownScale = boneTransform.localScale;
                 lastKnownRotation = boneTransform.localRotation;
-                lastKnownPosition = boneTransform.localPosition; // 포지션 업데이트
+                lastKnownPosition = boneTransform.localPosition;
                 Selection.activeGameObject = boneTransform.gameObject;
             }
             else
@@ -961,7 +1006,6 @@ public class ArmatureScalerEditor : EditorWindow
         return Quaternion.identity;
     }
 
-    // 추가: 포지션 Getter
     private Vector3 GetPartPosition(HumanoidBodyPart part)
     {
         if (positionValues.TryGetValue(part, out Vector3 p)) return p;
@@ -986,7 +1030,6 @@ public class ArmatureScalerEditor : EditorWindow
         }
     }
 
-    // 추가: 포지션 Updater
     private void UpdatePartPosition(Vector3 newPosition)
     {
         if (selectedPart != HumanoidBodyPart.None && positionValues.ContainsKey(selectedPart))
@@ -1008,7 +1051,6 @@ public class ArmatureScalerEditor : EditorWindow
 
     private string GetPartName(HumanoidBodyPart part)
     {
-        // ... (기존 이름 반환 로직 동일) ...
         switch (part)
         {
             case HumanoidBodyPart.Head: return UI_TEXT[6];
@@ -1040,7 +1082,6 @@ public class ArmatureScalerEditor : EditorWindow
     
     private HumanBodyBones GetBoneType(HumanoidBodyPart part)
     {
-        // ... (기존 로직 동일) ...
         switch (part)
         {
             case HumanoidBodyPart.Head: return HumanBodyBones.Head;
@@ -1115,7 +1156,6 @@ public class ArmatureScalerEditor : EditorWindow
         var matSet = new HashSet<Material>();
         var texSet = new HashSet<Texture>();
 
-        // Skinned meshes
         foreach (var smr in smrs)
         {
             if (smr.sharedMesh == null) continue;
@@ -1128,7 +1168,6 @@ public class ArmatureScalerEditor : EditorWindow
             if (smr.bones != null) foreach (var b in smr.bones) if (b != null) allBones.Add(b);
         }
 
-        // Static meshes
         foreach (var mf in mfs)
         {
             if (mf.sharedMesh == null) continue;
@@ -1140,13 +1179,9 @@ public class ArmatureScalerEditor : EditorWindow
             if (mr != null) foreach (var m in mr.sharedMaterials) if (m != null) matSet.Add(m);
         }
 
-        // 텍스처 — DiNeTextureVRAM 공용 유틸로 계산
-        info.textureMemoryBytes = DiNeTextureVRAM.CalcAvatarTextureVRAM(root, out int texCount);
-
         info.meshCount      = info.skinnedMeshCount + info.staticMeshCount;
         info.materialCount  = matSet.Count;
         info.boneCount      = allBones.Count;
-        info.textureCount   = texCount;
         return info;
     }
 
@@ -1161,7 +1196,6 @@ public class ArmatureScalerEditor : EditorWindow
 
         var i = _avatarInfo;
 
-        // 라벨 스타일
         var labelStyle = new GUIStyle(EditorStyles.miniLabel) { richText = true };
         var valueStyle = new GUIStyle(EditorStyles.miniLabel)
             { alignment = TextAnchor.MiddleRight, richText = true };
@@ -1195,57 +1229,47 @@ public class ArmatureScalerEditor : EditorWindow
 
         GUILayout.Space(2);
 
-        // 메쉬
         string meshLabel = language == LanguagePreset.Korean  ? "메쉬 수"
                          : language == LanguagePreset.Japanese ? "メッシュ数" : "Meshes";
         Row(meshLabel, $"{i.meshCount}  (Skinned {i.skinnedMeshCount} / Static {i.staticMeshCount})",
             WarnColor(i.meshCount, 8, 16));
 
-        // 버텍스
         string vtxLabel = language == LanguagePreset.Korean  ? "버텍스"
                         : language == LanguagePreset.Japanese ? "頂点数" : "Vertices";
         Row(vtxLabel, $"{i.totalVertices:N0}", WarnColor(i.totalVertices, 70000, 120000));
 
-        // 폴리곤
         string triLabel = language == LanguagePreset.Korean  ? "폴리곤 (tri)"
                         : language == LanguagePreset.Japanese ? "ポリゴン" : "Polygons (tri)";
         Row(triLabel, $"{i.totalTriangles:N0}", WarnColor(i.totalTriangles, 70000, 120000));
 
-        // 블렌드쉐이프
         string bsLabel = language == LanguagePreset.Korean  ? "블렌드쉐이프"
                        : language == LanguagePreset.Japanese ? "ブレンドシェイプ" : "Blend Shapes";
         Row(bsLabel, $"{i.totalBlendShapes}", WarnColor(i.totalBlendShapes, 200, 500));
 
-        // 본
         string boneLabel = language == LanguagePreset.Korean  ? "본 수"
                          : language == LanguagePreset.Japanese ? "ボーン数" : "Bones";
         Row(boneLabel, $"{i.boneCount}", WarnColor(i.boneCount, 256, 512));
 
-        // 머티리얼
         string matLabel = language == LanguagePreset.Korean  ? "머티리얼"
                         : language == LanguagePreset.Japanese ? "マテリアル" : "Materials";
         Row(matLabel, $"{i.materialCount}", WarnColor(i.materialCount, 8, 16));
 
-        // 텍스처
         string texLabel = language == LanguagePreset.Korean  ? "텍스처"
                         : language == LanguagePreset.Japanese ? "テクスチャ" : "Textures";
         Row(texLabel, $"{i.textureCount}", WarnColor(i.textureCount, 20, 40));
 
         GUILayout.Space(3);
 
-        // 메쉬 메모리
         string meshMemLabel = language == LanguagePreset.Korean  ? "메쉬 메모리"
                             : language == LanguagePreset.Japanese ? "メッシュメモリ" : "Mesh Memory";
         Row(meshMemLabel, FmtBytes(i.meshMemoryBytes),
             WarnColorL(i.meshMemoryBytes, 20 * 1024 * 1024, 50 * 1024 * 1024));
 
-        // 텍스처 메모리
         string texMemLabel = language == LanguagePreset.Korean  ? "텍스처 메모리"
                            : language == LanguagePreset.Japanese ? "テクスチャメモリ" : "Texture Memory";
         Row(texMemLabel, FmtBytes(i.textureMemoryBytes),
             WarnColorL(i.textureMemoryBytes, 60 * 1024 * 1024, 100 * 1024 * 1024));
 
-        // 총 메모리
         long totalMem = i.meshMemoryBytes + i.textureMemoryBytes;
         string totalMemLabel = language == LanguagePreset.Korean  ? "총 메모리 (추정)"
                              : language == LanguagePreset.Japanese ? "合計メモリ (推定)" : "Total Memory (est.)";
@@ -1358,7 +1382,6 @@ public class ArmatureScalerEditor : EditorWindow
 
         EditorGUI.DrawRect(area, new Color(0.15f, 0.15f, 0.15f, 1f));
 
-        // 선택된 본 정보 표시 (상단)
         if (selectedPart != HumanoidBodyPart.None)
         {
             HumanBodyBones selBone = GetBoneType(selectedPart);
@@ -1378,26 +1401,19 @@ public class ArmatureScalerEditor : EditorWindow
         Color lc = new Color(0.2f, 0.8f, 0.3f, 0.5f);
         float lw = 2f;
 
-        // ─── 여성형 실루엣 ───
-
-        // 머리
         Vector2 headC = new Vector2(cx, top + 35);
         DrawCircleOutline(headC, 28, lc, lw);
 
-        // 목
         float neckTop = top + 63;
         float neckBot = top + 80;
         DrawLineAA(new Vector2(cx - 8, neckTop), new Vector2(cx - 8, neckBot), lc, lw);
         DrawLineAA(new Vector2(cx + 8, neckTop), new Vector2(cx + 8, neckBot), lc, lw);
 
-        // 어깨
         float shY = top + 85;
         float shW = 85;
-        // 어깨 → 목 연결 (부드러운 경사)
         DrawLineAA(new Vector2(cx - 8, neckBot), new Vector2(cx - shW, shY + 5), lc, lw);
         DrawLineAA(new Vector2(cx + 8, neckBot), new Vector2(cx + shW, shY + 5), lc, lw);
 
-        // 몸통 (여성형: 가슴 넓고 허리 좁고 골반 넓음)
         float chestY = top + 130;
         float chestW = 52;
         float waistY = top + 200;
@@ -1405,88 +1421,69 @@ public class ArmatureScalerEditor : EditorWindow
         float hipY = top + 260;
         float hipW = 55;
 
-        // 어깨 → 가슴 (벌어지는 곡선)
         DrawLineAA(new Vector2(cx - shW, shY + 5), new Vector2(cx - chestW, chestY), lc, lw);
         DrawLineAA(new Vector2(cx + shW, shY + 5), new Vector2(cx + chestW, chestY), lc, lw);
 
-        // 가슴 → 허리 (좁아짐)
         DrawLineAA(new Vector2(cx - chestW, chestY), new Vector2(cx - waistW, waistY), lc, lw);
         DrawLineAA(new Vector2(cx + chestW, chestY), new Vector2(cx + waistW, waistY), lc, lw);
 
-        // 허리 → 골반 (넓어짐)
         DrawLineAA(new Vector2(cx - waistW, waistY), new Vector2(cx - hipW, hipY), lc, lw);
         DrawLineAA(new Vector2(cx + waistW, waistY), new Vector2(cx + hipW, hipY), lc, lw);
 
-        // 골반 하단 연결
         DrawLineAA(new Vector2(cx - hipW, hipY), new Vector2(cx - 22, hipY + 20), lc, lw);
         DrawLineAA(new Vector2(cx + hipW, hipY), new Vector2(cx + 22, hipY + 20), lc, lw);
 
-        // 가슴 곡선 힌트
         DrawLineAA(new Vector2(cx - 18, chestY - 10), new Vector2(cx - 25, chestY + 8), lc, lw);
         DrawLineAA(new Vector2(cx - 25, chestY + 8), new Vector2(cx - 15, chestY + 18), lc, lw);
         DrawLineAA(new Vector2(cx + 18, chestY - 10), new Vector2(cx + 25, chestY + 8), lc, lw);
         DrawLineAA(new Vector2(cx + 25, chestY + 8), new Vector2(cx + 15, chestY + 18), lc, lw);
 
-        // 팔
         float elbowY = top + 200;
         float handY = top + 290;
         float armOffX = 30;
-        // 왼팔
         DrawLineAA(new Vector2(cx - shW, shY + 5), new Vector2(cx - shW - armOffX, elbowY), lc, lw);
         DrawLineAA(new Vector2(cx - shW - armOffX, elbowY), new Vector2(cx - shW - armOffX - 18, handY), lc, lw);
-        // 오른팔
         DrawLineAA(new Vector2(cx + shW, shY + 5), new Vector2(cx + shW + armOffX, elbowY), lc, lw);
         DrawLineAA(new Vector2(cx + shW + armOffX, elbowY), new Vector2(cx + shW + armOffX + 18, handY), lc, lw);
 
-        // 다리
         float legSplit = 22;
         float kneeY = top + 410;
         float footY = top + 550;
-        // 왼다리
         DrawLineAA(new Vector2(cx - legSplit, hipY + 20), new Vector2(cx - legSplit - 12, kneeY), lc, lw);
         DrawLineAA(new Vector2(cx - legSplit - 12, kneeY), new Vector2(cx - legSplit - 8, footY), lc, lw);
-        // 오른다리
         DrawLineAA(new Vector2(cx + legSplit, hipY + 20), new Vector2(cx + legSplit + 12, kneeY), lc, lw);
         DrawLineAA(new Vector2(cx + legSplit + 12, kneeY), new Vector2(cx + legSplit + 8, footY), lc, lw);
 
-        // 발
         DrawLineAA(new Vector2(cx - legSplit - 8, footY), new Vector2(cx - legSplit - 22, footY + 18), lc, lw);
         DrawLineAA(new Vector2(cx + legSplit + 8, footY), new Vector2(cx + legSplit + 22, footY + 18), lc, lw);
 
-        // ─── 관절 버튼 ───
         float r = 12;
-        float rs = 8; // 세부 부위 반지름
+        float rs = 8; 
 
-        // 중심부
         DrawJointButton(HumanoidBodyPart.Head, headC, r);
         DrawJointButton(HumanoidBodyPart.Neck, new Vector2(cx, neckTop + 8), rs);
         DrawJointButton(HumanoidBodyPart.Torso, new Vector2(cx, chestY - 20), r);
         DrawJointButton(HumanoidBodyPart.Spine, new Vector2(cx, waistY), r);
         DrawJointButton(HumanoidBodyPart.Hips, new Vector2(cx, hipY + 5), r);
 
-        // 왼팔 (어깨/쇄골 포함)
         DrawJointButton(HumanoidBodyPart.LeftShoulder, new Vector2(cx - shW * 0.52f, shY + 2), rs);
         DrawJointButton(HumanoidBodyPart.LeftArm, new Vector2(cx - shW, shY + 5), r);
         DrawJointButton(HumanoidBodyPart.LeftLowerArm, new Vector2(cx - shW - armOffX, elbowY), r);
         DrawJointButton(HumanoidBodyPart.LeftHand, new Vector2(cx - shW - armOffX - 18, handY), r);
 
-        // 오른팔 (어깨/쇄골 포함)
         DrawJointButton(HumanoidBodyPart.RightShoulder, new Vector2(cx + shW * 0.52f, shY + 2), rs);
         DrawJointButton(HumanoidBodyPart.RightArm, new Vector2(cx + shW, shY + 5), r);
         DrawJointButton(HumanoidBodyPart.RightLowerArm, new Vector2(cx + shW + armOffX, elbowY), r);
         DrawJointButton(HumanoidBodyPart.RightHand, new Vector2(cx + shW + armOffX + 18, handY), r);
 
-        // 왼다리
         DrawJointButton(HumanoidBodyPart.LeftLeg, new Vector2(cx - legSplit - 5, hipY + 40), r);
         DrawJointButton(HumanoidBodyPart.LeftLowerLeg, new Vector2(cx - legSplit - 12, kneeY), r);
         DrawJointButton(HumanoidBodyPart.LeftFoot, new Vector2(cx - legSplit - 15, footY + 8), r);
 
-        // 오른다리
         DrawJointButton(HumanoidBodyPart.RightLeg, new Vector2(cx + legSplit + 5, hipY + 40), r);
         DrawJointButton(HumanoidBodyPart.RightLowerLeg, new Vector2(cx + legSplit + 12, kneeY), r);
         DrawJointButton(HumanoidBodyPart.RightFoot, new Vector2(cx + legSplit + 15, footY + 8), r);
 
-        // 세부 (가슴/엉덩이)
         DrawJointButton(HumanoidBodyPart.LeftBreast, new Vector2(cx - 22, chestY + 5), rs);
         DrawJointButton(HumanoidBodyPart.RightBreast, new Vector2(cx + 22, chestY + 5), rs);
         DrawJointButton(HumanoidBodyPart.LeftButt, new Vector2(cx - 30, hipY + 10), rs);
@@ -1510,7 +1507,6 @@ public class ArmatureScalerEditor : EditorWindow
         if (isSelected)
             DrawCircleOutline(center, radius + 4, new Color(0.3f, 0.5f, 1f, 0.5f), 2f);
 
-        // 짧은 라벨
         GUIStyle labelStyle = new GUIStyle(EditorStyles.miniLabel)
         {
             alignment = TextAnchor.MiddleCenter,
@@ -1522,7 +1518,6 @@ public class ArmatureScalerEditor : EditorWindow
         Rect labelRect = new Rect(center.x - sz.x / 2, center.y + radius + 2, sz.x, 13);
         GUI.Label(labelRect, shortLabel, labelStyle);
 
-        // 클릭
         if (found && Event.current.type == EventType.MouseDown && Event.current.button == 0 && clickRect.Contains(Event.current.mousePosition))
         {
             Event.current.Use();
@@ -1541,8 +1536,6 @@ public class ArmatureScalerEditor : EditorWindow
             Repaint();
         }
     }
-
-    // ─── 드로잉 헬퍼 ───
 
     private void DrawLineAA(Vector2 a, Vector2 b, Color color, float width)
     {
@@ -1591,7 +1584,6 @@ public class ArmatureScalerEditor : EditorWindow
     
     private void SetLanguage(LanguagePreset lang)
     {
-        // 텍스트 배열 확장 (41, 42, 43 인덱스 추가)
         switch (lang)
         {
             case LanguagePreset.Korean:
@@ -1607,8 +1599,8 @@ public class ArmatureScalerEditor : EditorWindow
                     "미발견", "선택한 프리셋 삭제", "프리셋 ‘", "’를 정말로 삭제하시겠습니까?",
                     "삭제", "취소", "사이즈 초기화", "로테이션 조절", "로테이션",
                     "스케일만 불러오기", "로테이션만 불러오기",
-                    "포지션 조절", "포지션", "포지션만 불러오기", // 41, 42, 43
-                    "목", "왼쪽 어깨", "오른쪽 어깨" // 44, 45, 46
+                    "포지션 조절", "포지션", "포지션만 불러오기", 
+                    "목", "왼쪽 어깨", "오른쪽 어깨" 
                 };
                 break;
             case LanguagePreset.Japanese:
@@ -1624,8 +1616,8 @@ public class ArmatureScalerEditor : EditorWindow
                     "未発見", "選択したプリセットを削除", "プリセット「", "」を本当に削除しますか？",
                     "削除", "キャンセル", "サイズリセット", "回転調整", "回転",
                     "スケールのみロード", "回転のみロード",
-                    "位置調整", "位置", "位置のみロード", // 41, 42, 43
-                    "首", "左肩", "右肩" // 44, 45, 46
+                    "位置調整", "位置", "位置のみロード", 
+                    "首", "左肩", "右肩" 
                 };
                 break;
             case LanguagePreset.English:
@@ -1642,8 +1634,8 @@ public class ArmatureScalerEditor : EditorWindow
                     "Not Found", "Delete Selected Preset", "Are you sure you want to delete the preset '", "'?",
                     "Delete", "Cancel", "Reset Scales", "Rotation Adjustment", "Rotation",
                     "Load Scale Only", "Load Rotation Only",
-                    "Position Adjustment", "Position", "Load Position Only", // 41, 42, 43
-                    "Neck", "Left Shoulder", "Right Shoulder" // 44, 45, 46
+                    "Position Adjustment", "Position", "Load Position Only", 
+                    "Neck", "Left Shoulder", "Right Shoulder" 
                 };
                 break;
         }
@@ -1662,7 +1654,6 @@ public class ArmatureScalerEditor : EditorWindow
         return result;
     }
     
-    // 로드 함수 수정 (Position 플래그 추가)
     private void LoadSelectedPreset(bool applyScale = true, bool applyRotation = true, bool applyPosition = true)
     {
         if (targetAvatarRoot == null)
@@ -1677,7 +1668,6 @@ public class ArmatureScalerEditor : EditorWindow
             ArmatureScalerPresetData loadedData = AssetDatabase.LoadAssetAtPath<ArmatureScalerPresetData>(filePath);
             if (loadedData != null)
             {
-                // 1. Scale
                 if (applyScale)
                 {
                     scaleValues.Clear();
@@ -1691,7 +1681,6 @@ public class ArmatureScalerEditor : EditorWindow
                     ArmatureScalerLogic.ApplyScale(boneMapping, MapToHumanBodyBones(scaleValues));
                 }
 
-                // 2. Rotation
                 if (applyRotation)
                 {
                     rotationValues.Clear();
@@ -1705,7 +1694,6 @@ public class ArmatureScalerEditor : EditorWindow
                     ArmatureScalerLogic.ApplyRotation(boneMapping, MapToHumanBodyBonesForRotation(rotationValues));
                 }
 
-                // 3. Position (추가됨)
                 if (applyPosition)
                 {
                     positionValues.Clear();
@@ -1756,13 +1744,11 @@ public class ArmatureScalerEditor : EditorWindow
             
             ArmatureScalerPresetData newPreset = ScriptableObject.CreateInstance<ArmatureScalerPresetData>();
             
-            // Scale 저장
             foreach (var kvp in scaleValues)
             {
                 newPreset.scales.dictionary.Add(kvp.Key.ToString(), new ArmatureScalerPresetData.SerializableVector3(kvp.Value));
             }
 
-            // Rotation 저장
             foreach (var kvp in rotationValues)
             {
                 if(CanRotate(kvp.Key))
@@ -1771,7 +1757,6 @@ public class ArmatureScalerEditor : EditorWindow
                 }
             }
 
-            // Position 저장 (추가됨)
             foreach (var kvp in positionValues)
             {
                 newPreset.positions.dictionary.Add(kvp.Key.ToString(), new ArmatureScalerPresetData.SerializableVector3(kvp.Value));
@@ -1809,9 +1794,6 @@ public class ArmatureScalerEditor : EditorWindow
                 {
                     scaleValues[part] = Vector3.one;
                 }
-                // *주의: 포지션은 0,0,0으로 초기화하면 뼈가 뭉개지므로 초기화 로직에 포함하지 않거나,
-                // 최초 로드 시의 값을 기억해두었다가 복구하는 방식이어야 합니다.
-                // 여기서는 스케일 초기화만 유지합니다. (요청에 스케일 리셋만 포함되어 있으므로)
             }
         }
         
@@ -1850,7 +1832,6 @@ public class ArmatureScalerEditor : EditorWindow
 
     private void DrawExpressionGUI()
     {
-        // ── 타겟 변경 감지 → Body SMR 재탐색 ──
         if (targetAvatarRoot != _prevExprTarget)
         {
             _prevExprTarget = targetAvatarRoot;
@@ -1860,7 +1841,6 @@ public class ArmatureScalerEditor : EditorWindow
 
         var prevBg = GUI.backgroundColor;
 
-        // ── 대상 오브젝트 ──
         EditorGUILayout.BeginVertical("box");
         EditorGUILayout.LabelField(language == LanguagePreset.Korean  ? "대상 설정"
                                  : language == LanguagePreset.Japanese ? "対象設定" : "Target", EditorStyles.boldLabel);
@@ -1893,35 +1873,29 @@ public class ArmatureScalerEditor : EditorWindow
             return;
         }
 
-        // ── 얼굴 프리뷰 (스크롤 독립 고정) ──
         DrawFacePreview();
         GUILayout.Space(5);
 
         _exprMainScroll = EditorGUILayout.BeginScrollView(_exprMainScroll);
 
-        // ── 애니메이션 클립 ──
         DrawExpressionClipSection(prevBg);
         GUILayout.Space(5);
 
-        // ── VRChat FX ──
         DrawExpressionFxSection(prevBg);
         GUILayout.Space(5);
 
-        // ── 쉐이프키 슬라이더 ──
         DrawExpressionShapeKeys(prevBg);
 
         EditorGUILayout.EndScrollView();
         GUI.backgroundColor = prevBg;
     }
 
-    // ── 얼굴 프리뷰 ──────────────────────────────
     private void DrawFacePreview()
     {
         float size = Mathf.Min(position.width - 20f, 260f);
         Rect previewRect = GUILayoutUtility.GetRect(size, size, GUILayout.ExpandWidth(false));
         previewRect.x = (position.width - size) * 0.5f;
 
-        // 배경
         Color bgCol = EditorGUIUtility.isProSkin ? new Color(0.22f, 0.22f, 0.22f) : new Color(0.76f, 0.76f, 0.76f);
         EditorGUI.DrawRect(previewRect, bgCol);
 
@@ -1933,7 +1907,6 @@ public class ArmatureScalerEditor : EditorWindow
             _facePreviewDirty = false;
         }
 
-        // 슬라이더 움직임 → dirty
         if (Event.current.type == EventType.Used)
             _facePreviewDirty = true;
     }
@@ -1943,7 +1916,6 @@ public class ArmatureScalerEditor : EditorWindow
         if (_bodySmr == null || targetAvatarRoot == null) return;
         if (size <= 0) return;
 
-        // RenderTexture 준비
         if (_faceRT == null || _faceRT.width != size)
         {
             if (_faceRT != null) _faceRT.Release();
@@ -1952,27 +1924,23 @@ public class ArmatureScalerEditor : EditorWindow
             _faceRT.Create();
         }
 
-        // Head bone 위치
         Vector3 headPos = targetAvatarRoot.transform.position + Vector3.up * 1.5f;
         if (boneMapping != null && boneMapping.TryGetValue(HumanBodyBones.Head, out Transform headBone))
             headPos = headBone.position;
 
-        // 임시 카메라
         var camGo = new GameObject("__AviExprPreviewCam__") { hideFlags = HideFlags.HideAndDontSave };
         var cam   = camGo.AddComponent<Camera>();
         cam.backgroundColor    = new Color(0, 0, 0, 0);
         cam.clearFlags         = CameraClearFlags.SolidColor;
         cam.orthographic       = false;
         cam.fieldOfView        = 22f;
-        cam.nearClipPlane      = 0.15f;  // 팽창된 바디 메쉬가 카메라를 둘러싸도 클리핑되도록
+        cam.nearClipPlane      = 0.15f;  
         cam.farClipPlane       = 100f;
         cam.targetTexture      = _faceRT;
         cam.cullingMask        = -1;
         cam.enabled            = false;
 
-        // 아바타 정면 방향 계산
         Vector3 avatarForward = targetAvatarRoot.transform.forward;
-        // 카메라를 약간 위쪽에서 앞쪽으로 배치 (얼굴 줌인)
         cam.transform.position = headPos + avatarForward * 0.45f + Vector3.up * 0.04f;
         cam.transform.LookAt(headPos + Vector3.up * 0.04f);
 
@@ -1981,7 +1949,6 @@ public class ArmatureScalerEditor : EditorWindow
         DestroyImmediate(camGo);
     }
 
-    // ── 애니메이션 클립 섹션 ─────────────────────
     private void DrawExpressionClipSection(Color prevBg)
     {
         EditorGUILayout.BeginVertical("box");
@@ -1997,7 +1964,6 @@ public class ArmatureScalerEditor : EditorWindow
 
         EditorGUILayout.LabelField(clipLabel, EditorStyles.boldLabel);
 
-        // 클립 할당 필드 (할당 시 자동 불러오기)
         EditorGUILayout.BeginHorizontal();
         EditorGUI.BeginChangeCheck();
         _exprClip = (AnimationClip)EditorGUILayout.ObjectField(_exprClip, typeof(AnimationClip), false);
@@ -2014,7 +1980,6 @@ public class ArmatureScalerEditor : EditorWindow
         }
         EditorGUILayout.EndHorizontal();
 
-        // 새 클립이거나 미할당 시 이름 입력
         if (_exprClip == null)
         {
             _exprNewClipName = EditorGUILayout.TextField(
@@ -2024,14 +1989,12 @@ public class ArmatureScalerEditor : EditorWindow
 
         EditorGUILayout.BeginHorizontal();
 
-        // 덮어쓰기 저장 (클립 있을 때만 활성)
         GUI.backgroundColor = new Color(0.25f, 0.65f, 0.60f);
         EditorGUI.BeginDisabledGroup(_exprClip == null);
         if (GUILayout.Button(overwrite, GUILayout.ExpandWidth(true), GUILayout.Height(28)))
             SaveExpressionClip(overwriteExisting: true);
         EditorGUI.EndDisabledGroup();
 
-        // 새 파일로 저장
         GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
         if (GUILayout.Button(saveAsNew, GUILayout.ExpandWidth(true), GUILayout.Height(28)))
             SaveExpressionClip(overwriteExisting: false);
@@ -2042,7 +2005,6 @@ public class ArmatureScalerEditor : EditorWindow
         EditorGUILayout.EndVertical();
     }
 
-    // ── VRChat FX 섹션 ───────────────────────────
     private void DrawExpressionFxSection(Color prevBg)
     {
         string fxTitle      = language == LanguagePreset.Korean  ? "VRChat FX 연동"
@@ -2055,7 +2017,6 @@ public class ArmatureScalerEditor : EditorWindow
         {
             EditorGUILayout.BeginVertical("box");
 
-            // FX 컨트롤러 필드 (수동 지정용)
             EditorGUI.BeginChangeCheck();
             _exprFxController = (UnityEditor.Animations.AnimatorController)EditorGUILayout.ObjectField(
                 "FX Controller", _exprFxController,
@@ -2064,7 +2025,6 @@ public class ArmatureScalerEditor : EditorWindow
 
             if (_exprFxController != null)
             {
-                // Left Hand / Right Hand 레이어 탭
                 var layerNames = GetHandLayerNames(_exprFxController);
                 if (layerNames.Length > 0)
                 {
@@ -2093,21 +2053,18 @@ public class ArmatureScalerEditor : EditorWindow
                             EditorGUILayout.BeginHorizontal();
                             bool sel = _exprFxStateSel == i;
 
-                            // 메인 버튼: 스테이트 이름 (토글 미리보기)
                             GUI.backgroundColor = sel ? new Color(0.30f, 0.82f, 0.76f) : prevBg;
                             string stateLabel = clips[i].state != null ? clips[i].state.name : "(no state)";
                             if (GUILayout.Button(stateLabel, GUILayout.ExpandWidth(true), GUILayout.Height(22)))
                             {
                                 if (sel)
                                 {
-                                    // 이미 선택된 버튼 → 토글 OFF, 작업 상태 복원
                                     _exprFxStateSel    = -1;
                                     _exprFxPreviewMode = false;
                                     RestoreWorkingValues();
                                 }
                                 else
                                 {
-                                    // 새 버튼 선택 → 현재 작업 저장 후 미리보기
                                     if (!_exprFxPreviewMode) SaveWorkingValues();
                                     _exprFxStateSel    = i;
                                     _exprFxPreviewMode = true;
@@ -2116,11 +2073,9 @@ public class ArmatureScalerEditor : EditorWindow
                             }
                             GUI.backgroundColor = prevBg;
 
-                            // 클립 이름 (작게, 우측)
                             string clipName = clips[i].clip != null ? clips[i].clip.name : "(empty)";
                             GUILayout.Label(clipName, clipNameStyle, GUILayout.Width(110));
 
-                            // 교체 버튼 (미리보기 없이도 항상 활성)
                             GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
                             if (GUILayout.Button(replaceLabel, GUILayout.Width(110), GUILayout.Height(22)))
                             {
@@ -2158,7 +2113,6 @@ public class ArmatureScalerEditor : EditorWindow
         EditorGUILayout.EndFoldoutHeaderGroup();
     }
 
-    // ── 쉐이프키 슬라이더 ────────────────────────
     private void DrawExpressionShapeKeys(Color prevBg)
     {
         if (_bodySmr == null || _bodySmr.sharedMesh == null) return;
@@ -2176,11 +2130,9 @@ public class ArmatureScalerEditor : EditorWindow
                        : language == LanguagePreset.Japanese ? $"シェイプキー  ({count}個)" : $"Shape Keys  ({count})";
         EditorGUILayout.LabelField(skLabel, EditorStyles.boldLabel);
 
-        // 검색
         _exprShapeSearch = EditorGUILayout.TextField("", _exprShapeSearch, EditorStyles.toolbarSearchField);
         GUILayout.Space(3);
 
-        // 리셋 버튼
         EditorGUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
         GUI.backgroundColor = new Color(0.21f, 0.21f, 0.24f);
@@ -2227,7 +2179,6 @@ public class ArmatureScalerEditor : EditorWindow
         EditorGUILayout.EndVertical();
     }
 
-    // ── 헬퍼: FX 미리보기 작업 상태 저장/복원 ────
     private void SaveWorkingValues()
     {
         if (_bodySmr == null || _bodySmr.sharedMesh == null) return;
@@ -2258,7 +2209,6 @@ public class ArmatureScalerEditor : EditorWindow
         Undo.RecordObject(_bodySmr, "Avi Editor FX Preview");
         int cnt = _bodySmr.sharedMesh.blendShapeCount;
 
-        // 먼저 0으로 리셋 (이전 표정 지우기)
         for (int i = 0; i < cnt; i++)
         {
             _bodySmr.SetBlendShapeWeight(i, 0f);
@@ -2266,7 +2216,6 @@ public class ArmatureScalerEditor : EditorWindow
                 _exprShapeValues[i] = 0f;
         }
 
-        // 클립 값 적용
         string smrPath = AnimationUtility.CalculateTransformPath(_bodySmr.transform, targetAvatarRoot.transform);
         foreach (var b in AnimationUtility.GetCurveBindings(clip))
         {
@@ -2287,14 +2236,12 @@ public class ArmatureScalerEditor : EditorWindow
         Repaint();
     }
 
-    // ── 헬퍼: Body SMR 탐색 ──────────────────────
     private void RefreshBodySmr()
     {
         _bodySmr = null;
         _exprShapeValues = null;
         if (targetAvatarRoot == null) return;
 
-        // Expression 탭에서 직접 할당한 경우 boneMapping 보장
         if (boneMapping == null)
             boneMapping = ArmatureScalerCore.AssignBoneMappings(targetAvatarRoot);
 
@@ -2307,7 +2254,6 @@ public class ArmatureScalerEditor : EditorWindow
             }
         }
 
-        // Body가 없으면 블렌드쉐이프가 가장 많은 SMR 사용
         if (_bodySmr == null)
         {
             int best = -1;
@@ -2327,13 +2273,11 @@ public class ArmatureScalerEditor : EditorWindow
                 _exprShapeValues[i] = _bodySmr.GetBlendShapeWeight(i);
         }
 
-        // FX 컨트롤러 자동 탐색
         _exprFxController = null;
         _exprFxStateSel   = -1;
         AutoFindFxController();
     }
 
-    // ── 헬퍼: 클립에서 쉐이프키 불러오기 ────────
     private void LoadExpressionFromClip()
     {
         if (_exprClip == null || _bodySmr == null || _bodySmr.sharedMesh == null) return;
@@ -2344,14 +2288,12 @@ public class ArmatureScalerEditor : EditorWindow
         if (_exprShapeValues == null || _exprShapeValues.Length != cnt)
             _exprShapeValues = new float[cnt];
 
-        // 클립의 t=0 값 적용
         foreach (var b in AnimationUtility.GetCurveBindings(_exprClip))
         {
             if (!b.propertyName.StartsWith("blendShape.")) continue;
             var curve = AnimationUtility.GetEditorCurve(_exprClip, b);
             if (curve == null) continue;
 
-            // Body 경로 매칭
             var t = string.IsNullOrEmpty(b.path) ? targetAvatarRoot.transform
                     : targetAvatarRoot.transform.Find(b.path);
             if (t == null || t.GetComponent<SkinnedMeshRenderer>() != _bodySmr) continue;
@@ -2369,7 +2311,6 @@ public class ArmatureScalerEditor : EditorWindow
         Repaint();
     }
 
-    // ── 헬퍼: 클립 저장 ──────────────────────────
     private void SaveExpressionClip(bool overwriteExisting = false)
     {
         if (_bodySmr == null || _bodySmr.sharedMesh == null) return;
@@ -2379,24 +2320,20 @@ public class ArmatureScalerEditor : EditorWindow
 
         if (overwriteExisting && _exprClip != null)
         {
-            // 기존 클립 덮어쓰기
             clip = _exprClip;
             path = AssetDatabase.GetAssetPath(clip);
         }
         else
         {
-            // 새 클립 생성
             clip = new AnimationClip();
             string dir = "Assets/Di Ne/Expressions";
             if (!System.IO.Directory.Exists(dir)) System.IO.Directory.CreateDirectory(dir);
             string baseName = string.IsNullOrEmpty(_exprNewClipName) ? "New Expression" : _exprNewClipName;
-            // 새로 저장 시 현재 클립 이름을 기본값으로 사용
             if (!overwriteExisting && _exprClip != null)
                 baseName = _exprClip.name;
             path = AssetDatabase.GenerateUniqueAssetPath($"{dir}/{baseName}.anim");
         }
 
-        // 전체 블렌드쉐이프 키프레임 쓰기
         Undo.RecordObject(clip, "Save Expression Clip");
         clip.ClearCurves();
 
@@ -2405,7 +2342,7 @@ public class ArmatureScalerEditor : EditorWindow
         for (int i = 0; i < cnt; i++)
         {
             float val = _exprShapeValues != null ? _exprShapeValues[i] : _bodySmr.GetBlendShapeWeight(i);
-            if (val == 0f) continue; // 0인 키는 생략
+            if (val == 0f) continue; 
 
             string propName = "blendShape." + _bodySmr.sharedMesh.GetBlendShapeName(i);
             var curve = AnimationCurve.Constant(0f, 0f, val);
@@ -2429,13 +2366,10 @@ public class ArmatureScalerEditor : EditorWindow
         Debug.Log($"[Avi Editor] Expression saved → {path}");
     }
 
-    // ── 헬퍼: FX 컨트롤러 자동 탐색 ─────────────
     private void AutoFindFxController()
     {
         if (targetAvatarRoot == null) return;
 
-        // ① VRCAvatarDescriptor 리플렉션 (SDK3 설치된 경우)
-        //    SDK 어셈블리 이름이 프로젝트마다 다를 수 있어 모든 로드된 어셈블리를 순회
         System.Type vrcDescType = null;
         foreach (var asm in System.AppDomain.CurrentDomain.GetAssemblies())
         {
@@ -2466,11 +2400,9 @@ public class ArmatureScalerEditor : EditorWindow
                                 System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
                             if (typeProp == null || animProp == null) continue;
 
-                            // enum → string 비교 (값이 환경에 따라 달라질 수 있어 이름으로 비교)
                             string typeStr = typeProp.GetValue(layer).ToString();
                             if (typeStr != "FX") continue;
 
-                            // isDefault == true이면 기본 컨트롤러(없는 것), false면 커스텀 할당
                             bool isDef = defProp != null && (bool)defProp.GetValue(layer);
                             if (isDef) continue;
 
@@ -2482,7 +2414,6 @@ public class ArmatureScalerEditor : EditorWindow
             }
         }
 
-        // ② 폴백 A: 아바타 루트 Animator의 runtimeAnimatorController에서 FX 레이어 탐색
         var rootAnimator = targetAvatarRoot.GetComponent<Animator>();
         if (rootAnimator != null)
         {
@@ -2501,7 +2432,6 @@ public class ArmatureScalerEditor : EditorWindow
             }
         }
 
-        // ③ 폴백 B: 자식 포함 모든 Animator 순회
         foreach (var anim in targetAvatarRoot.GetComponentsInChildren<Animator>(true))
         {
             var ctrl = anim.runtimeAnimatorController as UnityEditor.Animations.AnimatorController;
@@ -2515,7 +2445,6 @@ public class ArmatureScalerEditor : EditorWindow
             if (hasHand) { _exprFxController = ctrl; return; }
         }
 
-        // ④ 폴백 C: 프로젝트 내 FX 이름 포함 AnimatorController 검색
         string[] guids = AssetDatabase.FindAssets("t:AnimatorController FX", new[] { "Assets" });
         foreach (var guid in guids)
         {
@@ -2536,7 +2465,6 @@ public class ArmatureScalerEditor : EditorWindow
         Debug.LogWarning("[Avi Editor] FX controller not found. Please assign it manually.");
     }
 
-    // ── 헬퍼: Left/Right Hand 레이어 이름 목록 ───
     private string[] GetHandLayerNames(UnityEditor.Animations.AnimatorController ctrl)
     {
         var result = new System.Collections.Generic.List<string>();
@@ -2549,7 +2477,6 @@ public class ArmatureScalerEditor : EditorWindow
         return result.ToArray();
     }
 
-    // ── 헬퍼: 레이어 내 클립 목록 ───────────────
     private struct FxClipEntry { public AnimationClip clip; public UnityEditor.Animations.AnimatorState state; }
     private FxClipEntry[] GetHandLayerClips(UnityEditor.Animations.AnimatorController ctrl, string layerName)
     {
@@ -2566,13 +2493,11 @@ public class ArmatureScalerEditor : EditorWindow
         return result.ToArray();
     }
 
-    // ── 헬퍼: FX 레이어 클립 교체 ───────────────
     private void ReplaceClipInFxLayer(UnityEditor.Animations.AnimatorController ctrl, string layerName, int stateIndex)
     {
         AnimationClip targetClip = _exprClip;
         if (targetClip == null)
         {
-            // 저장 먼저
             SaveExpressionClip();
             targetClip = _exprClip;
         }

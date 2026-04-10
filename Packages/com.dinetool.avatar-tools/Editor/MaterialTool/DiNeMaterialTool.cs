@@ -138,9 +138,10 @@ public class DiNeMaterialTool : EditorWindow
 
     private static readonly SectionDef[] SECTIONS = new[]
     {
-        new SectionDef(new[]{"Shadow / AO",  "쉐도우 / AO",  "シャドウ / AO"},
-            new[]{"_ShadowStrengthMask","_ShadowBorderMask","_ShadowBlurMask",
-                  "_Shadow2ndColorTex","_Shadow3rdColorTex"}),
+        new SectionDef(new[]{"Shadow / AO",    "쉐도우 / AO",    "シャドウ / AO"},
+            new[]{"_ShadowStrengthMask","_Shadow2ndColorTex","_Shadow3rdColorTex"}),
+        new SectionDef(new[]{"Shadow Mask",    "쉐도우 마스크",  "シャドウマスク"},
+            new[]{"_ShadowBorderMask","_ShadowBlurMask"}),
         new SectionDef(new[]{"Outline",      "아웃라인",      "アウトライン"},
             new[]{"_OutlineTex","_OutlineWidthMask","_OutlineVectorTex"},
             "_UseOutline"),   // lilToon unified: _UseOutline=0 / Outline variant: _OutlineWidth=0
@@ -289,9 +290,9 @@ public class DiNeMaterialTool : EditorWindow
         if (_dietEnabled == null || _dietEnabled.Length != SECTIONS.Length)
         {
             _dietEnabled = new bool[SECTIONS.Length];
-            // default: Shadow/AO, Outline, Normal, MatCap, Rim, Emission on
+            // default: Shadow/AO, Shadow Mask, Outline, Normal, MatCap, Rim, Emission on
             for (int i = 0; i < SECTIONS.Length; i++)
-                _dietEnabled[i] = i < 6;
+                _dietEnabled[i] = i < 7;
         }
         LoadSettings();
         ScanLibrary();
@@ -1357,8 +1358,11 @@ public class DiNeMaterialTool : EditorWindow
 
             GUILayout.Space(4);
 
-            // 해상도 드롭다운
-            int curSizeIdx = System.Array.IndexOf(_sizeOptions, importer.maxTextureSize);
+            // 해상도 드롭다운 (플랫폼 오버라이드 적용)
+            var _platSet = importer.GetPlatformTextureSettings(GetActivePlatformName());
+            int _displayMaxSize = (_platSet.overridden && _platSet.maxTextureSize > 0)
+                ? _platSet.maxTextureSize : importer.maxTextureSize;
+            int curSizeIdx = System.Array.IndexOf(_sizeOptions, _displayMaxSize);
             if (curSizeIdx < 0) curSizeIdx = _sizeOptions.Length - 1; 
             int newSizeIdx = EditorGUILayout.Popup(curSizeIdx, _sizeNames, GUILayout.Width(70));
             if (newSizeIdx != curSizeIdx)
@@ -1534,14 +1538,16 @@ public class DiNeMaterialTool : EditorWindow
     private TextureVRAMInfo CalculateVRAMInfo(Texture tex)
     {
         var info = new TextureVRAMInfo { Texture = tex, AssetPath = AssetDatabase.GetAssetPath(tex) };
-        info.MaxDimension = Mathf.Max(tex.width, tex.height);
+        int origMaxDim = Mathf.Max(tex.width, tex.height);
+        info.MaxDimension = origMaxDim;
 
         if (tex is Texture2D t2d)
         {
             info.Format = t2d.format;
             info.FormatString = t2d.format.ToString();
             if (!DiNeTextureVRAM.TryGetBPP(t2d.format, out info.BPP)) info.BPP = 16;
-            info.VRAMBytes = DiNeTextureVRAM.CalcTextureVRAM(tex);
+
+            float resScale = 1f;
 
             if (!string.IsNullOrEmpty(info.AssetPath))
             {
@@ -1551,6 +1557,23 @@ public class DiNeMaterialTool : EditorWindow
                     info.HasAlpha = importer.DoesSourceTextureHaveAlpha();
                     info.MinBPP = (info.HasAlpha || importer.textureType == TextureImporterType.NormalMap) ? 8 : 4;
 
+                    // ── 플랫폼 오버라이드 maxSize 반영 ─────────────────────────
+                    // tex.width/height 는 에디터 활성 플랫폼 기준으로 로드되므로
+                    // importer를 통해 실제 적용 해상도를 명시적으로 계산한다.
+                    string platform = GetActivePlatformName();
+                    var platSet = importer.GetPlatformTextureSettings(platform);
+                    int effectiveMaxSize = (platSet.overridden && platSet.maxTextureSize > 0)
+                        ? platSet.maxTextureSize
+                        : importer.maxTextureSize;
+
+                    info.MaxDimension = Mathf.Min(origMaxDim, effectiveMaxSize);
+                    resScale = info.MaxDimension < origMaxDim
+                        ? (float)info.MaxDimension / origMaxDim
+                        : 1f;
+                    // ──────────────────────────────────────────────────────────
+
+                    info.VRAMBytes = DiNeTextureVRAM.CalcTextureVRAMWithBPP(tex, info.BPP, resScale);
+
                     // 포맷 최적화 가능 여부
                     if (info.BPP > info.MinBPP)
                     {
@@ -1558,17 +1581,25 @@ public class DiNeMaterialTool : EditorWindow
                         info.SuggestedFormat = (info.HasAlpha || importer.textureType == TextureImporterType.NormalMap)
                             ? TextureImporterFormat.BC7 : TextureImporterFormat.DXT1;
                         float newBpp = info.SuggestedFormat == TextureImporterFormat.BC7 ? 8f : 4f;
-                        info.FormatSavings = info.VRAMBytes - DiNeTextureVRAM.CalcTextureVRAMWithBPP(tex, newBpp);
+                        info.FormatSavings = info.VRAMBytes - DiNeTextureVRAM.CalcTextureVRAMWithBPP(tex, newBpp, resScale);
                     }
 
-                    // 해상도 축소 가능 여부
+                    // 해상도 축소 가능 여부 (오버라이드 적용 후 실효 해상도 기준)
                     if (info.MaxDimension > 2048)
                     {
                         info.CanOptimizeSize = true;
-                        float scale = 2048f / info.MaxDimension;
-                        info.SizeSavings = info.VRAMBytes - DiNeTextureVRAM.CalcTextureVRAMWithBPP(tex, info.BPP, scale);
+                        float sizeScale = resScale * (2048f / info.MaxDimension);
+                        info.SizeSavings = info.VRAMBytes - DiNeTextureVRAM.CalcTextureVRAMWithBPP(tex, info.BPP, sizeScale);
                     }
                 }
+                else
+                {
+                    info.VRAMBytes = DiNeTextureVRAM.CalcTextureVRAMWithBPP(tex, info.BPP);
+                }
+            }
+            else
+            {
+                info.VRAMBytes = DiNeTextureVRAM.CalcTextureVRAMWithBPP(tex, info.BPP);
             }
         }
         else

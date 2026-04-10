@@ -3,39 +3,61 @@ using UnityEngine;
 using System.IO;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO.Compression;
+using System.Text;
 
 public class DiNePackagePatcher : EditorWindow
 {
+    [System.Serializable]
+    public class PackageItem
+    {
+        public string SourcePath;
+        public string PackagePathInZip;
+        public string DisplayName;
+        public bool IsSelected = true;
+        public bool IsFromZip = false;
+
+        public PackageItem(string sourcePath, string displayName, bool isFromZip, string packagePathInZip = null)
+        {
+            SourcePath = sourcePath;
+            DisplayName = displayName;
+            IsFromZip = isFromZip;
+            PackagePathInZip = packagePathInZip;
+        }
+    }
+
     private enum LanguagePreset { English, Korean, Japanese }
     private LanguagePreset language = LanguagePreset.Korean;
 
-    private string selectedFolderPath = "";
     private string targetFolderName = "_1_Patch";
-    private List<string> foundPackages = new List<string>();
+    private List<PackageItem> foundPackages = new List<PackageItem>();
     private Vector2 packageScrollPos;
 
     private string statusMessage = "";
     private bool isImporting = false;
+    private bool forceInteractive = false; // 수동 창 띄우기 옵션
 
     private string[] UI_TEXT;
     private Texture2D windowIcon;
     private Texture2D tabIcon;
-    private Font      titleFont;
-    private Texture2D selectedButtonTex;
+    private Font titleFont;
 
-    // 임포트 추적용 정적 필드
-    private static string[] preImportFolders;
-    private static int totalPackagesToImport = 0;
-    private static int currentlyProcessedPackages = 0;
-    private static string pendingTargetFolderName = "_1_Patch";
-    private static DiNePackagePatcher activeWindow;
+    private string[] preImportFolders;
+    private int totalPackagesToImport = 0;
+    private int currentlyProcessedPackages = 0;
+    private string pendingTargetFolderName = "_1_Patch";
+    
+    private Queue<string> importQueue = new Queue<string>();
+    
+    private static string tempExtractPath = "Temp/DiNePatcher_Extract";
 
     [MenuItem("DiNe/EX/Package Patcher", false, 100)]
     public static void ShowWindow()
     {
-        EditorWindow window = GetWindow<DiNePackagePatcher>();
-        window.minSize = new Vector2(300, 350);
-        window.position = new Rect(window.position.x, window.position.y, 420, 580);
+        DiNePackagePatcher window = GetWindow<DiNePackagePatcher>();
+        window.titleContent = new GUIContent("Package Patcher");
+        window.minSize = new Vector2(400, 680);
+        window.Show();
     }
 
     void OnEnable()
@@ -43,381 +65,336 @@ public class DiNePackagePatcher : EditorWindow
         windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
         tabIcon    = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
         titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
-        titleContent = new GUIContent("Package", tabIcon);
-        selectedButtonTex = MakeTex(1, 1, new Color(0.2f, 0.4f, 1f, 1f));
         SetLanguage(language);
-        activeWindow = this;
+        
+        isImporting = false;
+        statusMessage = "";
     }
 
-    void OnDisable()
-    {
-        if (activeWindow == this) activeWindow = null;
-    }
+    void OnDisable() { CleanTempFolder(); }
 
     void OnGUI()
     {
         GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
 
-        // ─── 타이틀 바 ───
+        // --- 타이틀 바 ---
         EditorGUILayout.BeginVertical("box");
+        GUILayout.Space(10);
         EditorGUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
-        GUIStyle titleStyle = new GUIStyle(EditorStyles.label)
-        {
-            font      = titleFont,
-            alignment = TextAnchor.MiddleCenter,
-            fontStyle = FontStyle.Bold,
-            fontSize  = 36,
-            normal    = new GUIStyleState() { textColor = Color.white }
-        };
-        float iconSize = 72f;
-        GUILayout.Label(windowIcon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
-        GUILayout.Space(6);
+        GUIStyle titleStyle = new GUIStyle(EditorStyles.label) { font = titleFont, alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold, fontSize = 42, normal = { textColor = Color.white } };
+        float iconSize = 84f;
+        if (windowIcon != null) GUILayout.Label(windowIcon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
+        GUILayout.Space(12);
         GUILayout.Label("Package Patcher", titleStyle, GUILayout.Height(iconSize));
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
-
-        GUILayout.Space(4);
-        string desc = "";
-        switch (language)
-        {
-            case LanguagePreset.Korean: desc = "DiNe 툴의 최신 업데이트를 일괄 설치하고, 지정된 폴더로 정리합니다."; break;
-            case LanguagePreset.Japanese: desc = "DiNeツールの最新アップデートを一括インストールし、指定フォルダに整理します。"; break;
-            default: desc = "Batch install the latest DiNe tool updates and organize them into the specified folder."; break;
-        }
-        GUILayout.Label(desc, new GUIStyle(EditorStyles.wordWrappedLabel) 
-            { alignment = TextAnchor.MiddleCenter, fontSize = 12, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } });
-
-        GUILayout.Space(5);
+        GUILayout.Space(8);
+        GUIStyle descStyle = new GUIStyle(EditorStyles.centeredGreyMiniLabel) { wordWrap = true, fontSize = 11, normal = { textColor = new Color(0.7f, 0.7f, 0.7f) } };
+        GUILayout.Label(UI_TEXT[13], descStyle);
+        GUILayout.Space(12);
         EditorGUILayout.EndVertical();
 
         GUILayout.Space(5);
 
-        // ─── 언어 선택 ───
         int currentLangIndex = (int)language;
-        string[] langButtons = { "English", "한국어", "日本語" };
-        int newLangIndex = DrawCustomToolbar(currentLangIndex, langButtons, 30);
-        if (newLangIndex != currentLangIndex)
-        {
-            language = (LanguagePreset)newLangIndex;
-            SetLanguage(language);
-        }
-        GUILayout.Space(10);
+        int newLangIndex = DrawCustomToolbar(currentLangIndex, new string[] { "English", "한국어", "日本語" }, 30);
+        if (newLangIndex != currentLangIndex) { language = (LanguagePreset)newLangIndex; SetLanguage(language); }
 
-        // ─── 설정 박스 ───
+        // --- 설정 ---
         EditorGUILayout.BeginVertical("box");
-        EditorGUILayout.LabelField(UI_TEXT[0], EditorStyles.boldLabel); // 설정
-        GUILayout.Space(3);
         EditorGUILayout.BeginHorizontal();
-        EditorGUILayout.LabelField(UI_TEXT[1], GUILayout.Width(130)); // 이동 폴더명
+        EditorGUILayout.LabelField(UI_TEXT[1], GUILayout.Width(110));
         targetFolderName = EditorGUILayout.TextField(targetFolderName);
         EditorGUILayout.EndHorizontal();
-
-        // 동일 폴더 존재 경고
-        if (!string.IsNullOrEmpty(targetFolderName) && AssetDatabase.IsValidFolder("Assets/" + targetFolderName))
-        {
-            GUILayout.Space(2);
-            GUILayout.Label(UI_TEXT[12], new GUIStyle(EditorStyles.miniLabel)
-                { normal = { textColor = new Color(1f, 0.3f, 0.3f) }, fontStyle = FontStyle.Bold, wordWrap = true });
-        }
-
+        
+        // 에러 방지용 대화창 옵션
+        EditorGUILayout.BeginHorizontal();
+        EditorGUILayout.LabelField("임포트 창 강제 표시 (에러시 체크)", GUILayout.Width(200));
+        forceInteractive = EditorGUILayout.Toggle(forceInteractive);
+        EditorGUILayout.EndHorizontal();
         EditorGUILayout.EndVertical();
 
         GUILayout.Space(5);
 
-        // ─── 폴더 선택 박스 ───
-        EditorGUILayout.BeginVertical("box");
-        EditorGUILayout.LabelField(UI_TEXT[2], EditorStyles.boldLabel); // 패키지 폴더
-        GUILayout.Space(3);
-
-        if (GUILayout.Button(UI_TEXT[3], GUILayout.Height(30))) // 폴더 선택
-        {
-            string path = EditorUtility.OpenFolderPanel(UI_TEXT[3], selectedFolderPath, "");
-            if (!string.IsNullOrEmpty(path))
-            {
-                selectedFolderPath = path;
-                RefreshPackageList();
-            }
-        }
-
-        if (!string.IsNullOrEmpty(selectedFolderPath))
-        {
-            GUIStyle pathStyle = new GUIStyle(EditorStyles.miniLabel)
-            {
-                wordWrap = true,
-                normal = { textColor = new Color(0.6f, 0.6f, 0.6f) }
-            };
-            GUILayout.Label(selectedFolderPath, pathStyle);
-        }
+        // --- 드래그 앤 드롭 영역 ---
+        Rect dropArea = GUILayoutUtility.GetRect(0f, 90f, GUILayout.ExpandWidth(true));
+        GUI.Box(dropArea, $"\n\n\n{UI_TEXT[3]}", EditorStyles.helpBox);
+        HandleDragAndDrop(dropArea);
 
         GUILayout.Space(5);
 
-        // 패키지 목록
-        EditorGUILayout.LabelField(UI_TEXT[4], EditorStyles.boldLabel); // 패키지 목록
-        packageScrollPos = EditorGUILayout.BeginScrollView(packageScrollPos, GUILayout.Height(120));
+        // --- 패키지 목록 ---
+        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.BeginHorizontal();
+        EditorGUILayout.LabelField($"{UI_TEXT[4]} ({foundPackages.Count})", EditorStyles.boldLabel);
+        if (foundPackages.Count > 0)
+        {
+            if (GUILayout.Button("Clear", EditorStyles.miniButton, GUILayout.Width(50))) { foundPackages.Clear(); statusMessage = ""; GUIUtility.ExitGUI(); }
+            if (GUILayout.Button("All", EditorStyles.miniButtonLeft, GUILayout.Width(40))) { foundPackages.ForEach(p => p.IsSelected = true); GUIUtility.ExitGUI(); }
+            if (GUILayout.Button("None", EditorStyles.miniButtonRight, GUILayout.Width(45))) { foundPackages.ForEach(p => p.IsSelected = false); GUIUtility.ExitGUI(); }
+        }
+        EditorGUILayout.EndHorizontal();
 
+        packageScrollPos = EditorGUILayout.BeginScrollView(packageScrollPos, GUILayout.Height(250));
         if (foundPackages.Count == 0)
         {
-            GUIStyle emptyStyle = new GUIStyle(EditorStyles.centeredGreyMiniLabel)
-            {
-                wordWrap = true
-            };
             GUILayout.FlexibleSpace();
-            EditorGUILayout.LabelField(string.IsNullOrEmpty(selectedFolderPath) ? UI_TEXT[5] : UI_TEXT[6], emptyStyle);
+            EditorGUILayout.LabelField(UI_TEXT[5], EditorStyles.centeredGreyMiniLabel);
             GUILayout.FlexibleSpace();
         }
         else
         {
-            GUIStyle itemStyle = new GUIStyle(EditorStyles.miniLabel)
-            {
-                normal = { textColor = new Color(0.85f, 0.85f, 0.85f) }
-            };
+            int removeIndex = -1;
             for (int i = 0; i < foundPackages.Count; i++)
             {
-                EditorGUILayout.BeginHorizontal();
-
-                // 번호
-                GUIStyle numStyle = new GUIStyle(EditorStyles.miniLabel)
-                {
-                    normal = { textColor = new Color(0.4f, 0.7f, 1f) },
-                    alignment = TextAnchor.MiddleRight
-                };
-                GUILayout.Label($"{i + 1}.", numStyle, GUILayout.Width(22));
-                GUILayout.Label(Path.GetFileName(foundPackages[i]), itemStyle);
+                var item = foundPackages[i];
+                EditorGUILayout.BeginHorizontal(EditorStyles.textArea);
+                item.IsSelected = EditorGUILayout.Toggle(item.IsSelected, GUILayout.Width(20));
+                string icon = item.IsFromZip ? "📦 " : "📄 ";
+                GUIStyle labelStyle = new GUIStyle(EditorStyles.label) { wordWrap = false, clipping = TextClipping.Clip };
+                if (item.IsFromZip) labelStyle.normal.textColor = new Color(0.4f, 0.8f, 1f);
+                GUILayout.Label(icon + item.DisplayName, labelStyle);
+                if (GUILayout.Button("x", EditorStyles.miniButton, GUILayout.Width(20))) { removeIndex = i; }
                 EditorGUILayout.EndHorizontal();
             }
+            if (removeIndex != -1) { foundPackages.RemoveAt(removeIndex); GUIUtility.ExitGUI(); }
         }
-
         EditorGUILayout.EndScrollView();
-
-        if (foundPackages.Count > 0)
-        {
-            GUIStyle countStyle = new GUIStyle(EditorStyles.miniLabel)
-            {
-                alignment = TextAnchor.MiddleRight,
-                normal = { textColor = new Color(0.4f, 0.9f, 0.4f) }
-            };
-            GUILayout.Label($"{foundPackages.Count} {UI_TEXT[7]}", countStyle); // N개 발견
-        }
-
         EditorGUILayout.EndVertical();
 
-        GUILayout.Space(5);
-
-        // ─── 상태 박스 ───
-        if (!string.IsNullOrEmpty(statusMessage))
-        {
-            EditorGUILayout.BeginVertical("box");
-            GUIStyle statusStyle = new GUIStyle(EditorStyles.wordWrappedMiniLabel)
-            {
-                normal = { textColor = isImporting ? new Color(1f, 0.8f, 0.2f) : new Color(0.4f, 0.9f, 0.4f) }
-            };
-            EditorGUILayout.LabelField(UI_TEXT[8], EditorStyles.boldLabel); // 상태
-            EditorGUILayout.LabelField(statusMessage, statusStyle);
-            EditorGUILayout.EndVertical();
-            GUILayout.Space(5);
-        }
-
-        // ─── 임포트 버튼 ───
-        EditorGUI.BeginDisabledGroup(foundPackages.Count == 0 || isImporting);
-        GUIStyle importBtnStyle = new GUIStyle(GUI.skin.button)
-        {
-            fontStyle = FontStyle.Bold,
-            fontSize = 14
-        };
-        if (isImporting)
-        {
-            importBtnStyle.normal.background = selectedButtonTex;
-            importBtnStyle.normal.textColor = Color.white;
-        }
-        var prevBg = GUI.backgroundColor;
-        if (!isImporting) GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f); // Mint Green
+        // --- 하단 실행 영역 ---
+        var selectedCount = foundPackages.Count(p => p.IsSelected);
         
-        if (GUILayout.Button(isImporting ? UI_TEXT[9] : UI_TEXT[10], importBtnStyle, GUILayout.Height(40))) // 임포트 중... / 임포트 시작
+        if (isImporting) statusMessage = UI_TEXT[9] + $" ({currentlyProcessedPackages}/{totalPackagesToImport})";
+        else if (selectedCount > 0 && foundPackages.Count > 0 && statusMessage.Contains("수 없습니다")) statusMessage = "";
+
+        if (!string.IsNullOrEmpty(statusMessage)) EditorGUILayout.HelpBox(statusMessage, MessageType.Info);
+
+        GUILayout.FlexibleSpace();
+        
+        EditorGUI.BeginDisabledGroup(selectedCount == 0 || isImporting);
+        var prevBg = GUI.backgroundColor;
+        if (!isImporting && selectedCount > 0) GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+        
+        if (GUILayout.Button(isImporting ? "Processing..." : UI_TEXT[10], GUILayout.Height(50)))
         {
             StartImport();
         }
-        
         GUI.backgroundColor = prevBg;
         EditorGUI.EndDisabledGroup();
     }
 
-    private void RefreshPackageList()
+    private void HandleDragAndDrop(Rect dropArea)
     {
-        foundPackages.Clear();
-        if (!string.IsNullOrEmpty(selectedFolderPath) && Directory.Exists(selectedFolderPath))
+        Event evt = Event.current;
+        if (!dropArea.Contains(evt.mousePosition)) return;
+        switch (evt.type)
         {
-            foundPackages = Directory.GetFiles(selectedFolderPath, "*.unitypackage").ToList();
-            foundPackages.Sort();
+            case EventType.DragUpdated:
+            case EventType.DragPerform:
+                DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
+                if (evt.type == EventType.DragPerform)
+                {
+                    DragAndDrop.AcceptDrag();
+                    foreach (string path in DragAndDrop.paths)
+                    {
+                        string fullPath = Path.GetFullPath(path);
+                        if (Directory.Exists(fullPath)) AddFromPath(fullPath, true);
+                        else ProcessFile(fullPath);
+                    }
+                }
+                evt.Use();
+                break;
         }
-        statusMessage = "";
-        Repaint();
+    }
+
+    private void AddFromPath(string path, bool isFolder)
+    {
+        if (isFolder)
+        {
+            var files = Directory.GetFiles(path, "*.*", SearchOption.AllDirectories)
+                .Where(s => s.EndsWith(".unitypackage") || s.EndsWith(".zip"));
+            foreach (var file in files) ProcessFile(file);
+        }
+        else ProcessFile(path);
+    }
+
+    private void ProcessFile(string path)
+    {
+        string ext = Path.GetExtension(path).ToLower();
+        if (ext == ".zip")
+        {
+            int[] codepages = { 932, 51949 };
+            foreach (int cp in codepages)
+            {
+                try
+                {
+                    using (ZipArchive archive = ZipFile.Open(path, ZipArchiveMode.Read, Encoding.GetEncoding(cp)))
+                    {
+                        foreach (ZipArchiveEntry entry in archive.Entries)
+                        {
+                            if (entry.FullName.ToLower().EndsWith(".unitypackage"))
+                            {
+                                if (!foundPackages.Any(p => p.SourcePath == path && p.PackagePathInZip == entry.FullName))
+                                    foundPackages.Add(new PackageItem(path, entry.FullName, true, entry.FullName));
+                            }
+                        }
+                        return;
+                    }
+                }
+                catch { continue; }
+            }
+        }
+        else if (ext == ".unitypackage")
+        {
+            if (!foundPackages.Any(p => p.SourcePath == path && !p.IsFromZip))
+                foundPackages.Add(new PackageItem(path, Path.GetFileName(path), false));
+        }
     }
 
     private void StartImport()
     {
-        if (foundPackages.Count == 0) return;
+        var targets = foundPackages.Where(p => p.IsSelected).ToList();
+        if (targets.Count == 0) return;
 
         isImporting = true;
-        statusMessage = UI_TEXT[9]; // 임포트 중...
+        statusMessage = UI_TEXT[9];
+        CleanTempFolder();
+        importQueue.Clear();
+
+        if (!Directory.Exists(tempExtractPath)) Directory.CreateDirectory(tempExtractPath);
 
         preImportFolders = AssetDatabase.GetSubFolders("Assets");
-        totalPackagesToImport = foundPackages.Count;
-        currentlyProcessedPackages = 0;
         pendingTargetFolderName = targetFolderName;
-        activeWindow = this;
+        
+        foreach (var item in targets)
+        {
+            // 핵심 수정: 특수문자를 모두 제거한 안전한 임시 파일명 생성 (예: SafeImport_1234abcd.unitypackage)
+            string safeFileName = $"SafeImport_{System.Guid.NewGuid().ToString().Substring(0,8)}.unitypackage";
+            string safeTempPath = Path.Combine(tempExtractPath, safeFileName);
+
+            if (item.IsFromZip)
+            {
+                try {
+                    using (ZipArchive archive = ZipFile.OpenRead(item.SourcePath)) {
+                        ZipArchiveEntry entry = archive.GetEntry(item.PackagePathInZip);
+                        if (entry != null) {
+                            // 안전한 이름으로 추출
+                            entry.ExtractToFile(safeTempPath, true);
+                            importQueue.Enqueue(Path.GetFullPath(safeTempPath));
+                        }
+                    }
+                } catch (System.Exception e) { 
+                    Debug.LogError($"[DiNe] ZIP 추출 실패: {item.DisplayName}\n{e.Message}"); 
+                }
+            }
+            else 
+            {
+                string fullPath = Path.GetFullPath(item.SourcePath);
+                if (File.Exists(fullPath)) 
+                {
+                    try {
+                        // 특수문자 에러를 피하기 위해 원본 파일을 안전한 이름으로 임시 폴더에 복사
+                        File.Copy(fullPath, safeTempPath, true);
+                        importQueue.Enqueue(Path.GetFullPath(safeTempPath));
+                    } catch (System.Exception e) {
+                        Debug.LogError($"[DiNe] 안전 복사 실패: {item.DisplayName}\n{e.Message}");
+                    }
+                }
+            }
+        }
+
+        totalPackagesToImport = importQueue.Count;
+        currentlyProcessedPackages = 0;
+        
+        if (totalPackagesToImport == 0) 
+        { 
+            isImporting = false; 
+            statusMessage = "임포트할 파일을 찾을 수 없습니다. (콘솔 창 확인)"; 
+            return; 
+        }
+
+        AssetDatabase.importPackageCompleted -= OnPackageProcessed;
+        AssetDatabase.importPackageFailed -= OnPackageFailed;
+        AssetDatabase.importPackageCancelled -= OnPackageProcessed;
 
         AssetDatabase.importPackageCompleted += OnPackageProcessed;
-        AssetDatabase.importPackageCancelled += OnPackageProcessed;
         AssetDatabase.importPackageFailed += OnPackageFailed;
+        AssetDatabase.importPackageCancelled += OnPackageProcessed;
+        
+        ImportNextPackageInQueue();
+    }
 
-        foreach (string package in foundPackages)
+    private void ImportNextPackageInQueue()
+    {
+        if (importQueue.Count > 0)
         {
-            Debug.Log($"[DiNe Patcher] {Path.GetFileName(package)} 대기열 등록...");
-            AssetDatabase.ImportPackage(package, false);
-        }
-
-        Repaint();
-    }
-
-    private static void OnPackageProcessed(string packageName)
-    {
-        currentlyProcessedPackages++;
-        CheckIfAllFinished();
-    }
-
-    private static void OnPackageFailed(string packageName, string errorMessage)
-    {
-        Debug.LogError($"[DiNe Patcher] {packageName} 임포트 실패: {errorMessage}");
-        currentlyProcessedPackages++;
-        CheckIfAllFinished();
-    }
-
-    private static void CheckIfAllFinished()
-    {
-        if (currentlyProcessedPackages >= totalPackagesToImport)
-        {
-            AssetDatabase.importPackageCompleted -= OnPackageProcessed;
-            AssetDatabase.importPackageCancelled -= OnPackageProcessed;
-            AssetDatabase.importPackageFailed -= OnPackageFailed;
-
-            MoveNewFolders();
-
-            if (activeWindow != null)
-            {
-                activeWindow.isImporting = false;
-                activeWindow.statusMessage = activeWindow.UI_TEXT[11]; // 완료
-                activeWindow.Repaint();
-            }
-        }
-    }
-
-    private static void MoveNewFolders()
-    {
-        string[] postImportFolders = AssetDatabase.GetSubFolders("Assets");
-        var newFolders = postImportFolders.Except(preImportFolders).ToList();
-
-        if (newFolders.Count > 0)
-        {
-            string targetFolderPath = "Assets/" + pendingTargetFolderName;
-
-            if (!AssetDatabase.IsValidFolder(targetFolderPath))
-            {
-                AssetDatabase.CreateFolder("Assets", pendingTargetFolderName);
-            }
-
-            foreach (string newFolder in newFolders)
-            {
-                if (newFolder == targetFolderPath) continue;
-
-                string folderName = newFolder.Substring("Assets/".Length);
-                string destinationPath = targetFolderPath + "/" + folderName;
-
-                string error = AssetDatabase.MoveAsset(newFolder, destinationPath);
-
-                if (string.IsNullOrEmpty(error))
-                    Debug.Log($"[DiNe Patcher] {folderName} → {pendingTargetFolderName} 이동 완료");
-                else
-                    Debug.LogError($"[DiNe Patcher] {folderName} 이동 실패: {error}");
-            }
+            string nextPath = importQueue.Dequeue();
+            // forceInteractive가 true이면 유니티 기본 임포트 창을 띄웁니다.
+            AssetDatabase.ImportPackage(nextPath, forceInteractive);
         }
         else
         {
-            Debug.Log("[DiNe Patcher] 새로 생성된 최상위 폴더가 없습니다. (기존 폴더 덮어쓰기 완료)");
+            CheckIfAllFinished();
         }
-
-        Debug.Log("[DiNe Patcher] 모든 패키지 임포트 및 자동 정리 작업이 완료되었습니다!");
     }
+
+    private void OnPackageProcessed(string name) 
+    { 
+        currentlyProcessedPackages++;
+        ImportNextPackageInQueue(); 
+    }
+    
+    private void OnPackageFailed(string name, string err) 
+    { 
+        Debug.LogError($"[DiNe] 임포트 실패: {name} ({err})"); 
+        currentlyProcessedPackages++; 
+        ImportNextPackageInQueue(); 
+    }
+
+    private void CheckIfAllFinished()
+    {
+        if (currentlyProcessedPackages >= totalPackagesToImport || importQueue.Count == 0)
+        {
+            AssetDatabase.importPackageCompleted -= OnPackageProcessed;
+            AssetDatabase.importPackageFailed -= OnPackageFailed;
+            AssetDatabase.importPackageCancelled -= OnPackageProcessed;
+            
+            MoveNewFolders();
+            CleanTempFolder();
+            
+            isImporting = false;
+            statusMessage = UI_TEXT[11];
+            Repaint();
+        }
+    }
+
+    private void MoveNewFolders()
+    {
+        string[] postFolders = AssetDatabase.GetSubFolders("Assets");
+        var added = postFolders.Except(preImportFolders).ToList();
+        if (added.Count > 0)
+        {
+            string targetPath = "Assets/" + pendingTargetFolderName;
+            if (!AssetDatabase.IsValidFolder(targetPath)) AssetDatabase.CreateFolder("Assets", pendingTargetFolderName);
+            foreach (string f in added) { if (f == targetPath) continue; AssetDatabase.MoveAsset(f, targetPath + "/" + Path.GetFileName(f)); }
+        }
+    }
+
+    private static void CleanTempFolder() { try { if (Directory.Exists(tempExtractPath)) Directory.Delete(tempExtractPath, true); } catch { } }
 
     private void SetLanguage(LanguagePreset lang)
     {
         switch (lang)
         {
             case LanguagePreset.Korean:
-                UI_TEXT = new string[]
-                {
-                    "설정",                          // 0
-                    "임포트 후 이동 폴더명",           // 1
-                    "패키지 폴더",                    // 2
-                    "폴더 선택",                      // 3
-                    "패키지 목록",                    // 4
-                    "폴더를 선택하세요.",              // 5
-                    "이 폴더에 .unitypackage 파일이 없습니다.", // 6
-                    "개 파일 발견",                   // 7
-                    "상태",                          // 8
-                    "임포트 중...",                   // 9
-                    "임포트 및 정리 시작",             // 10
-                    "모든 임포트 및 정리 완료!",        // 11
-                    "⚠ 동일한 이름의 폴더가 이미 존재합니다. 실행 시 기존 폴더 안에 병합됩니다.", // 12
-                };
+                UI_TEXT = new string[] { "설정", "정리 폴더명", "소스", "여기에 파일/폴더를 드래그하세요", "패키지 목록", "리스트가 비어 있습니다.", "", "", "상태", "임포트 중...", "선택 항목 임포트 시작", "모든 작업 완료!", "", "패키지 파일을 드래그하여 설치하고, 한 폴더에 정리하세요." };
                 break;
-            case LanguagePreset.Japanese:
-                UI_TEXT = new string[]
-                {
-                    "設定",
-                    "移動先フォルダ名",
-                    "パッケージフォルダ",
-                    "フォルダを選択",
-                    "パッケージ一覧",
-                    "フォルダを選択してください。",
-                    "このフォルダに .unitypackage がありません。",
-                    "個のファイルを検出",
-                    "状態",
-                    "インポート中...",
-                    "インポートして整理を開始",
-                    "全インポート・整理が完了しました！",
-                    "⚠ 同名のフォルダが既に存在します。実行すると既存フォルダに統合されます。", // 12
-                };
-                break;
-            default: // English
-                UI_TEXT = new string[]
-                {
-                    "Settings",
-                    "Target Folder Name",
-                    "Package Folder",
-                    "Select Folder",
-                    "Package List",
-                    "Please select a folder.",
-                    "No .unitypackage files found in this folder.",
-                    "file(s) found",
-                    "Status",
-                    "Importing...",
-                    "Start Import & Organize",
-                    "All imports & organization complete!",
-                    "⚠ A folder with this name already exists. Files will be merged into it.", // 12
-                };
+            default:
+                UI_TEXT = new string[] { "Settings", "Target Folder", "Source", "Drag files/folders here", "Package List", "List is empty.", "", "", "Status", "Importing...", "Start Import Selected", "All Done!", "", "Drag and drop packages to install and organize them." };
                 break;
         }
-    }
-
-    private Texture2D MakeTex(int width, int height, Color col)
-    {
-        Color[] pix = new Color[width * height];
-        for (int i = 0; i < pix.Length; ++i) pix[i] = col;
-        Texture2D result = new Texture2D(width, height);
-        result.SetPixels(pix);
-        result.Apply();
-        return result;
     }
 
     private int DrawCustomToolbar(int selected, string[] options, float height)
@@ -426,18 +403,10 @@ public class DiNePackagePatcher : EditorWindow
         int newSelected = selected;
         for (int i = 0; i < options.Length; i++)
         {
-            var prevBg = GUI.backgroundColor;
-            GUI.backgroundColor = (i == selected) ? new Color(0.30f, 0.82f, 0.76f) : new Color(0.5f, 0.5f, 0.5f, 1f);
-            GUIStyle style = new GUIStyle(GUI.skin.button) { 
-                fontStyle = (i == selected) ? FontStyle.Bold : FontStyle.Normal,
-                fontSize = 12,
-                normal = { textColor = (i == selected) ? Color.white : new Color(0.8f, 0.8f, 0.8f) }
-            };
-            if (GUILayout.Button(options[i], style, GUILayout.Height(height)))
-            {
-                newSelected = i;
-            }
-            GUI.backgroundColor = prevBg;
+            var prev = GUI.backgroundColor;
+            GUI.backgroundColor = (i == selected) ? new Color(0.3f, 0.8f, 0.7f) : Color.gray;
+            if (GUILayout.Button(options[i], GUILayout.Height(height))) { newSelected = i; GUIUtility.ExitGUI(); }
+            GUI.backgroundColor = prev;
         }
         EditorGUILayout.EndHorizontal();
         return newSelected;
