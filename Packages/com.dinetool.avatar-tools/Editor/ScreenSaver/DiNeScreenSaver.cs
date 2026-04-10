@@ -60,9 +60,9 @@ namespace DiNeScreenSaver
             /* 16 */ new[] { "Target Object",         "대상 오브젝트",    "対象オブジェクト"     },
             /* 17 */ new[] { "Output Size",           "출력 크기",        "出力サイズ"           },
             /* 18 */ new[] { "Generate Icon",         "아이콘 생성",      "アイコン生成"         },
-            /* 19 */ new[] { "Left-drag: Rotate   Scroll: Zoom",
-                             "좌클릭 드래그: 회전   스크롤: 줌",
-                             "左ドラッグ: 回転   スクロール: ズーム"    },
+            /* 19 */ new[] { "Left-drag: Rotate   Right-drag: Pan   Scroll: Zoom",
+                             "좌클릭 드래그: 회전   우클릭 드래그: 이동   스크롤: 줌",
+                             "左ドラッグ: 回転   右ドラッグ: 移動   スクロール: ズーム"    },
             /* 20 */ new[] { "Icon saved.",           "아이콘 저장 완료!","アイコンを保存しました。" },
             /* 21 */ new[] { "Assign a Target Object.", "대상 오브젝트를 지정하세요.", "対象オブジェクトを指定してください。" },
             /* 22 */ new[] { "Front",  "앞",     "前"  },
@@ -71,6 +71,8 @@ namespace DiNeScreenSaver
             /* 25 */ new[] { "Right",  "오른쪽", "右"  },
             /* 26 */ new[] { "Top",    "위",     "上"  },
             /* 27 */ new[] { "Bottom", "아래",   "下"  },
+            /* 28 */ new[] { "Reset View", "뷰 초기화", "ビュー初期化" },
+            /* 29 */ new[] { "Create Copy", "복사본 생성", "コピーを生成" }
         };
         private static readonly string[][] BG_TEXT =
         {
@@ -82,6 +84,7 @@ namespace DiNeScreenSaver
         private Lang     _lang = Lang.English;
         private int      L     => (int)_lang;
         private string   T(int i) => UI[i][L];
+        private static string GetUIString(int i) => UI[i][EditorPrefs.GetInt("DiNeScreenSaver_Lang", 1)];
         private string[] BgLabels() => new[] { BG_TEXT[0][L], BG_TEXT[1][L], BG_TEXT[2][L] };
 
         // ══════════════════════════════════════════════════════════════════════
@@ -115,7 +118,8 @@ namespace DiNeScreenSaver
         // Preview
         private Texture2D _previewTex;
         private bool      _previewDirty;
-        private Vector2   _previewEuler = new Vector2(15f, 180f);  // pitch, yaw
+        private Vector2   _previewEuler = new Vector2(0f, 180f);  // pitch, yaw
+        private Vector2   _previewPan   = Vector2.zero;            // pan offset
         private float     _zoomFactor   = 1f;
         private Rect      _previewRect;
         private const int PREVIEW_RENDER_SIZE = 256;
@@ -150,7 +154,7 @@ namespace DiNeScreenSaver
         private Font      _titleFont;
 
         // ══════════════════════════════════════════════════════════════════════
-        //  Lifecycle
+        //  Lifecycle & Context Menu
         // ══════════════════════════════════════════════════════════════════════
         [MenuItem("DiNe/EX/Screen Saver", false, 101)]
         public static void ShowWindow()
@@ -158,6 +162,26 @@ namespace DiNeScreenSaver
             var w = GetWindow<DiNeScreenSaver>();
             w.minSize  = new Vector2(175, 150);
             w.position = new Rect(w.position.x, w.position.y, 420, 620);
+        }
+
+        [MenuItem("GameObject/Di Ne/IconMaker", false, 0)]
+        public static void GenerateIconFromHierarchy(MenuCommand menuCommand)
+        {
+            GameObject target = menuCommand.context as GameObject;
+            if (target == null)
+            {
+                Debug.LogWarning("GameObject를 선택한 후 우클릭하세요.");
+                return;
+            }
+
+            int defaultSize = 256;
+            if (EditorPrefs.HasKey("DiNeScreenSaver_IconSize"))
+            {
+                int sizeIdx = EditorPrefs.GetInt("DiNeScreenSaver_IconSize", 3);
+                defaultSize = ICON_SIZES[sizeIdx];
+            }
+
+            GenerateIconStatic(target, new Vector2(0f, 180f), Vector2.zero, 1f, defaultSize, false);
         }
 
         void OnEnable()
@@ -329,7 +353,8 @@ namespace DiNeScreenSaver
             if (_iconTarget != _prevIconTarget)
             {
                 _prevIconTarget  = _iconTarget;
-                _previewEuler    = new Vector2(15f, 180f);
+                _previewEuler    = new Vector2(0f, 180f);
+                _previewPan      = Vector2.zero;
                 _zoomFactor      = 1f;
                 _previewDirty    = true;
             }
@@ -369,6 +394,22 @@ namespace DiNeScreenSaver
 
             GUILayout.Space(4);
 
+            // 뷰 초기화 (리셋) 버튼
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+            var resetBtnStyle = new GUIStyle(GUI.skin.button) { fontSize = 11, fontStyle = FontStyle.Bold };
+            if (GUILayout.Button(T(28), resetBtnStyle, GUILayout.Width(80), GUILayout.Height(20)))
+            {
+                _previewEuler = new Vector2(0f, 180f);
+                _zoomFactor   = 1f;
+                _previewPan   = Vector2.zero;
+                _previewDirty = true;
+                GUI.FocusControl(null);
+            }
+            EditorGUILayout.EndHorizontal();
+
+            GUILayout.Space(4);
+
             // ── 방향 프리셋 버튼 (6개) ──
             DrawDirectionButtons();
 
@@ -390,15 +431,42 @@ namespace DiNeScreenSaver
             GUILayout.Space(5);
 
             EditorGUI.BeginDisabledGroup(_iconTarget == null);
+            
+            // 동일 이름 파일이 이미 존재하는지 체크
+            bool fileExists = false;
+            if (_iconTarget != null)
+            {
+                string absPath = Application.dataPath.Replace("Assets", "") + ICON_ASSET_PATH + _iconTarget.name + ".png";
+                fileExists = File.Exists(absPath);
+            }
+
+            EditorGUILayout.BeginHorizontal();
+            
+            // 기존 덮어쓰기 생성 버튼 (메인)
             GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
             if (GUILayout.Button(T(18), new GUIStyle(GUI.skin.button)
                 { fontSize = 14, fontStyle = FontStyle.Bold,
                   normal = { textColor = Color.white }, hover = { textColor = Color.white } },
                 GUILayout.Height(38)))
             {
-                GenerateIcon();
+                GenerateIconStatic(_iconTarget, _previewEuler, _previewPan, _zoomFactor, ICON_SIZES[_iconSizeIdx], false);
             }
+
+            // 파일이 존재할 경우 복사본 생성 버튼을 우측에 추가 (가로 폭 제한 제거하여 1:1 분할, 짙은 민트색 적용)
+            if (fileExists)
+            {
+                GUI.backgroundColor = new Color(0.18f, 0.68f, 0.62f); 
+                if (GUILayout.Button(T(29), new GUIStyle(GUI.skin.button)
+                    { fontSize = 14, fontStyle = FontStyle.Bold,
+                      normal = { textColor = Color.white }, hover = { textColor = Color.white } },
+                    GUILayout.Height(38)))
+                {
+                    GenerateIconStatic(_iconTarget, _previewEuler, _previewPan, _zoomFactor, ICON_SIZES[_iconSizeIdx], true);
+                }
+            }
+            
             GUI.backgroundColor = prevBg;
+            EditorGUILayout.EndHorizontal();
             EditorGUI.EndDisabledGroup();
 
             GUILayout.Space(5);
@@ -406,7 +474,7 @@ namespace DiNeScreenSaver
             if (GUILayout.Button(T(12), GUILayout.Height(25)))
                 OpenFolder(ICON_ASSET_PATH);
             if (GUILayout.Button(T(13), GUILayout.Height(25)))
-                PingFolder(ICON_ASSET_PATH);
+                PingFolder(ICON_ASSET_PATH); 
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.EndVertical();
@@ -422,7 +490,11 @@ namespace DiNeScreenSaver
                 fontStyle = FontStyle.Bold,
                 normal    = { textColor = new Color(0.85f, 0.85f, 0.85f) },
                 hover     = { textColor = Color.white },
+                padding   = new RectOffset(0, 0, 0, 0),
+                alignment = TextAnchor.MiddleCenter
             };
+
+            float btnW = (position.width - 35f) / dirLabels.Length;
 
             EditorGUILayout.BeginHorizontal();
             for (int i = 0; i < dirLabels.Length; i++)
@@ -432,7 +504,7 @@ namespace DiNeScreenSaver
                     ? new Color(0.30f, 0.82f, 0.76f)
                     : new Color(0.21f, 0.21f, 0.24f);
 
-                if (GUILayout.Button(dirLabels[i], btnStyle, GUILayout.Height(24), GUILayout.ExpandWidth(true)))
+                if (GUILayout.Button(dirLabels[i], btnStyle, GUILayout.Height(24), GUILayout.Width(btnW)))
                 {
                     _previewEuler = DIR_EULERS[i];
                     _previewDirty = true;
@@ -452,7 +524,11 @@ namespace DiNeScreenSaver
                 fontStyle = FontStyle.Bold,
                 normal    = { textColor = new Color(0.85f, 0.85f, 0.85f) },
                 hover     = { textColor = Color.white },
+                padding   = new RectOffset(0, 0, 0, 0),
+                alignment = TextAnchor.MiddleCenter
             };
+
+            float btnW = (position.width - 35f) / ZOOM_PRESETS.Length;
 
             EditorGUILayout.BeginHorizontal();
             for (int i = 0; i < ZOOM_PRESETS.Length; i++)
@@ -462,7 +538,7 @@ namespace DiNeScreenSaver
                     ? new Color(0.30f, 0.82f, 0.76f)
                     : new Color(0.21f, 0.21f, 0.24f);
 
-                if (GUILayout.Button(ZOOM_PRESET_LABELS[i], btnStyle, GUILayout.Height(22), GUILayout.ExpandWidth(true)))
+                if (GUILayout.Button(ZOOM_PRESET_LABELS[i], btnStyle, GUILayout.Height(22), GUILayout.Width(btnW)))
                 {
                     _zoomFactor   = ZOOM_PRESETS[i];
                     _previewDirty = true;
@@ -486,6 +562,15 @@ namespace DiNeScreenSaver
                 _previewEuler.x += e.delta.y * 0.5f;
                 _previewEuler.x  = Mathf.Clamp(_previewEuler.x, -85f, 85f);
                 _previewDirty    = true;
+                e.Use();
+                Repaint();
+            }
+            else if (e.type == EventType.MouseDrag && e.button == 1)
+            {
+                float panSpeed = 0.005f / _zoomFactor; 
+                _previewPan.x -= e.delta.x * panSpeed;
+                _previewPan.y += e.delta.y * panSpeed; 
+                _previewDirty = true;
                 e.Use();
                 Repaint();
             }
@@ -535,7 +620,9 @@ namespace DiNeScreenSaver
 
                 float dist = bounds.extents.magnitude * 2.5f;
                 camObj.transform.rotation = Quaternion.Euler(_previewEuler.x, _previewEuler.y, 0f);
-                camObj.transform.position = bounds.center - camObj.transform.forward * dist;
+                
+                Vector3 panOffset = camObj.transform.right * _previewPan.x + camObj.transform.up * _previewPan.y;
+                camObj.transform.position = (bounds.center + panOffset) - camObj.transform.forward * dist;
 
                 float orthoSize       = Mathf.Max(bounds.extents.x, bounds.extents.y, bounds.extents.z) * 1.2f / _zoomFactor;
                 cam.orthographicSize  = orthoSize;
@@ -559,11 +646,9 @@ namespace DiNeScreenSaver
             }
         }
 
-        private void GenerateIcon()
+        private static void GenerateIconStatic(GameObject target, Vector2 euler, Vector2 pan, float zoom, int outputSize, bool autoRename)
         {
-            if (_iconTarget == null) return;
-
-            int outputSize = ICON_SIZES[_iconSizeIdx];
+            if (target == null) return;
             EnsureDir(ICON_ASSET_PATH);
 
             GameObject root   = null;
@@ -573,7 +658,7 @@ namespace DiNeScreenSaver
             try
             {
                 root = new GameObject("_DiNe_Icon_Root");
-                var clone = Instantiate(_iconTarget, root.transform);
+                var clone = Instantiate(target, root.transform);
                 clone.SetActive(true);
                 ChangeLayerRecursively(root, CAPTURE_LAYER);
 
@@ -596,9 +681,12 @@ namespace DiNeScreenSaver
                 cam.farClipPlane    = 10000f;
 
                 float dist = bounds.extents.magnitude * 2.5f;
-                camObj.transform.rotation = Quaternion.Euler(_previewEuler.x, _previewEuler.y, 0f);
-                camObj.transform.position = bounds.center - camObj.transform.forward * dist;
-                cam.orthographicSize      = Mathf.Max(bounds.extents.x, bounds.extents.y, bounds.extents.z) * 1.2f / _zoomFactor;
+                camObj.transform.rotation = Quaternion.Euler(euler.x, euler.y, 0f);
+                
+                Vector3 panOffset = camObj.transform.right * pan.x + camObj.transform.up * pan.y;
+                camObj.transform.position = (bounds.center + panOffset) - camObj.transform.forward * dist;
+                
+                cam.orthographicSize      = Mathf.Max(bounds.extents.x, bounds.extents.y, bounds.extents.z) * 1.2f / zoom;
 
                 const int RENDER_SIZE = 2048;
                 rt = new RenderTexture(RENDER_SIZE, RENDER_SIZE, 24, RenderTextureFormat.ARGB32);
@@ -616,8 +704,26 @@ namespace DiNeScreenSaver
                 var cropped = AutoCrop(raw, outputSize);
                 DestroyImmediate(raw);
 
-                string filePath = ICON_ASSET_PATH + _iconTarget.name + ".png";
-                File.WriteAllBytes(filePath, cropped.EncodeToPNG());
+                // 파일 이름 및 복사본 넘버링 처리
+                string absDir = Application.dataPath.Replace("Assets", "") + ICON_ASSET_PATH;
+                string baseName = target.name;
+                string fileName = baseName + ".png";
+                string absPath = absDir + fileName;
+
+                if (autoRename && File.Exists(absPath))
+                {
+                    int counter = 2;
+                    while (File.Exists(absDir + baseName + "_" + counter + ".png"))
+                    {
+                        counter++;
+                    }
+                    fileName = baseName + "_" + counter + ".png";
+                    absPath = absDir + fileName;
+                }
+
+                string filePath = ICON_ASSET_PATH + fileName;
+                
+                File.WriteAllBytes(absPath, cropped.EncodeToPNG());
                 DestroyImmediate(cropped);
 
                 AssetDatabase.Refresh();
@@ -629,8 +735,15 @@ namespace DiNeScreenSaver
                     importer.SaveAndReimport();
                 }
 
-                EditorGUIUtility.PingObject(AssetDatabase.LoadAssetAtPath<Texture2D>(filePath));
-                Debug.Log($"[DiNe Icon] {T(20)} → {filePath}");
+                // 에셋을 선택 상태로 만들고 하이라이트 표시
+                var asset = AssetDatabase.LoadAssetAtPath<Texture2D>(filePath);
+                if (asset != null)
+                {
+                    Selection.activeObject = asset;
+                    EditorGUIUtility.PingObject(asset);
+                }
+
+                Debug.Log($"[DiNe Icon] {GetUIString(20)} → {filePath}");
             }
             finally
             {
@@ -757,9 +870,20 @@ namespace DiNeScreenSaver
         private void SaveScreenshot(Texture2D tex, int w, int h)
         {
             string path = Application.dataPath.Replace("Assets", "") + SCREENSHOT_ASSET_PATH;
-            string name = path + System.DateTime.Now.ToString($"yyyy-MM-dd_HH-mm-ss ({w}x{h})") + ".png";
-            File.WriteAllBytes(name, tex.EncodeToPNG());
+            string fileName = System.DateTime.Now.ToString($"yyyy-MM-dd_HH-mm-ss ({w}x{h})") + ".png";
+            string fullPath = path + fileName;
+            
+            File.WriteAllBytes(fullPath, tex.EncodeToPNG());
             AssetDatabase.Refresh();
+
+            // 에셋을 선택 상태로 만들고 하이라이트 표시
+            string assetPath = SCREENSHOT_ASSET_PATH + fileName;
+            var asset = AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
+            if (asset != null)
+            {
+                Selection.activeObject = asset;
+                EditorGUIUtility.PingObject(asset);
+            }
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -781,15 +905,24 @@ namespace DiNeScreenSaver
         private static void OpenFolder(string assetPath)
         {
             EnsureDir(assetPath);
-            EditorUtility.RevealInFinder(Application.dataPath.Replace("Assets", "") + assetPath);
+            string absPath = Application.dataPath.Replace("Assets", "") + assetPath;
+            Application.OpenURL("file://" + absPath);
         }
 
+        // 폴더 안쪽으로 진입하도록 변경
         private static void PingFolder(string assetPath)
         {
             EnsureDir(assetPath);
             AssetDatabase.Refresh();
             var obj = AssetDatabase.LoadAssetAtPath<Object>(assetPath.TrimEnd('/'));
-            if (obj != null) { Selection.activeObject = obj; EditorGUIUtility.PingObject(obj); }
+            if (obj != null) 
+            { 
+                Selection.activeObject = obj; 
+                EditorGUIUtility.PingObject(obj); 
+                
+                // 폴더를 더블클릭한 것과 동일한 효과를 주어 내부로 진입
+                AssetDatabase.OpenAsset(obj);
+            }
         }
 
         private static void HLine()
@@ -836,9 +969,12 @@ namespace DiNeScreenSaver
             EditorPrefs.SetFloat("DiNeScreenSaver_CapW",      _captureSize.x);
             EditorPrefs.SetFloat("DiNeScreenSaver_CapH",      _captureSize.y);
             EditorPrefs.SetInt("DiNeScreenSaver_IconSize",    _iconSizeIdx);
-            EditorPrefs.SetFloat("DiNeScreenSaver_EulerX",   _previewEuler.x);
-            EditorPrefs.SetFloat("DiNeScreenSaver_EulerY",   _previewEuler.y);
-            EditorPrefs.SetFloat("DiNeScreenSaver_Zoom",     _zoomFactor);
+            
+            EditorPrefs.SetFloat("DiNe_IconPitch", _previewEuler.x);
+            EditorPrefs.SetFloat("DiNe_IconYaw",   _previewEuler.y);
+            EditorPrefs.SetFloat("DiNe_IconZoom",  _zoomFactor);
+            EditorPrefs.SetFloat("DiNe_IconPanX",  _previewPan.x);
+            EditorPrefs.SetFloat("DiNe_IconPanY",  _previewPan.y);
         }
 
         private void LoadSettings()
@@ -854,9 +990,12 @@ namespace DiNeScreenSaver
             _captureSize.x = EditorPrefs.GetFloat("DiNeScreenSaver_CapW", 1920);
             _captureSize.y = EditorPrefs.GetFloat("DiNeScreenSaver_CapH", 1080);
             _iconSizeIdx   = EditorPrefs.GetInt("DiNeScreenSaver_IconSize", 3);
-            _previewEuler.x = EditorPrefs.GetFloat("DiNeScreenSaver_EulerX", 15f);
-            _previewEuler.y = EditorPrefs.GetFloat("DiNeScreenSaver_EulerY", 180f);
-            _zoomFactor     = EditorPrefs.GetFloat("DiNeScreenSaver_Zoom",   1f);
+            
+            _previewEuler.x = EditorPrefs.GetFloat("DiNe_IconPitch", 0f);
+            _previewEuler.y = EditorPrefs.GetFloat("DiNe_IconYaw", 180f);
+            _zoomFactor     = EditorPrefs.GetFloat("DiNe_IconZoom",   1f);
+            _previewPan.x   = EditorPrefs.GetFloat("DiNe_IconPanX",   0f);
+            _previewPan.y   = EditorPrefs.GetFloat("DiNe_IconPanY",   0f);
         }
     }
 }

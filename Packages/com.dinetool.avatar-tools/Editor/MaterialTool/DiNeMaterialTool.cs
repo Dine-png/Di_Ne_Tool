@@ -175,6 +175,7 @@ public class DiNeMaterialTool : EditorWindow
     private string _status = "";
     private bool   _statusWarn;
     private GameObject _prevTargetObject;
+    private Vector2 _mainScroll; // === 전체 화면용 스크롤 ===
 
     // ══════════════════════════════════════════════════════════════════════════
     //  State — Preset Mode
@@ -230,11 +231,11 @@ public class DiNeMaterialTool : EditorWindow
         
         // 사용 중인 마테리얼과 오브젝트 리스트
         public List<Material> UsedByMaterials = new List<Material>();
-        public List<GameObject> UsedByObjects = new List<GameObject>(); // 추가됨!
+        public List<GameObject> UsedByObjects = new List<GameObject>(); 
         
         // 개별 드롭다운 상태
         public bool      MaterialDropdown;
-        public bool      ObjectDropdown; // 추가됨!
+        public bool      ObjectDropdown; 
     }
 
     private List<TextureVRAMInfo> _vramTextures = new List<TextureVRAMInfo>();
@@ -331,6 +332,10 @@ public class DiNeMaterialTool : EditorWindow
         HLine();
         DrawModeSelector();
         HLine();
+
+        // === [추가된 부분] 툴 전체 영역 글로벌 스크롤 뷰 시작 ===
+        _mainScroll = EditorGUILayout.BeginScrollView(_mainScroll);
+
         DrawTargetSettings();
         HLine();
 
@@ -340,6 +345,9 @@ public class DiNeMaterialTool : EditorWindow
             DrawDietMode();
         else
             DrawVRAMMode();
+
+        // === [추가된 부분] 글로벌 스크롤 뷰 끝 ===
+        EditorGUILayout.EndScrollView();
 
         if (!string.IsNullOrEmpty(_status))
             EditorGUILayout.HelpBox(_status, _statusWarn ? MessageType.Warning : MessageType.Info);
@@ -570,7 +578,8 @@ public class DiNeMaterialTool : EditorWindow
             (string.IsNullOrEmpty(_search) || p.Name.ToLower().Contains(_search.ToLower()))
         ).ToList();
 
-        float h = Mathf.Clamp(filtered.Count * 36f + 8f, 80f, 145f);
+        // 최소 높이를 120, 최대 높이를 240으로 늘려 약 1.6배 확장
+        float h = Mathf.Clamp(filtered.Count * 36f + 8f, 120f, 240f);
         _libScroll = EditorGUILayout.BeginScrollView(_libScroll, GUILayout.Height(h));
         if (filtered.Count == 0) { GUILayout.Space(20); DrawCenteredHint(T(11)); }
         else foreach (var e in filtered) DrawPresetRow(e);
@@ -699,7 +708,9 @@ public class DiNeMaterialTool : EditorWindow
         EditorGUILayout.EndVertical();
         GUILayout.Space(4);
 
-        _presetMatScroll = EditorGUILayout.BeginScrollView(_presetMatScroll);
+        // === [추가된 부분] 스크롤 무한 방지 및 사이즈 조정 (최소 160px ~ 최대 360px 제한) ===
+        float matHeight = Mathf.Clamp(_presetMats.Count * 32f + 8f, 160f, 360f);
+        _presetMatScroll = EditorGUILayout.BeginScrollView(_presetMatScroll, GUILayout.Height(matHeight));
         foreach (var info in _presetMats) DrawMaterialCard(info, false);
         EditorGUILayout.EndScrollView();
     }
@@ -848,7 +859,9 @@ public class DiNeMaterialTool : EditorWindow
 
         if (lilCount == 0) { EditorGUILayout.HelpBox(T(36), MessageType.Info); return; }
 
-        _dietMatScroll = EditorGUILayout.BeginScrollView(_dietMatScroll);
+        // === [추가된 부분] 스크롤 무한 방지 및 사이즈 조정 ===
+        float dietHeight = Mathf.Clamp(_dietMats.Count * 40f + 8f, 160f, 400f);
+        _dietMatScroll = EditorGUILayout.BeginScrollView(_dietMatScroll, GUILayout.Height(dietHeight));
         foreach (var info in _dietMats) DrawDietCard(info);
         EditorGUILayout.EndScrollView();
     }
@@ -1280,8 +1293,9 @@ public class DiNeMaterialTool : EditorWindow
 
         HLine();
 
-        // ── 개별 텍스처 리스트 ──
-        _vramScroll = EditorGUILayout.BeginScrollView(_vramScroll);
+        // === [추가된 부분] 스크롤 무한 방지 및 사이즈 조정 ===
+        float vramHeight = Mathf.Clamp(_vramTextures.Count * 46f + 8f, 160f, 500f);
+        _vramScroll = EditorGUILayout.BeginScrollView(_vramScroll, GUILayout.Height(vramHeight));
         foreach (var info in _vramTextures)
             DrawVRAMTextureCard(info);
         EditorGUILayout.EndScrollView();
@@ -1384,9 +1398,31 @@ public class DiNeMaterialTool : EditorWindow
         // 빈 공간을 채워 남은 버튼들을 우측으로 밀어냄
         GUILayout.FlexibleSpace(); 
 
+        if (info.CanOptimizeFormat || info.CanOptimizeSize)
+        {
+            string optText = L == 1 ? "최적화" : L == 2 ? "最適化" : "Optimize";
+            if (info.CanOptimizeFormat && info.CanOptimizeSize) optText += L == 1 ? "(포맷+해상도)" : "(Fmt+Size)";
+            else if (info.CanOptimizeFormat) optText += L == 1 ? "(포맷)" : "(Fmt)";
+            else if (info.CanOptimizeSize) optText += L == 1 ? "(해상도)" : "(Size)";
+            
+            long savings = info.FormatSavings + info.SizeSavings;
+            optText += $" : -{FormatBytes(savings)}";
+
+            var prevColor = GUI.backgroundColor;
+            GUI.backgroundColor = ColApply;
+            
+            if (GUILayout.Button(optText, new GUIStyle(EditorStyles.miniButton) { fontStyle = FontStyle.Bold, normal = { textColor = Color.white } }, GUILayout.ExpandWidth(false)))
+            {
+                VRAMOptimizeSingle(info);
+                GUIUtility.ExitGUI(); // 리스트 갱신 중 발생하는 GUI 에러 방지
+            }
+            GUI.backgroundColor = prevColor;
+            GUILayout.Space(8); // 폴드아웃 버튼과의 간격
+        }
+
         var foldStyle = new GUIStyle(EditorStyles.foldout) { fontSize = 11, fontStyle = FontStyle.Bold, normal = { textColor = ColSubText } };
 
-        // 오브젝트 펼쳐보기 버튼 (새로 추가됨)
+        // 오브젝트 펼쳐보기 버튼
         if (info.UsedByObjects.Count > 0)
         {
             string objLabel = L == 1 ? $"오브젝트 ({info.UsedByObjects.Count})" : 
@@ -1617,6 +1653,39 @@ public class DiNeMaterialTool : EditorWindow
         importer.SetPlatformTextureSettings(settings);
         importer.SaveAndReimport();
         VRAMScanTextures();
+    }
+
+    private void VRAMOptimizeSingle(TextureVRAMInfo info)
+    {
+        var importer = AssetImporter.GetAtPath(info.AssetPath) as TextureImporter;
+        if (importer == null) return;
+
+        string platform = GetActivePlatformName(); 
+        var settings = importer.GetPlatformTextureSettings(platform);
+        settings.name = platform;
+        settings.overridden = true;
+        
+        bool changed = false;
+
+        if (info.CanOptimizeFormat)
+        {
+            settings.format = info.SuggestedFormat;
+            settings.compressionQuality = 100;
+            changed = true;
+        }
+
+        if (info.CanOptimizeSize)
+        {
+            settings.maxTextureSize = 2048;
+            changed = true;
+        }
+
+        if (changed)
+        {
+            importer.SetPlatformTextureSettings(settings);
+            importer.SaveAndReimport();
+            VRAMScanTextures();
+        }
     }
 
     private void VRAMOptimizeAll(List<TextureVRAMInfo> targets)
