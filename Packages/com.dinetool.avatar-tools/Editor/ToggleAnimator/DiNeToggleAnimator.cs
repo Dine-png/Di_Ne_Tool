@@ -214,7 +214,7 @@ public class DiNeToggleAnimator : EditorWindow
         {
             DrawEmptyHint(T(
                 "Select Animation Clips in the Project window to begin.\n(You can select multiple clips at once)\n\nAfter that, drag GameObjects here to add rows.",
-                "프로젝트(Project) 창에서 Animation Clip을 선택하세요.\n(여러 개 동시 선택 가능)\n\n그 뒤, GameObject를 아래 공간에 드래그하여 행을 추가합니다.",
+                "프로젝트(Project) 창에서 Animation Clip을 선택하세요.\n(여러 개 동시 선택 가능)\n\n그 뒤, GameObject를 아래 공간에 드래그하여 행 추가.",
                 "プロジェクトウィンドウでアニメーションクリップを選択してください。\n(複数選択可能)\n\nその後、GameObjectを下のスペースにドラッグして行を追加します。"
             ));
         }
@@ -236,13 +236,12 @@ public class DiNeToggleAnimator : EditorWindow
         var style = new GUIStyle(EditorStyles.label)
         {
             font      = _titleFont,
-            fontSize  = 19, // 21의 약 0.9배 사이즈
+            fontSize  = 19,
             fontStyle = FontStyle.Bold,
-            alignment = TextAnchor.MiddleCenter, // 좌우 중앙 정렬
+            alignment = TextAnchor.MiddleCenter,
             normal    = { textColor = new Color(0.50f, 0.50f, 0.54f) },
         };
 
-        // 전체 텍스트 블록의 높이 계산
         float totalHeight = 0;
         float lineSpacing = 18f;
         float paragraphSpacing = 8f;
@@ -253,14 +252,12 @@ public class DiNeToggleAnimator : EditorWindow
             else totalHeight += lineSpacing;
         }
 
-        // 로고(상단 46px 가량) 아래부터 화면 끝 사이의 정중앙 Y좌표 계산
         float startY = 46f + (winH - 46f - totalHeight) * 0.5f;
         float y = startY;
 
         foreach (char ch in text)
         {
             if (ch == '\n') { y += paragraphSpacing; continue; }
-            // x좌표 0, 너비 SIDEBAR_W로 주어 완벽하게 가로/세로 중앙에 오도록 처리
             GUI.Label(new Rect(0, y, SIDEBAR_W, lineSpacing), ch.ToString(), style);
             y += lineSpacing; 
         }
@@ -394,7 +391,6 @@ public class DiNeToggleAnimator : EditorWindow
             hover     = { textColor = Color.white },
         };
 
-        // [수정됨] 패딩을 없애 텍스트가 찌그러지지 않게 만든 초소형 버튼 스타일
         var smallXStyle = new GUIStyle(GUI.skin.button)
         {
             fontSize  = 10, fontStyle = FontStyle.Bold,
@@ -448,7 +444,6 @@ public class DiNeToggleAnimator : EditorWindow
                         
                         Rect btnRect = GUILayoutUtility.GetRect(new GUIContent(isOn ? "ON" : "OFF"), cellBtnStyle, GUILayout.Width(COL_W), GUILayout.Height(ROW_H));
                         
-                        // 우클릭으로 제거(Null 처리) 감지
                         if (Event.current.type == EventType.ContextClick && btnRect.Contains(Event.current.mousePosition))
                         {
                             _grid[r][c] = null;
@@ -466,7 +461,7 @@ public class DiNeToggleAnimator : EditorWindow
                     }
                     else
                     {
-                        // 쉐이프키 (숫자 입력)
+                        // 쉐이프키
                         GUILayout.BeginHorizontal(GUILayout.Width(COL_W));
                         
                         EditorGUI.BeginChangeCheck();
@@ -479,7 +474,6 @@ public class DiNeToggleAnimator : EditorWindow
                         }
 
                         GUI.backgroundColor = new Color(0.42f, 0.12f, 0.12f);
-                        // [수정됨] smallXStyle 적용으로 글씨 깨짐 방지
                         if (GUILayout.Button("✕", smallXStyle, GUILayout.Width(16f), GUILayout.Height(ROW_H)))
                         {
                             _grid[r][c] = null;
@@ -494,7 +488,6 @@ public class DiNeToggleAnimator : EditorWindow
             }
 
             GUI.backgroundColor = new Color(0.42f, 0.12f, 0.12f);
-            // 줄 삭제 버튼에도 smallXStyle 적용 (동일한 찌그러짐 방지)
             if (GUILayout.Button("✕", smallXStyle, GUILayout.Width(DEL_W), GUILayout.Height(ROW_H)))
             {
                 RemoveRow(r);
@@ -781,6 +774,24 @@ public class DiNeToggleAnimator : EditorWindow
     private void RemoveRow(int r)
     {
         if (r < 0 || r >= _rows.Count) return;
+
+        RowData rowToRemove = _rows[r];
+
+        for (int c = 0; c < _clips.Count; c++)
+        {
+            var clip = _clips[c];
+            if (clip == null) continue;
+
+            var binding = EditorCurveBinding.FloatCurve(
+                rowToRemove.path, 
+                rowToRemove.IsBlendShape ? typeof(SkinnedMeshRenderer) : typeof(GameObject), 
+                rowToRemove.propName);
+
+            Undo.RecordObject(clip, "Toggle Animator Auto-Save (Remove Row)");
+            AnimationUtility.SetEditorCurve(clip, binding, null); 
+            EditorUtility.SetDirty(clip);
+        }
+
         _rows.RemoveAt(r); 
         _grid.RemoveAt(r); 
 
