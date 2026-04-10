@@ -37,7 +37,6 @@ public class DiNePackagePatcher : EditorWindow
 
     private string statusMessage   = "";
     private bool   isImporting     = false;
-    private bool   forceInteractive = false;
 
     private string[] UI_TEXT;
     private Texture2D windowIcon;
@@ -118,15 +117,11 @@ public class DiNePackagePatcher : EditorWindow
 
         GUILayout.Space(5);
 
-        // ── 설정 ──
+        // ── 설정 ── (방해되던 수동 임포트 체크박스 제거)
         EditorGUILayout.BeginVertical("box");
         EditorGUILayout.BeginHorizontal();
         EditorGUILayout.LabelField(UI_TEXT[1], GUILayout.Width(110));
         targetFolderName = EditorGUILayout.TextField(targetFolderName);
-        EditorGUILayout.EndHorizontal();
-        EditorGUILayout.BeginHorizontal();
-        EditorGUILayout.LabelField(UI_TEXT[14], GUILayout.Width(180));
-        forceInteractive = EditorGUILayout.Toggle(forceInteractive);
         EditorGUILayout.EndHorizontal();
         EditorGUILayout.EndVertical();
 
@@ -181,7 +176,7 @@ public class DiNePackagePatcher : EditorWindow
 
         GUILayout.Space(5);
 
-        // ── 패키지 목록 ──
+        // ── 패키 목록 ──
         EditorGUILayout.BeginVertical("box");
         EditorGUILayout.BeginHorizontal();
         int selCount = foundPackages.Count(p => p.IsSelected);
@@ -308,7 +303,6 @@ public class DiNePackagePatcher : EditorWindow
 
     // ════════════════════════════════════════════════════════════
 
-    // 안전한 폴더 이름 생성기 (치명적인 특수문자만 제거)
     private static string GetSafeFolderName(string folderName)
     {
         if (string.IsNullOrWhiteSpace(folderName)) return "_1_Patch";
@@ -374,7 +368,6 @@ public class DiNePackagePatcher : EditorWindow
         string ext = Path.GetExtension(path).ToLower();
         if (ext == ".zip")
         {
-            // 인코딩 목록: 하트/이모지가 깨지지 않도록 UTF-8을 최우선으로 시도하고 안전하게 예외처리
             List<Encoding> encodings = new List<Encoding> { Encoding.UTF8 };
             try { encodings.Add(Encoding.GetEncoding(932)); } catch { }
             try { encodings.Add(Encoding.GetEncoding(51949)); } catch { }
@@ -395,10 +388,10 @@ public class DiNePackagePatcher : EditorWindow
                                 }
                             }
                         }
-                        return; // 성공하면 중단
+                        return; 
                     }
                 }
-                catch { continue; } // 에러 나면 다음 인코딩으로 재시도
+                catch { continue; } 
             }
         }
         else if (ext == ".unitypackage")
@@ -425,7 +418,6 @@ public class DiNePackagePatcher : EditorWindow
         if (!Directory.Exists(tempExtractPath)) Directory.CreateDirectory(tempExtractPath);
         preImportFolders = AssetDatabase.GetSubFolders("Assets");
         
-        // 대상 폴더 이름 검열 (유니티 폴더 생성 에러 방지)
         pendingTargetFolderName = GetSafeFolderName(targetFolderName);
 
         foreach (var item in targets)
@@ -507,7 +499,9 @@ public class DiNePackagePatcher : EditorWindow
         {
             var (path, item) = importQueue.Dequeue();
             _currentItem = item;
-            AssetDatabase.ImportPackage(path, forceInteractive);
+            
+            // 핵심 수정: 'false'를 강제 입력하여 임포트 창이 절대 뜨지 않고 백그라운드에서 실행되도록 수정!
+            AssetDatabase.ImportPackage(path, false);
         }
         else CheckIfAllFinished();
     }
@@ -585,7 +579,7 @@ public class DiNePackagePatcher : EditorWindow
                     /* 11 */ "모든 작업 완료!",
                     /* 12 */ "",
                     /* 13 */ "패키지 파일을 드래그하여 설치하고, 한 폴더에 정리하세요.",
-                    /* 14 */ "임포트 창 강제 표시 (에러 시 체크)",
+                    /* 14 */ "임포트 창 강제 표시 (에러 시 체크)", // UI에선 지웠지만 배열 인덱스 유지를 위해 남겨둠
                     /* 15 */ ".unitypackage · .zip · 폴더 지원",
                     /* 16 */ "전체",
                     /* 17 */ "없음",
