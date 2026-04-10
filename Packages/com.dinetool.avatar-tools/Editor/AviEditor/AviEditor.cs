@@ -1151,21 +1151,24 @@ public class ArmatureScalerEditor : EditorWindow
         var info = new AvatarInfo();
         if (root == null) return info;
 
-        var smrs   = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
-        var mfs    = root.GetComponentsInChildren<MeshFilter>(true);
+        var smrs     = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        var mfs      = root.GetComponentsInChildren<MeshFilter>(true);
         var allBones = new HashSet<Transform>();
-
-        var matSet = new HashSet<Material>();
-        var texSet = new HashSet<Texture>();
+        var matSet   = new HashSet<Material>();
+        var seenMeshes = new HashSet<int>(); // 중복 메쉬 방지
 
         foreach (var smr in smrs)
         {
             if (smr.sharedMesh == null) continue;
             info.skinnedMeshCount++;
-            info.totalVertices   += smr.sharedMesh.vertexCount;
-            info.totalTriangles  += (int)(smr.sharedMesh.triangles.LongLength / 3);
+            info.totalVertices    += smr.sharedMesh.vertexCount;
+            info.totalTriangles   += (int)(smr.sharedMesh.triangles.LongLength / 3);
             info.totalBlendShapes += smr.sharedMesh.blendShapeCount;
-            info.meshMemoryBytes += UnityEngine.Profiling.Profiler.GetRuntimeMemorySizeLong(smr.sharedMesh);
+
+            // 메쉬 메모리: 버텍스·인덱스 데이터 기반 추정 (Profiler는 RAM+VRAM 합산으로 부정확)
+            if (seenMeshes.Add(smr.sharedMesh.GetInstanceID()))
+                info.meshMemoryBytes += CalcMeshMemory(smr.sharedMesh);
+
             foreach (var m in smr.sharedMaterials) if (m != null) matSet.Add(m);
             if (smr.bones != null) foreach (var b in smr.bones) if (b != null) allBones.Add(b);
         }
@@ -1176,15 +1179,60 @@ public class ArmatureScalerEditor : EditorWindow
             info.staticMeshCount++;
             info.totalVertices  += mf.sharedMesh.vertexCount;
             info.totalTriangles += (int)(mf.sharedMesh.triangles.LongLength / 3);
-            info.meshMemoryBytes += UnityEngine.Profiling.Profiler.GetRuntimeMemorySizeLong(mf.sharedMesh);
+
+            if (seenMeshes.Add(mf.sharedMesh.GetInstanceID()))
+                info.meshMemoryBytes += CalcMeshMemory(mf.sharedMesh);
+
             var mr = mf.GetComponent<MeshRenderer>();
             if (mr != null) foreach (var m in mr.sharedMaterials) if (m != null) matSet.Add(m);
         }
 
-        info.meshCount      = info.skinnedMeshCount + info.staticMeshCount;
-        info.materialCount  = matSet.Count;
-        info.boneCount      = allBones.Count;
+        info.meshCount     = info.skinnedMeshCount + info.staticMeshCount;
+        info.materialCount = matSet.Count;
+        info.boneCount     = allBones.Count;
+
+        // 텍스처 메모리: DiNeTextureVRAM 공유 유틸 사용 (Material Tool과 동일 계산)
+        info.textureMemoryBytes = DiNeTextureVRAM.CalcAvatarTextureVRAM(root, out int texCount);
+        info.textureCount       = texCount;
+
         return info;
+    }
+
+    /// <summary>
+    /// 메쉬의 GPU 메모리 사용량을 버텍스/인덱스 데이터 기반으로 추정합니다.
+    /// </summary>
+    private static long CalcMeshMemory(Mesh mesh)
+    {
+        if (mesh == null) return 0;
+        long bytes = 0;
+
+        // 버텍스 어트리뷰트별 바이트 크기 합산
+        foreach (var attr in mesh.GetVertexAttributes())
+        {
+            int compSize = attr.format switch
+            {
+                UnityEngine.Rendering.VertexAttributeFormat.Float32  => 4,
+                UnityEngine.Rendering.VertexAttributeFormat.Float16  => 2,
+                UnityEngine.Rendering.VertexAttributeFormat.UNorm8   => 1,
+                UnityEngine.Rendering.VertexAttributeFormat.SNorm8   => 1,
+                UnityEngine.Rendering.VertexAttributeFormat.UNorm16  => 2,
+                UnityEngine.Rendering.VertexAttributeFormat.SNorm16  => 2,
+                UnityEngine.Rendering.VertexAttributeFormat.UInt8    => 1,
+                UnityEngine.Rendering.VertexAttributeFormat.SInt8    => 1,
+                UnityEngine.Rendering.VertexAttributeFormat.UInt16   => 2,
+                UnityEngine.Rendering.VertexAttributeFormat.SInt16   => 2,
+                UnityEngine.Rendering.VertexAttributeFormat.UInt32   => 4,
+                UnityEngine.Rendering.VertexAttributeFormat.SInt32   => 4,
+                _ => 4
+            };
+            bytes += (long)compSize * attr.dimension * mesh.vertexCount;
+        }
+
+        // 인덱스 버퍼 (16bit or 32bit)
+        bool use32 = mesh.indexFormat == UnityEngine.Rendering.IndexFormat.UInt32;
+        bytes += (long)(use32 ? 4 : 2) * mesh.triangles.Length;
+
+        return bytes;
     }
 
     private void DrawAvatarInfo()

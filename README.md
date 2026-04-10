@@ -208,7 +208,7 @@ Supports 60+ texture formats with accurate BPP data based on GPU memory layout.
 ## 🔧 Troubleshooting
 
 **Package won't import (filename contains Japanese or special characters)?**
-- Enable the **"임포트 창 강제 표시"** option in Package Patcher as a fallback
+- Enable the **"Force Import Dialog"** option in Package Patcher as a fallback
 - The tool automatically copies files to a safe temp path — check the Console for path error details
 
 **VRAM numbers differ from other tools?**
@@ -220,7 +220,7 @@ Supports 60+ texture formats with accurate BPP data based on GPU memory layout.
 - If it persists, re-assign the avatar to refresh the SMR reference
 
 **Expression blending causes distorted faces?**
-- Enable **"재스쳐 클립의 쉐이프키 0값 포함"** in the Expression tab before saving
+- Enable **"Include Gesture ShapeKeys at 0"** in the Expression tab before saving
 - This writes all gesture-used shapekeys at `0` in the new clip, preventing bleed-through
 
 **Window won't open?**
