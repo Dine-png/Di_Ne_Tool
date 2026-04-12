@@ -196,7 +196,7 @@ public class ArmatureScalerEditor : EditorWindow
 
     private void OnEditorUpdate()
     {
-        if (selectedPart != HumanoidBodyPart.None && targetAvatarRoot != null && boneMapping != null)
+        if (selectedPart == HumanoidBodyPart.None || targetAvatarRoot == null || boneMapping == null)
         {
             return;
         }
@@ -223,15 +223,6 @@ public class ArmatureScalerEditor : EditorWindow
                 positionValues[selectedPart] = boneTransform.localPosition;
                 lastKnownPosition = boneTransform.localPosition;
                 Repaint();
-            }
-            
-            if (currentMode == EditorMode.ShapeKey && _realtimePreview && targetAvatarRoot != null && animationClip != null)
-            {
-                PreviewPoseNoUndo();
-                if (SceneView.lastActiveSceneView != null)
-                {
-                    SceneView.lastActiveSceneView.Repaint();
-                }
             }
         }
     }
@@ -624,7 +615,7 @@ public class ArmatureScalerEditor : EditorWindow
         EditorGUI.EndDisabledGroup();
         EditorGUILayout.EndHorizontal();
 
-        animationClip = (AnimationClip)EditorGUILayout.ObjectField(SK_TEXT[2], animationClip, typeof(AnimationClip), false);
+        animationClip    = (AnimationClip)EditorGUILayout.ObjectField(SK_TEXT[2], animationClip, typeof(AnimationClip), false);
         EditorGUILayout.EndVertical();
 
         GUILayout.Space(5);
@@ -635,18 +626,12 @@ public class ArmatureScalerEditor : EditorWindow
         EditorGUILayout.BeginHorizontal();
         EditorGUILayout.LabelField(SK_TEXT[3], EditorStyles.boldLabel);
         GUILayout.FlexibleSpace();
-        
         if (animationClip != null)
             GUILayout.Label($"{clipTime:F3}s / {animationClip.length:F3}s",
                 new GUIStyle(EditorStyles.miniLabel) { alignment = TextAnchor.MiddleRight, normal = { textColor = new Color(0.6f, 0.6f, 0.6f) } });
-        
         GUILayout.Space(4);
-
-        // ─── [핵심 수정 부분] 실시간 미리보기 버튼 ───
         var _prevRtBg = GUI.backgroundColor;
-        // 활성화 상태에 따라 색상 피드백 (민트색 / 어두운색)
         GUI.backgroundColor = _realtimePreview ? new Color(0.30f, 0.82f, 0.76f) : new Color(0.35f, 0.35f, 0.38f);
-        
         var rtStyle = new GUIStyle(GUI.skin.button)
         {
             fontSize  = 10,
@@ -654,37 +639,91 @@ public class ArmatureScalerEditor : EditorWindow
             normal    = { textColor = _realtimePreview ? Color.white : new Color(0.7f, 0.7f, 0.7f) },
             hover     = { textColor = Color.white },
         };
-
-        // 버튼 클릭 시 SetRealtimePreview를 호출하여 즉시 포즈 반영
         if (GUILayout.Button(SK_TEXT[13], rtStyle, GUILayout.Height(18)))
-        {
             SetRealtimePreview(!_realtimePreview);
-        }
         GUI.backgroundColor = _prevRtBg;
         EditorGUILayout.EndHorizontal();
-        
         GUILayout.Space(3);
 
-        // ─── [핵심 수정 부분] 타임라인 슬라이더 ───
         EditorGUI.BeginChangeCheck();
         clipTime = EditorGUILayout.Slider(clipTime, 0f, animationClip != null ? animationClip.length : 1f);
         if (EditorGUI.EndChangeCheck())
         {
-            // 슬라이더를 움직일 때 실시간 미리보기가 켜져 있다면 즉시 포즈 업데이트
             ApplyShapeKeys();
-            if (_realtimePreview) 
-            {
-                PreviewPoseNoUndo();
-            }
+            if (_realtimePreview) PreviewPoseNoUndo();
         }
 
         EditorGUILayout.EndVertical();
         EditorGUI.EndDisabledGroup();
 
-        // ... (이후 Apply 버튼 및 복원 버튼 로직은 기존과 동일)
         GUILayout.Space(8);
-        // (이하 생략)
+
+        EditorGUI.BeginDisabledGroup(targetAvatarRoot == null || animationClip == null);
+
+        var btnStyle = new GUIStyle(GUI.skin.button)
+        {
+            fontSize    = 12,
+            fontStyle   = FontStyle.Bold,
+            fixedHeight = 36,
+            normal      = { textColor = Color.white },
+            hover       = { textColor = Color.white },
+        };
+        var prevBgGroup = GUI.backgroundColor;
+
+        EditorGUILayout.BeginHorizontal();
+
+        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+        if (GUILayout.Button(SK_TEXT[4], btnStyle))
+        {
+            ApplyShapeKeys();
+            Debug.Log($"[Avi Editor] {targetAvatarRoot.name} — {SK_TEXT[7]}");
+        }
+
+        GUI.backgroundColor = new Color(0.25f, 0.65f, 0.60f);
+        if (GUILayout.Button(SK_TEXT[5], btnStyle))
+        {
+            ApplyPose();
+            Debug.Log($"[Avi Editor] {targetAvatarRoot.name} — {SK_TEXT[8]}");
+        }
+
+        GUI.backgroundColor = new Color(0.21f, 0.21f, 0.24f);
+        if (GUILayout.Button(SK_TEXT[6], new GUIStyle(btnStyle)
+            { normal = { textColor = new Color(0.30f, 0.82f, 0.76f) }, hover = { textColor = Color.white } }))
+        {
+            ApplyShapeKeys();
+            ApplyPose();
+            Debug.Log($"[Avi Editor] {targetAvatarRoot.name} — {SK_TEXT[9]}");
+        }
+
+        EditorGUILayout.EndHorizontal();
+        GUI.backgroundColor = prevBgGroup;
+
+        EditorGUI.EndDisabledGroup();
+
+        GUILayout.Space(5);
+
+        // ─── 복원 버튼 (새로운 초기화 로직 적용) ───
+        EditorGUI.BeginDisabledGroup(targetAvatarRoot == null || !_hasSnapshot);
+        GUI.backgroundColor = new Color(0.21f, 0.21f, 0.24f);
+        if (GUILayout.Button(SK_TEXT[10], new GUIStyle(GUI.skin.button)
+        {
+            fontSize    = 12,
+            fontStyle   = FontStyle.Bold,
+            fixedHeight = 30,
+            normal      = { textColor = new Color(0.85f, 0.85f, 0.85f) },
+            hover       = { textColor = Color.white },
+        }))
+        {
+            RestoreToOriginal();
+            Debug.Log($"[Avi Editor] {SK_TEXT[11]}");
+        }
+        GUI.backgroundColor = prevBgGroup;
+        EditorGUI.EndDisabledGroup();
+
+        GUILayout.Space(5);
+        EditorGUILayout.HelpBox(SK_TEXT[12], MessageType.Info);
     }
+
     private void ApplyShapeKeys()
     {
         if (targetAvatarRoot == null || animationClip == null) return;
@@ -819,14 +858,8 @@ public class ArmatureScalerEditor : EditorWindow
     private void SetRealtimePreview(bool on)
     {
         _realtimePreview = on;
-        if (on)
+        if (!on)
         {
-            // 버튼 클릭 즉시 현재 슬라이더 시간(clipTime)의 포즈를 적용
-            PreviewPoseNoUndo();
-        }
-        else
-        {
-            // 미리보기를 끌 때는 스냅샷이나 프리팹 원래 상태로 복구
             RestoreTransformsOnly();
             ApplyShapeKeys();
         }
