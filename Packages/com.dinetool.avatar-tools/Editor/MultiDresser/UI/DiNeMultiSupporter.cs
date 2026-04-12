@@ -552,9 +552,11 @@ public class DiNeMultiSupporter : Editor
                     float newVal = EditorGUILayout.Slider(key.name, key.value, 0, 100);
                     if (newVal != key.value)
                     {
+                        Undo.RecordObject(target, "Change Shape Key");
                         key.value = newVal;
                         key.everRecorded = true;
                         keys[k] = key;
+                        EditorUtility.SetDirty(target);
                     }
                 }
             }

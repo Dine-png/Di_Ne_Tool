@@ -133,7 +133,8 @@ public class DiNeMaterialTool : EditorWindow
         public string[] Names;    // [EN, KO, JP]
         public string[] TexProps; // texture property names
         public string   Toggle;   // float toggle prop to zero when DisableFeature=true (null = none)
-        public SectionDef(string[] n, string[] t, string tog = null) { Names = n; TexProps = t; Toggle = tog; }
+        public string   Keyword;  // explicit shader keyword override (null = computed from Toggle)
+        public SectionDef(string[] n, string[] t, string tog = null, string kw = null) { Names = n; TexProps = t; Toggle = tog; Keyword = kw; }
     }
 
     private static readonly SectionDef[] SECTIONS = new[]
@@ -146,8 +147,8 @@ public class DiNeMaterialTool : EditorWindow
             new[]{"_OutlineTex","_OutlineWidthMask","_OutlineVectorTex"},
             "_UseOutline"),   // lilToon unified: _UseOutline=0 / Outline variant: _OutlineWidth=0
         new SectionDef(new[]{"Normal Map",   "노멀 맵",       "ノーマルマップ"},
-            new[]{"_BumpMap","_Bump2ndMap","_DetailNormalMap"}, 
-            "_UseBump"),
+            new[]{"_BumpMap","_Bump2ndMap","_DetailNormalMap"},
+            "_UseBump", "_NORMALMAP"),  // Unity standard normal map keyword
         new SectionDef(new[]{"MatCap",       "맷캡",          "マットキャップ"},
             new[]{"_MatCapTex","_MatCapBlendMask","_MatCap2ndTex","_MatCap2ndBlendMask"}, "_UseMatCap"),
         new SectionDef(new[]{"Rim Light",    "림라이트",      "リムライト"},
@@ -1226,11 +1227,12 @@ public class DiNeMaterialTool : EditorWindow
                     }
                     else if (tog != null)
                     {
+                        var sec2 = SECTIONS[si];
                         // 메인 토글
                         if (info.Material.HasProperty(tog))
                         {
                             info.Material.SetFloat(tog, 0f);
-                            string kw = tog.Replace("_Use", "").ToUpper();
+                            string kw = sec2.Keyword ?? tog.Replace("_Use", "").ToUpper();
                             if (info.Material.IsKeywordEnabled(kw)) info.Material.DisableKeyword(kw);
                         }
                         // 2nd 변형 토글 (_UseMatCap2nd, _UseBump2nd 등)
