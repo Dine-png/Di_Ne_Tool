@@ -70,15 +70,17 @@ public class DiNeMultiDresser : MonoBehaviour
     {
         Debug.Log("🚀 [DiNe] 생성 프로세스 시작...");
         TryAutoAssignFXController();
-        if (saveProfile) SaveProfile();
 
         // 1. 기존 데이터 말소 (Clean Up)
         DeleteAllGeneratedData();
 
         // 2. 데이터 재생성
         TryAddExpressionParameters();
-        TryCreateAnimationLayers();
+        TryCreateAnimationLayers();         // 내부에서 AssetDatabase.Refresh() 호출됨
         DiNeMultiMenuGenerator.TryCreateExpressionMenu(this);
+
+        // 3. 프로필 저장 — Refresh() 이후에 실행해야 씬 오브젝트 참조가 재임포트로 null이 되는 것을 방지
+        if (saveProfile) SaveProfile();
 
         Debug.Log("✨ [DiNe] 모든 작업 완료! (기존 데이터 삭제 후 재생성됨)");
     }
