@@ -19,6 +19,24 @@ public class DiNeMultiDresserAutoApply : IVRCSDKPreprocessAvatarCallback
         {
             ApplyAllDressersInScene();
         }
+        else if (state == PlayModeStateChange.EnteredEditMode)
+        {
+            // 플레이 모드 종료 후 Unity 씬 복원 완료를 기다렸다가 체크
+            EditorApplication.delayCall += () =>
+            {
+                DiNeMultiDresser[] dressers = Object.FindObjectsOfType<DiNeMultiDresser>();
+                foreach (var dresser in dressers)
+                {
+                    if (dresser == null) continue;
+                    // 레이어가 비어있는 경우에만 프로필에서 복구 시도
+                    if (dresser.layers == null || dresser.layers.Count == 0)
+                    {
+                        dresser.TryRestoreFromProfile();
+                        EditorUtility.SetDirty(dresser);
+                    }
+                }
+            };
+        }
     }
 
     public bool OnPreprocessAvatar(GameObject avatarGameObject)

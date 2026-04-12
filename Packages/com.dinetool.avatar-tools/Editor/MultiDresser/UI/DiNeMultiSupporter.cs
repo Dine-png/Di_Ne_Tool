@@ -53,9 +53,9 @@ public class DiNeMultiSupporter : Editor
                 { "expressionMenu", "익스프레션 메뉴" },
                 { "newLayer", "새 레이어" },
                 { "autoApplyHint", "플레이 모드 진입 및 아바타 업로드 시 전체 설정이 자동으로 생성/적용됩니다." },
-                { "cleanupDialogTitle", "Clean Up" },
-                { "cleanupDialogMsg", "정말로 생성된 모든 데이터(파라미터, 레이어, 메뉴)를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다." },
-                { "cleanupDialogOk", "삭제 (Yes)" },
+                { "cleanupDialogTitle", "데이터 초기화" },
+                { "cleanupDialogMsg", "드레서에 설정된 모든 데이터(레이어, 오브젝트, 쉐이프키)를 초기화합니다.\n이 작업은 되돌릴 수 없습니다." },
+                { "cleanupDialogOk", "초기화 (Yes)" },
                 { "cleanupDialogCancel", "취소 (No)" }
             }
         },
@@ -86,9 +86,9 @@ public class DiNeMultiSupporter : Editor
                 { "expressionMenu", "Expression Menu" },
                 { "newLayer", "New Layer" },
                 { "autoApplyHint", "All settings will be automatically generated/applied when entering Play Mode or uploading the avatar." },
-                { "cleanupDialogTitle", "Clean Up" },
-                { "cleanupDialogMsg", "Are you sure you want to delete all generated data (parameters, layers, menus)?\nThis action cannot be undone." },
-                { "cleanupDialogOk", "Delete (Yes)" },
+                { "cleanupDialogTitle", "Reset Data" },
+                { "cleanupDialogMsg", "This will clear all dresser settings (layers, objects, shape keys).\nThis action cannot be undone." },
+                { "cleanupDialogOk", "Reset (Yes)" },
                 { "cleanupDialogCancel", "Cancel (No)" }
             }
         },
@@ -119,9 +119,9 @@ public class DiNeMultiSupporter : Editor
                 { "expressionMenu", "表情メニュー" },
                 { "newLayer", "新しいレイヤー" },
                 { "autoApplyHint", "プレイモード開始またはアバターアップロード時に全設定が自動生成/適用されます。" },
-                { "cleanupDialogTitle", "Clean Up" },
-                { "cleanupDialogMsg", "生成されたすべてのデータ（パラメーター、レイヤー、メニュー）を削除しますか？\nこの操作は元に戻せません。" },
-                { "cleanupDialogOk", "削除 (Yes)" },
+                { "cleanupDialogTitle", "データ初期化" },
+                { "cleanupDialogMsg", "ドレッサーに設定された全データ（レイヤー、オブジェクト、シェイプキー）を初期化します。\nこの操作は元に戻せません。" },
+                { "cleanupDialogOk", "初期化 (Yes)" },
                 { "cleanupDialogCancel", "キャンセル (No)" }
             }
         }
@@ -197,10 +197,18 @@ public class DiNeMultiSupporter : Editor
 
         if (layers.arraySize == 0)
         {
-            layers.InsertArrayElementAtIndex(0);
-            layers.GetArrayElementAtIndex(0).FindPropertyRelative("layerName").stringValue = "Main";
-            serializedObject.ApplyModifiedProperties();
-            gen.layers[0].EnsureSize(0);
+            // 빈 레이어면 프로필 복구 먼저 시도 (플레이 모드 후 유실 케이스 포함)
+            gen.TryRestoreFromProfile();
+            serializedObject.Update();
+
+            if (layers.arraySize == 0)
+            {
+                // 프로필도 없으면 기본 레이어 생성
+                layers.InsertArrayElementAtIndex(0);
+                layers.GetArrayElementAtIndex(0).FindPropertyRelative("layerName").stringValue = "Main";
+                serializedObject.ApplyModifiedProperties();
+                gen.layers[0].EnsureSize(0);
+            }
         }
 
         List<string> tabNames = new List<string>();
@@ -254,7 +262,12 @@ public class DiNeMultiSupporter : Editor
         {
             if (EditorUtility.DisplayDialog(lang["cleanupDialogTitle"], lang["cleanupDialogMsg"], lang["cleanupDialogOk"], lang["cleanupDialogCancel"]))
             {
-                gen.DeleteAllGeneratedData();
+                Undo.RecordObject(gen, "Clear Multi Dresser Data");
+                gen.layers.Clear();
+                gen.shapeKeyTargets.Clear();
+                selectedLayerIndex = 0;
+                EditorUtility.SetDirty(gen);
+                serializedObject.Update();
             }
         }
         GUI.backgroundColor = Color.white;

@@ -802,16 +802,26 @@ public class DiNeMaterialTool : EditorWindow
     // 해당 섹션의 기능이 켜져 있는지 판단
     private bool IsSectionFeatureOn(Material mat, int si)
     {
-        string tog = SECTIONS[si].Toggle;
+        var sec = SECTIONS[si];
+        string tog = sec.Toggle;
         if (tog == null) return false;
 
+        // 아웃라인: _UseOutline 토글만 사용
+        // 아웃라인 변형 쉐이더(_UseOutline 없음)는 width 폴백 사용 안 함 → 텍스쳐 제거만 처리
+        if (tog == "_UseOutline")
+            return mat.HasProperty("_UseOutline") && mat.GetFloat("_UseOutline") > 0.5f;
+
+        // 메인 토글 체크
         if (mat.HasProperty(tog) && mat.GetFloat(tog) > 0.5f) return true;
 
-        if (tog == "_UseOutline")
-        {
-            if (mat.HasProperty("_OutlineWidth") && mat.GetFloat("_OutlineWidth") > 0.001f) return true;
-            if (mat.IsKeywordEnabled("_OUTLINE")) return true;
-        }
+        // 2nd 변형 토글 체크 (_UseMatCap → _UseMatCap2nd 등)
+        string tog2 = tog + "2nd";
+        if (mat.HasProperty(tog2) && mat.GetFloat(tog2) > 0.5f) return true;
+
+        // 토글이 없는 경우(_UseBump 등): 섹션 텍스쳐가 하나라도 할당돼 있으면 켜진 것으로 간주
+        if (!mat.HasProperty(tog))
+            foreach (string prop in sec.TexProps)
+                if (mat.HasProperty(prop) && mat.GetTexture(prop) != null) return true;
 
         return false;
     }
@@ -1207,16 +1217,30 @@ public class DiNeMaterialTool : EditorWindow
                     // ApplyDiet 함수 안의 if (disableFeatures) 내부
                     if (tog == "_UseOutline")
                     {
-                        // [수정 포인트] 아웃라인 완전 종료 로직
-                        if (info.Material.HasProperty("_UseOutline")) info.Material.SetFloat("_UseOutline", 0f);
-                        if (info.Material.HasProperty("_OutlineWidth")) info.Material.SetFloat("_OutlineWidth", 0f);
-                        info.Material.DisableKeyword("_OUTLINE");
+                        if (info.Material.HasProperty("_UseOutline"))
+                        {
+                            info.Material.SetFloat("_UseOutline", 0f);
+                            info.Material.DisableKeyword("_OUTLINE");
+                        }
+                        // 아웃라인 변형 쉐이더(_UseOutline 없음)는 텍스쳐 제거만으로 처리
                     }
-                    else if (tog != null && info.Material.HasProperty(tog))
+                    else if (tog != null)
                     {
-                        info.Material.SetFloat(tog, 0f);
-                        string kw = tog.Replace("_Use", "").ToUpper();
-                        if (info.Material.IsKeywordEnabled(kw)) info.Material.DisableKeyword(kw);
+                        // 메인 토글
+                        if (info.Material.HasProperty(tog))
+                        {
+                            info.Material.SetFloat(tog, 0f);
+                            string kw = tog.Replace("_Use", "").ToUpper();
+                            if (info.Material.IsKeywordEnabled(kw)) info.Material.DisableKeyword(kw);
+                        }
+                        // 2nd 변형 토글 (_UseMatCap2nd, _UseBump2nd 등)
+                        string tog2 = tog + "2nd";
+                        if (info.Material.HasProperty(tog2))
+                        {
+                            info.Material.SetFloat(tog2, 0f);
+                            string kw2 = tog2.Replace("_Use", "").ToUpper();
+                            if (info.Material.IsKeywordEnabled(kw2)) info.Material.DisableKeyword(kw2);
+                        }
                     }
                 }
             }

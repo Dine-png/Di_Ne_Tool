@@ -61,6 +61,7 @@ public class ArmatureScalerEditor : EditorWindow
     // ─── Animation Freezer 필드 ───
     [SerializeField] private AnimationClip animationClip;
     [SerializeField] private float clipTime = 0.0f;
+    [SerializeField] private bool  _realtimePreview = false;
     private string[] SK_TEXT;
 
     // 스냅샷 (이제 일반 오브젝트의 T포즈 기억용으로 주로 쓰임)
@@ -628,13 +629,29 @@ public class ArmatureScalerEditor : EditorWindow
         if (animationClip != null)
             GUILayout.Label($"{clipTime:F3}s / {animationClip.length:F3}s",
                 new GUIStyle(EditorStyles.miniLabel) { alignment = TextAnchor.MiddleRight, normal = { textColor = new Color(0.6f, 0.6f, 0.6f) } });
+        GUILayout.Space(4);
+        var _prevRtBg = GUI.backgroundColor;
+        GUI.backgroundColor = _realtimePreview ? new Color(0.30f, 0.82f, 0.76f) : new Color(0.35f, 0.35f, 0.38f);
+        var rtStyle = new GUIStyle(GUI.skin.button)
+        {
+            fontSize  = 10,
+            fontStyle = FontStyle.Bold,
+            normal    = { textColor = _realtimePreview ? Color.white : new Color(0.7f, 0.7f, 0.7f) },
+            hover     = { textColor = Color.white },
+        };
+        if (GUILayout.Button(SK_TEXT[13], rtStyle, GUILayout.Height(18)))
+            SetRealtimePreview(!_realtimePreview);
+        GUI.backgroundColor = _prevRtBg;
         EditorGUILayout.EndHorizontal();
         GUILayout.Space(3);
 
         EditorGUI.BeginChangeCheck();
         clipTime = EditorGUILayout.Slider(clipTime, 0f, animationClip != null ? animationClip.length : 1f);
         if (EditorGUI.EndChangeCheck())
+        {
             ApplyShapeKeys();
+            if (_realtimePreview) PreviewPoseNoUndo();
+        }
 
         EditorGUILayout.EndVertical();
         EditorGUI.EndDisabledGroup();
@@ -774,6 +791,80 @@ public class ArmatureScalerEditor : EditorWindow
         }
     }
 
+    private bool ClipHasPoseData()
+    {
+        if (animationClip == null) return false;
+        foreach (var b in AnimationUtility.GetCurveBindings(animationClip))
+            if (!b.propertyName.StartsWith("blendShape.")) return true;
+        return false;
+    }
+
+    private void PreviewPoseNoUndo()
+    {
+        if (targetAvatarRoot == null || animationClip == null) return;
+        if (!ClipHasPoseData()) return;
+
+        // 현재 쉐이프키 상태 백업
+        var smrs = targetAvatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        var backup = new Dictionary<SkinnedMeshRenderer, float[]>();
+        foreach (var smr in smrs)
+        {
+            if (smr.sharedMesh == null) continue;
+            int cnt = smr.sharedMesh.blendShapeCount;
+            var w = new float[cnt];
+            for (int i = 0; i < cnt; i++) w[i] = smr.GetBlendShapeWeight(i);
+            backup[smr] = w;
+        }
+
+        // Undo 없이 전체 애니메이션 적용 (포즈)
+        animationClip.SampleAnimation(targetAvatarRoot, clipTime);
+
+        // 쉐이프키 복원 (포즈만 남김)
+        foreach (var kvp in backup)
+        {
+            for (int i = 0; i < kvp.Value.Length; i++)
+                kvp.Key.SetBlendShapeWeight(i, kvp.Value[i]);
+            ForceUpdateScene(kvp.Key);
+        }
+        foreach (var t in targetAvatarRoot.GetComponentsInChildren<Transform>(true))
+            ForceUpdateScene(t);
+    }
+
+    private void RestoreTransformsOnly()
+    {
+        if (targetAvatarRoot == null || !_hasSnapshot) return;
+
+        if (PrefabUtility.IsPartOfPrefabInstance(targetAvatarRoot))
+        {
+            foreach (var tr in targetAvatarRoot.GetComponentsInChildren<Transform>(true))
+                PrefabUtility.RevertObjectOverride(tr, InteractionMode.UserAction);
+        }
+        else
+        {
+            foreach (var kvp in _snapTransforms)
+            {
+                if (kvp.Key == null) continue;
+                kvp.Key.localPosition = kvp.Value.pos;
+                kvp.Key.localRotation = kvp.Value.rot;
+                kvp.Key.localScale    = kvp.Value.scl;
+                ForceUpdateScene(kvp.Key);
+            }
+        }
+
+        if (SceneView.lastActiveSceneView != null)
+            SceneView.lastActiveSceneView.Repaint();
+    }
+
+    private void SetRealtimePreview(bool on)
+    {
+        _realtimePreview = on;
+        if (!on)
+        {
+            RestoreTransformsOnly();
+            ApplyShapeKeys();
+        }
+    }
+
     // 아바타 할당 시 초기 T포즈 스냅샷 저장
     private void TakeSnapshot()
     {
@@ -866,6 +957,7 @@ public class ArmatureScalerEditor : EditorWindow
                     "↩  원본 초기화 (초기 포즈/0)",    // 10
                     "원본 상태(프리팹 또는 T포즈/쉐이프키 0)로 복원했습니다.", // 11
                     "슬라이더로 미리보기, 버튼으로 씬에 적용합니다.", // 12
+                    "실시간 미리보기",                            // 13
                 };
                 break;
             case LanguagePreset.Japanese:
@@ -884,6 +976,7 @@ public class ArmatureScalerEditor : EditorWindow
                     "↩  元に初期化 (初期ポーズ/0)",
                     "元の状態(プレハブまたはTポーズ/シェイプキー0)に復元しました。",
                     "スライダーでプレビュー、ボタンでシーンに適用します。",
+                    "リアルタイムプレビュー",
                 };
                 break;
             default:
@@ -902,6 +995,7 @@ public class ArmatureScalerEditor : EditorWindow
                     "↩  Initialize Original (T-Pose/0)",
                     "Restored to original state (Prefab or T-Pose/ShapeKeys 0).",
                     "Slide to preview. Buttons apply to scene.",
+                    "Real-time Preview",
                 };
                 break;
         }
