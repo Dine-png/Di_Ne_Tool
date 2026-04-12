@@ -146,7 +146,8 @@ public class DiNeMaterialTool : EditorWindow
             new[]{"_OutlineTex","_OutlineWidthMask","_OutlineVectorTex"},
             "_UseOutline"),   // lilToon unified: _UseOutline=0 / Outline variant: _OutlineWidth=0
         new SectionDef(new[]{"Normal Map",   "노멀 맵",       "ノーマルマップ"},
-            new[]{"_BumpMap","_Bump2ndMap","_DetailNormalMap"}),
+            new[]{"_BumpMap","_Bump2ndMap","_DetailNormalMap"}, 
+            "_UseBump"),
         new SectionDef(new[]{"MatCap",       "맷캡",          "マットキャップ"},
             new[]{"_MatCapTex","_MatCapBlendMask","_MatCap2ndTex","_MatCap2ndBlendMask"}, "_UseMatCap"),
         new SectionDef(new[]{"Rim Light",    "림라이트",      "リムライト"},
@@ -804,19 +805,12 @@ public class DiNeMaterialTool : EditorWindow
         string tog = SECTIONS[si].Toggle;
         if (tog == null) return false;
 
-        // 일반 float 토글 (_UseOutline, _UseMatCap 등)
         if (mat.HasProperty(tog) && mat.GetFloat(tog) > 0.5f) return true;
 
-        // Outline 전용 셰이더 처리
-        // _UseOutline 프로퍼티가 없는 "lilToon Outline" 셰이더 변형은
-        // 셰이더 이름에 "Outline"이 있으면 항상 켜진 상태로 간주
-        if (tog == "_UseOutline" &&
-            mat.shader.name.IndexOf("Outline", System.StringComparison.OrdinalIgnoreCase) >= 0)
+        if (tog == "_UseOutline")
         {
-            // _OutlineWidth가 거의 0이면 기능 끄기가 적용된 것으로 간주
-            if (mat.HasProperty("_OutlineWidth") && mat.GetFloat("_OutlineWidth") <= 0.001f)
-                return false;
-            return true;
+            if (mat.HasProperty("_OutlineWidth") && mat.GetFloat("_OutlineWidth") > 0.001f) return true;
+            if (mat.IsKeywordEnabled("_OUTLINE")) return true;
         }
 
         return false;
@@ -1210,19 +1204,19 @@ public class DiNeMaterialTool : EditorWindow
                     if (!IsSectionFeatureOn(info.Material, si)) continue;
 
                     string tog = SECTIONS[si].Toggle;
+                    // ApplyDiet 함수 안의 if (disableFeatures) 내부
                     if (tog == "_UseOutline")
                     {
-                        // 통합 셰이더: float + 키워드 같이 끄기
-                        if (info.Material.HasProperty("_UseOutline"))
-                            info.Material.SetFloat("_UseOutline", 0f);
-                        // 전용 Outline 셰이더: 키워드 + 폭을 0으로
-                        if (info.Material.HasProperty("_OutlineWidth"))
-                            info.Material.SetFloat("_OutlineWidth", 0f);
+                        // [수정 포인트] 아웃라인 완전 종료 로직
+                        if (info.Material.HasProperty("_UseOutline")) info.Material.SetFloat("_UseOutline", 0f);
+                        if (info.Material.HasProperty("_OutlineWidth")) info.Material.SetFloat("_OutlineWidth", 0f);
                         info.Material.DisableKeyword("_OUTLINE");
                     }
-                    else if (info.Material.HasProperty(tog))
+                    else if (tog != null && info.Material.HasProperty(tog))
                     {
                         info.Material.SetFloat(tog, 0f);
+                        string kw = tog.Replace("_Use", "").ToUpper();
+                        if (info.Material.IsKeywordEnabled(kw)) info.Material.DisableKeyword(kw);
                     }
                 }
             }
