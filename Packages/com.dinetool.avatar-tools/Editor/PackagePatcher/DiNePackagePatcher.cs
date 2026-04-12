@@ -1,11 +1,13 @@
 using UnityEditor;
 using UnityEngine;
+using System;
 using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System.IO.Compression;
 using System.Text;
 
+[InitializeOnLoad]
 public class DiNePackagePatcher : EditorWindow
 {
     [System.Serializable]
@@ -31,6 +33,72 @@ public class DiNePackagePatcher : EditorWindow
     }
 
     private enum LanguagePreset { English, Korean, Japanese }
+
+    // ── 도메인 리로드 대응 (스크립트 포함 패키지 임포트 시 리로드 발생) ──────────
+    // 임포트 중 도메인 리로드가 일어나면 모든 인스턴스 상태와 콜백이 초기화된다.
+    // SessionState에 "정리 예정 작업"을 저장하고, [InitializeOnLoad] 정적 생성자로
+    // 리로드 직후 자동 재실행한다.
+    private const string SESSION_TARGET = "DiNePatcher_PendingTarget";
+    private const string SESSION_ROOTS  = "DiNePatcher_PendingRoots";
+
+    static DiNePackagePatcher()
+    {
+        EditorApplication.delayCall += TryOrganizeAfterReload;
+    }
+
+    private static void SavePendingOrganization(string target, IEnumerable<string> roots)
+    {
+        SessionState.SetString(SESSION_TARGET, target);
+        SessionState.SetString(SESSION_ROOTS,  string.Join("\n", roots));
+    }
+
+    private static void ClearPendingOrganization()
+    {
+        SessionState.EraseString(SESSION_TARGET);
+        SessionState.EraseString(SESSION_ROOTS);
+    }
+
+    private static void TryOrganizeAfterReload()
+    {
+        string target   = SessionState.GetString(SESSION_TARGET, "");
+        string rootsRaw = SessionState.GetString(SESSION_ROOTS,  "");
+        if (string.IsNullOrEmpty(target) || string.IsNullOrEmpty(rootsRaw)) return;
+
+        ClearPendingOrganization();
+        var roots = rootsRaw.Split('\n').Where(s => !string.IsNullOrEmpty(s)).ToList();
+        Debug.Log($"[DiNe] 도메인 리로드 감지 → 정리 재개: [{string.Join(", ", roots)}] → {target}");
+        EditorApplication.delayCall += () => StaticMoveNewFolders(target, roots);
+    }
+
+    private static void StaticMoveNewFolders(string targetFolderName, List<string> roots)
+    {
+        string targetPath = "Assets/" + targetFolderName;
+        foreach (var root in roots)
+        {
+            if (root.Equals(targetPath, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!AssetDatabase.IsValidFolder(root))
+            {
+                Debug.LogWarning($"[DiNe] 폴더 없음: {root}");
+                continue;
+            }
+            string dest = targetPath + "/" + Path.GetFileName(root);
+            if (AssetDatabase.IsValidFolder(dest)) { Debug.Log($"[DiNe] 이미 정리됨: {dest}"); continue; }
+            if (!AssetDatabase.IsValidFolder(targetPath))
+                AssetDatabase.CreateFolder("Assets", targetFolderName);
+            string err = AssetDatabase.MoveAsset(root, dest);
+            if (!string.IsNullOrEmpty(err))
+                Debug.LogWarning($"[DiNe] 폴더 이동 실패: {root} → {dest}\n{err}");
+            else
+                Debug.Log($"[DiNe] 폴더 이동 완료: {root} → {dest}");
+        }
+        if (HasOpenInstances<DiNePackagePatcher>())
+        {
+            var win = GetWindow<DiNePackagePatcher>(false, null, false);
+            if (win != null) { win.isImporting = false; win.statusMessage = "완료!"; win.Repaint(); }
+        }
+    }
+    // ──────────────────────────────────────────────────────────────────────────
+
     private LanguagePreset language = LanguagePreset.Korean;
 
     private string targetFolderName = "_1_Patch";
@@ -45,7 +113,8 @@ public class DiNePackagePatcher : EditorWindow
     private Texture2D tabIcon;
     private Font      titleFont;
 
-    private string[] preImportFolders;
+    private string[]        preImportFolders;
+    private HashSet<string> predictedRootFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     private int    totalPackagesToImport      = 0;
     private int    currentlyProcessedPackages = 0;
     private string pendingTargetFolderName    = "_1_Patch";
@@ -425,7 +494,8 @@ public class DiNePackagePatcher : EditorWindow
 
         if (!Directory.Exists(tempExtractPath)) Directory.CreateDirectory(tempExtractPath);
         preImportFolders = AssetDatabase.GetSubFolders("Assets");
-        
+        predictedRootFolders.Clear();
+
         pendingTargetFolderName = GetSafeFolderName(targetFolderName);
 
         foreach (var item in targets)
@@ -442,6 +512,7 @@ public class DiNePackagePatcher : EditorWindow
                     {
                         File.Copy(item.CachedTempPath, safeTempPath, true);
                         importQueue.Enqueue((Path.GetFullPath(safeTempPath), item));
+                        foreach (var r in GetPackageRootFolders(safeTempPath)) predictedRootFolders.Add(r);
                     }
                     catch (System.Exception e)
                     {
@@ -461,6 +532,7 @@ public class DiNePackagePatcher : EditorWindow
                             {
                                 entry.ExtractToFile(safeTempPath, true);
                                 importQueue.Enqueue((Path.GetFullPath(safeTempPath), item));
+                                foreach (var r in GetPackageRootFolders(safeTempPath)) predictedRootFolders.Add(r);
                             }
                             else
                             {
@@ -489,6 +561,7 @@ public class DiNePackagePatcher : EditorWindow
                     {
                         File.Copy(fullPath, safeTempPath, true);
                         importQueue.Enqueue((Path.GetFullPath(safeTempPath), item));
+                        foreach (var r in GetPackageRootFolders(safeTempPath)) predictedRootFolders.Add(r);
                     }
                     catch (System.Exception e)
                     {
@@ -513,6 +586,10 @@ public class DiNePackagePatcher : EditorWindow
             statusMessage = UI_TEXT[19];
             return;
         }
+
+        // 도메인 리로드 대비 SessionState에 저장 (스크립트 포함 패키지 대응)
+        SavePendingOrganization(pendingTargetFolderName, predictedRootFolders);
+        Debug.Log($"[DiNe] StartImport: {totalPackagesToImport}개 큐, 예측 폴더=[{string.Join(", ", predictedRootFolders)}]");
 
         AssetDatabase.importPackageCompleted -= OnPackageProcessed;
         AssetDatabase.importPackageFailed    -= OnPackageFailed;
@@ -539,6 +616,7 @@ public class DiNePackagePatcher : EditorWindow
 
     private void OnPackageProcessed(string name)
     {
+        Debug.Log($"[DiNe] importPackageCompleted: {name}");
         if (_currentItem != null) { _currentItem.IsDone = true; _currentItem = null; }
         currentlyProcessedPackages++;
         Repaint();
@@ -556,6 +634,7 @@ public class DiNePackagePatcher : EditorWindow
 
     private void CheckIfAllFinished()
     {
+        Debug.Log($"[DiNe] CheckIfAllFinished: {currentlyProcessedPackages}/{totalPackagesToImport}, queue={importQueue.Count}");
         if (currentlyProcessedPackages >= totalPackagesToImport || importQueue.Count == 0)
         {
             AssetDatabase.importPackageCompleted -= OnPackageProcessed;
@@ -563,33 +642,143 @@ public class DiNePackagePatcher : EditorWindow
             AssetDatabase.importPackageCancelled -= OnPackageProcessed;
 
             // importPackageCompleted 직후에는 AssetDatabase가 아직 새 폴더를 반영하지 않은 경우가 있음
-            // 한 프레임 지연 후 실행하여 DB가 완전히 갱신된 뒤 폴더 이동
+            // 첫 번째 delayCall에서 Refresh → 두 번째 delayCall에서 완전히 갱신된 DB로 폴더 이동
             EditorApplication.delayCall += () =>
             {
                 AssetDatabase.Refresh();
-                MoveNewFolders();
-                CleanTempFolder();
-                isImporting   = false;
-                statusMessage = UI_TEXT[11];
-                Repaint();
+                EditorApplication.delayCall += () =>
+                {
+                    MoveNewFolders();
+                    CleanTempFolder();
+                    isImporting   = false;
+                    statusMessage = UI_TEXT[11];
+                    Repaint();
+                };
             };
         }
     }
 
     private void MoveNewFolders()
     {
-        string[] postFolders = AssetDatabase.GetSubFolders("Assets");
-        var added = postFolders.Except(preImportFolders).ToList();
-        if (added.Count > 0)
+        // 정상 경로(콜백)로 실행됨 → 리로드 후 재실행 방지
+        ClearPendingOrganization();
+        Debug.Log($"[DiNe] MoveNewFolders: 예측 폴더 수={predictedRootFolders.Count} / {string.Join(", ", predictedRootFolders)}");
+
+        if (predictedRootFolders.Count == 0)
         {
-            string targetPath = "Assets/" + pendingTargetFolderName;
+            Debug.LogWarning("[DiNe] MoveNewFolders: 이동 대상 없음 — 패키지 파싱 실패 또는 pathname 엔트리 없음");
+            return;
+        }
+
+        string targetPath = "Assets/" + pendingTargetFolderName;
+
+        foreach (var root in predictedRootFolders)
+        {
+            if (root.Equals(targetPath, StringComparison.OrdinalIgnoreCase)) continue;
+
+            if (!AssetDatabase.IsValidFolder(root))
+            {
+                Debug.LogWarning($"[DiNe] '{root}' 폴더 없음 (임포트 후에도 미생성) → 스킵");
+                continue;
+            }
+
+            string dest = targetPath + "/" + Path.GetFileName(root);
+
+            // 목적지에 이미 같은 이름 폴더가 있으면 스킵 (이미 정리된 상태)
+            if (AssetDatabase.IsValidFolder(dest))
+            {
+                Debug.Log($"[DiNe] '{dest}' 이미 존재 → 스킵");
+                continue;
+            }
+
             if (!AssetDatabase.IsValidFolder(targetPath))
                 AssetDatabase.CreateFolder("Assets", pendingTargetFolderName);
-            foreach (string f in added)
+
+            string err = AssetDatabase.MoveAsset(root, dest);
+            if (!string.IsNullOrEmpty(err))
+                Debug.LogWarning($"[DiNe] 폴더 이동 실패: {root} → {dest}\n{err}");
+            else
+                Debug.Log($"[DiNe] 폴더 이동 완료: {root} → {dest}");
+        }
+    }
+
+    /// <summary>
+    /// .unitypackage(= tgz) 파일을 파싱해 설치될 Assets 루트 폴더 이름 목록 반환.
+    /// 임포트 전에 호출하여 정확한 이동 대상을 미리 파악한다.
+    /// </summary>
+    private static IEnumerable<string> GetPackageRootFolders(string packagePath)
+    {
+        var roots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            using var fs  = File.OpenRead(packagePath);
+            using var gz  = new GZipStream(fs, CompressionMode.Decompress);
+            var hdr      = new byte[512];
+            var skipBuf  = new byte[4096];
+
+            while (TarReadExact(gz, hdr, 512) == 512)
             {
-                if (f == targetPath) continue;
-                AssetDatabase.MoveAsset(f, targetPath + "/" + Path.GetFileName(f));
+                // end-of-archive: 연속된 제로 블록
+                bool allZero = true;
+                for (int i = 0; i < 8; i++) if (hdr[i] != 0) { allZero = false; break; }
+                if (allZero) break;
+
+                string entryName = Encoding.UTF8.GetString(hdr, 0, 100).TrimEnd('\0');
+                string sizeOctal = Encoding.ASCII.GetString(hdr, 124, 12).TrimEnd('\0').Trim();
+                long   size      = 0;
+                if (!string.IsNullOrEmpty(sizeOctal))
+                    try { size = Convert.ToInt64(sizeOctal, 8); } catch { }
+                long paddedSize = (size + 511L) / 512 * 512;
+
+                // GUID/pathname 엔트리에서 에셋 경로 읽기
+                if (entryName.EndsWith("/pathname") || entryName.EndsWith("\\pathname"))
+                {
+                    var content = new byte[(int)size];
+                    TarReadExact(gz, content, (int)size);
+                    string assetPath = Encoding.UTF8.GetString(content).Trim('\0', '\r', '\n', ' ');
+                    if (assetPath.StartsWith("Assets/"))
+                    {
+                        var rel  = assetPath.Substring("Assets/".Length);
+                        var idx  = rel.IndexOf('/');
+                        var root = idx >= 0 ? rel.Substring(0, idx) : rel;
+                        if (!string.IsNullOrEmpty(root)) roots.Add("Assets/" + root);
+                    }
+                    long pad = paddedSize - size;
+                    if (pad > 0) TarSkipBytes(gz, (int)pad, skipBuf);
+                }
+                else
+                {
+                    TarSkipBytes(gz, (int)paddedSize, skipBuf);
+                }
             }
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[DiNe] 패키지 파싱 실패 (자동 정리 불가): {Path.GetFileName(packagePath)}\n{e.Message}");
+        }
+        return roots;
+    }
+
+    private static int TarReadExact(Stream s, byte[] buf, int count)
+    {
+        int total = 0;
+        while (total < count)
+        {
+            int r = s.Read(buf, total, count - total);
+            if (r <= 0) break;
+            total += r;
+        }
+        return total;
+    }
+
+    private static void TarSkipBytes(Stream s, int count, byte[] tmp)
+    {
+        int rem = count;
+        while (rem > 0)
+        {
+            int r = s.Read(tmp, 0, Math.Min(rem, tmp.Length));
+            if (r <= 0) break;
+            rem -= r;
         }
     }
 

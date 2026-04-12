@@ -1,6 +1,6 @@
 {
     "name": "com.dine.tool",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "displayName": "Di Ne Tool",
     "description": "Di Ne의 아바타 제작 툴 통합팩",
     "unity": "2022.3",
@@ -11,5 +11,5 @@
     "vpmDependencies": {
         "com.vrchat.avatars": ">=3.5.0"
     },
-    "url": "https://github.com/Dine-png/DI_NE_TOOL/releases/download/1.2.0/com.dine.tool-1.2.0.zip"
+    "url": "https://github.com/Dine-png/DI_NE_TOOL/releases/download/1.2.1/com.dine.tool-1.2.1.zip"
 }
