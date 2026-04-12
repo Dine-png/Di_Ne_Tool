@@ -1296,7 +1296,8 @@ public class DiNeMaterialTool : EditorWindow
         // === [추가된 부분] 스크롤 무한 방지 및 사이즈 조정 ===
         float vramHeight = Mathf.Clamp(_vramTextures.Count * 46f + 8f, 160f, 500f);
         _vramScroll = EditorGUILayout.BeginScrollView(_vramScroll, GUILayout.Height(vramHeight));
-        foreach (var info in _vramTextures)
+        // .ToList() 스냅샷으로 순회 - VRAMScanTextures() 가 리스트를 Clear/교체해도 안전
+        foreach (var info in _vramTextures.ToList())
             DrawVRAMTextureCard(info);
         EditorGUILayout.EndScrollView();
     }
@@ -1376,6 +1377,7 @@ public class DiNeMaterialTool : EditorWindow
             {
                 info.SuggestedFormat = _formatOptions[newFmtIdx];
                 VRAMChangeCompression(info);
+                GUIUtility.ExitGUI(); // 리스트 갱신 중 발생하는 GUI 에러 방지
             }
 
             GUILayout.Space(4);
@@ -1385,11 +1387,12 @@ public class DiNeMaterialTool : EditorWindow
             int _displayMaxSize = (_platSet.overridden && _platSet.maxTextureSize > 0)
                 ? _platSet.maxTextureSize : importer.maxTextureSize;
             int curSizeIdx = System.Array.IndexOf(_sizeOptions, _displayMaxSize);
-            if (curSizeIdx < 0) curSizeIdx = _sizeOptions.Length - 1; 
+            if (curSizeIdx < 0) curSizeIdx = _sizeOptions.Length - 1;
             int newSizeIdx = EditorGUILayout.Popup(curSizeIdx, _sizeNames, GUILayout.Width(70));
             if (newSizeIdx != curSizeIdx)
             {
                 VRAMChangeSize(info, _sizeOptions[newSizeIdx]);
+                GUIUtility.ExitGUI(); // 리스트 갱신 중 발생하는 GUI 에러 방지
             }
         }
         else

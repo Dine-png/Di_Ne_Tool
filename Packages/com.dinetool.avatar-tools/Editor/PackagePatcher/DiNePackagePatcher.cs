@@ -561,11 +561,18 @@ public class DiNePackagePatcher : EditorWindow
             AssetDatabase.importPackageCompleted -= OnPackageProcessed;
             AssetDatabase.importPackageFailed    -= OnPackageFailed;
             AssetDatabase.importPackageCancelled -= OnPackageProcessed;
-            MoveNewFolders();
-            CleanTempFolder();
-            isImporting   = false;
-            statusMessage = UI_TEXT[11];
-            Repaint();
+
+            // importPackageCompleted 직후에는 AssetDatabase가 아직 새 폴더를 반영하지 않은 경우가 있음
+            // 한 프레임 지연 후 실행하여 DB가 완전히 갱신된 뒤 폴더 이동
+            EditorApplication.delayCall += () =>
+            {
+                AssetDatabase.Refresh();
+                MoveNewFolders();
+                CleanTempFolder();
+                isImporting   = false;
+                statusMessage = UI_TEXT[11];
+                Repaint();
+            };
         }
     }
 
