@@ -66,11 +66,11 @@ public class DiNeMultiDresser : MonoBehaviour
         };
     }
 
-    public void Generate()
+    public void Generate(bool saveProfile = true)
     {
         Debug.Log("🚀 [DiNe] 생성 프로세스 시작...");
         TryAutoAssignFXController();
-        SaveProfile();
+        if (saveProfile) SaveProfile();
 
         // 1. 기존 데이터 말소 (Clean Up)
         DeleteAllGeneratedData();

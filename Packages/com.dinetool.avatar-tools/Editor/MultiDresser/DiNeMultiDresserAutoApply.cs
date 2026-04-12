@@ -21,19 +21,17 @@ public class DiNeMultiDresserAutoApply : IVRCSDKPreprocessAvatarCallback
         }
         else if (state == PlayModeStateChange.EnteredEditMode)
         {
-            // 플레이 모드 종료 후 Unity 씬 복원 완료를 기다렸다가 체크
+            // 플레이 모드 종료 후 Unity 씬 복원 완료를 기다렸다가 복원
+            // ExitingEditMode에서 SaveProfile()로 최신 상태가 저장되므로
+            // 항상 프로필에서 복원해야 linkedObjects 등 누락 없이 정확히 복구됨
             EditorApplication.delayCall += () =>
             {
                 DiNeMultiDresser[] dressers = Object.FindObjectsOfType<DiNeMultiDresser>();
                 foreach (var dresser in dressers)
                 {
                     if (dresser == null) continue;
-                    // 레이어가 비어있는 경우에만 프로필에서 복구 시도
-                    if (dresser.layers == null || dresser.layers.Count == 0)
-                    {
-                        dresser.TryRestoreFromProfile();
-                        EditorUtility.SetDirty(dresser);
-                    }
+                    dresser.TryRestoreFromProfile();
+                    EditorUtility.SetDirty(dresser);
                 }
             };
         }
@@ -64,16 +62,17 @@ public class DiNeMultiDresserAutoApply : IVRCSDKPreprocessAvatarCallback
         {
             if (dresser.gameObject.activeSelf)
             {
-                GenerateDresser(dresser);
+                // 업로드 시에는 빌드 클론의 임시 참조가 프로필에 저장되지 않도록 saveProfile=false
+                GenerateDresser(dresser, saveProfile: false);
             }
         }
     }
 
-    private static void GenerateDresser(DiNeMultiDresser dresser)
+    private static void GenerateDresser(DiNeMultiDresser dresser, bool saveProfile = true)
     {
         Debug.Log($"[DiNe] 🚀 멀티 드레서 자동 생성 시작: {dresser.name}");
         DiNeMultiIconGenerator.GenerateIcons(dresser);
-        dresser.Generate();
+        dresser.Generate(saveProfile);
     }
 }
 #endif

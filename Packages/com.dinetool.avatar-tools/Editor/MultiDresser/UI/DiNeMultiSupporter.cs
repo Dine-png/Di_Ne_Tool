@@ -398,23 +398,33 @@ public class DiNeMultiSupporter : Editor
                 for (int j = 0; j < currentLayerData.linkedObjects[i].objects.Count; j++)
                 {
                     EditorGUILayout.BeginHorizontal();
+                    EditorGUI.BeginChangeCheck();
                     currentLayerData.linkedObjects[i].objects[j] = (GameObject)EditorGUILayout.ObjectField(currentLayerData.linkedObjects[i].objects[j], typeof(GameObject), true);
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        EditorUtility.SetDirty(target);
+                        serializedObject.Update();
+                    }
                     if (GUILayout.Button("-", GUILayout.Width(25)))
                     {
                         currentLayerData.linkedObjects[i].objects.RemoveAt(j);
+                        EditorUtility.SetDirty(target);
+                        serializedObject.Update();
                         break;
                     }
                     EditorGUILayout.EndHorizontal();
                 }
-                
+
                 Rect subDrop = GUILayoutUtility.GetRect(0, 25, GUILayout.ExpandWidth(true));
                 Color subOriginalColor = GUI.backgroundColor;
-                GUI.backgroundColor = new Color(0.6f, 0.9f, 1f); 
+                GUI.backgroundColor = new Color(0.6f, 0.9f, 1f);
                 GUI.Box(subDrop, lang["linkDragHint"], EditorStyles.helpBox);
                 GUI.backgroundColor = subOriginalColor;
 
                 HandleDragDrop(subDrop, (objs) => {
-                     foreach(var o in objs) currentLayerData.linkedObjects[i].objects.Add(o);
+                    foreach(var o in objs) currentLayerData.linkedObjects[i].objects.Add(o);
+                    EditorUtility.SetDirty(target);
+                    serializedObject.Update();
                 });
             }
 
