@@ -19,6 +19,8 @@ public class DiNePackagePatcher : EditorWindow
         public bool   IsDone     = false;
         public bool   IsFailed   = false;
 
+        public string CachedTempPath; // set when pre-extracted during ProcessFile (e.g. from Bandizip temp)
+
         public PackageItem(string sourcePath, string displayName, bool isFromZip, string packagePathInZip = null)
         {
             SourcePath       = sourcePath;
@@ -50,7 +52,8 @@ public class DiNePackagePatcher : EditorWindow
     private PackageItem _currentItem;
 
     private Queue<(string path, PackageItem item)> importQueue = new Queue<(string, PackageItem)>();
-    private static string tempExtractPath = "Temp/DiNePatcher_Extract";
+    private static string tempExtractPath  = "Temp/DiNePatcher_Extract";
+    private static string tempCachePath    = "Temp/DiNePatcher_Cache";
 
     private static readonly Color ColMint   = new Color(0.30f, 0.82f, 0.76f);
     private static readonly Color ColZip    = new Color(0.40f, 0.75f, 1.00f);
@@ -384,11 +387,15 @@ public class DiNePackagePatcher : EditorWindow
                             {
                                 if (!foundPackages.Any(p => p.SourcePath == path && p.PackagePathInZip == entry.FullName))
                                 {
-                                    foundPackages.Add(new PackageItem(path, entry.FullName, true, entry.FullName));
+                                    // ZIP 원본이 반디집 등 임시 경로에 있을 수 있으므로 즉시 캐시에 추출
+                                    string cached = TryCacheZipEntry(entry, path);
+                                    var item = new PackageItem(path, entry.FullName, true, entry.FullName);
+                                    item.CachedTempPath = cached;
+                                    foundPackages.Add(item);
                                 }
                             }
                         }
-                        return; 
+                        return;
                     }
                 }
                 catch { continue; } 
@@ -412,7 +419,8 @@ public class DiNePackagePatcher : EditorWindow
 
         isImporting   = true;
         statusMessage = UI_TEXT[9];
-        CleanTempFolder();
+        // 이전 임포트 임시 파일만 정리 (캐시 폴더는 유지 - ProcessFile에서 미리 추출한 파일 보존)
+        try { if (Directory.Exists(tempExtractPath)) Directory.Delete(tempExtractPath, true); } catch { }
         importQueue.Clear();
 
         if (!Directory.Exists(tempExtractPath)) Directory.CreateDirectory(tempExtractPath);
@@ -427,22 +435,45 @@ public class DiNePackagePatcher : EditorWindow
 
             if (item.IsFromZip)
             {
-                try
+                // 이미 ProcessFile 시점에 캐시된 파일이 있으면 그걸 사용
+                if (!string.IsNullOrEmpty(item.CachedTempPath) && File.Exists(item.CachedTempPath))
                 {
-                    using (var archive = ZipFile.OpenRead(item.SourcePath))
+                    try
                     {
-                        var entry = archive.GetEntry(item.PackagePathInZip);
-                        if (entry != null)
-                        {
-                            entry.ExtractToFile(safeTempPath, true);
-                            importQueue.Enqueue((Path.GetFullPath(safeTempPath), item));
-                        }
+                        File.Copy(item.CachedTempPath, safeTempPath, true);
+                        importQueue.Enqueue((Path.GetFullPath(safeTempPath), item));
+                    }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogError($"[DiNe] 캐시 복사 실패: {item.DisplayName}\n{e.Message}");
+                        item.IsFailed = true;
                     }
                 }
-                catch (System.Exception e)
+                else
                 {
-                    Debug.LogError($"[DiNe] ZIP 추출 실패: {item.DisplayName}\n{e.Message}");
-                    item.IsFailed = true;
+                    // 캐시 없음: 원본 ZIP에서 직접 추출 시도 (원본이 아직 존재하는 경우)
+                    try
+                    {
+                        using (var archive = ZipFile.OpenRead(item.SourcePath))
+                        {
+                            var entry = archive.GetEntry(item.PackagePathInZip);
+                            if (entry != null)
+                            {
+                                entry.ExtractToFile(safeTempPath, true);
+                                importQueue.Enqueue((Path.GetFullPath(safeTempPath), item));
+                            }
+                            else
+                            {
+                                Debug.LogError($"[DiNe] ZIP 내 파일을 찾을 수 없음: {item.PackagePathInZip}");
+                                item.IsFailed = true;
+                            }
+                        }
+                    }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogError($"[DiNe] ZIP 추출 실패: {item.DisplayName}\n{e.Message}");
+                        item.IsFailed = true;
+                    }
                 }
             }
             else
@@ -555,9 +586,31 @@ public class DiNePackagePatcher : EditorWindow
         }
     }
 
+    /// <summary>
+    /// ZIP 항목을 즉시 캐시 폴더에 추출. 반디집 등 임시 경로 소멸 대비.
+    /// 실패 시 null 반환 (원본 ZIP 재시도 fallback).
+    /// </summary>
+    private static string TryCacheZipEntry(System.IO.Compression.ZipArchiveEntry entry, string sourceZipPath)
+    {
+        try
+        {
+            if (!Directory.Exists(tempCachePath)) Directory.CreateDirectory(tempCachePath);
+            string safeFileName = $"Cache_{System.Guid.NewGuid().ToString("N").Substring(0, 8)}.unitypackage";
+            string cachePath = Path.Combine(tempCachePath, safeFileName);
+            entry.ExtractToFile(cachePath, true);
+            return cachePath;
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[DiNe] ZIP 캐시 추출 실패 (임포트 시 재시도): {Path.GetFileName(sourceZipPath)}\n{e.Message}");
+            return null;
+        }
+    }
+
     private static void CleanTempFolder()
     {
         try { if (Directory.Exists(tempExtractPath)) Directory.Delete(tempExtractPath, true); } catch { }
+        try { if (Directory.Exists(tempCachePath))   Directory.Delete(tempCachePath,   true); } catch { }
     }
 
     private void SetLanguage(LanguagePreset lang)

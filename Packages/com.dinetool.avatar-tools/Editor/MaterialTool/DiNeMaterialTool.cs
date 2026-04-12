@@ -140,7 +140,7 @@ public class DiNeMaterialTool : EditorWindow
     private static readonly SectionDef[] SECTIONS = new[]
     {
         new SectionDef(new[]{"Shadow / AO",    "쉐도우 / AO",    "シャドウ / AO"},
-            new[]{"_ShadowStrengthMask","_Shadow2ndColorTex","_Shadow3rdColorTex"}),
+            new[]{"_ShadowStrengthMask","_ShadowColorTex","_Shadow2ndColorTex","_Shadow3rdColorTex"}),
         new SectionDef(new[]{"Shadow Mask",    "쉐도우 마스크",  "シャドウマスク"},
             new[]{"_ShadowBorderMask","_ShadowBlurMask"}),
         new SectionDef(new[]{"Outline",      "아웃라인",      "アウトライン"},
@@ -152,11 +152,11 @@ public class DiNeMaterialTool : EditorWindow
         new SectionDef(new[]{"MatCap",       "맷캡",          "マットキャップ"},
             new[]{"_MatCapTex","_MatCapBlendMask","_MatCap2ndTex","_MatCap2ndBlendMask"}, "_UseMatCap"),
         new SectionDef(new[]{"Rim Light",    "림라이트",      "リムライト"},
-            new[]{"_RimColorTex"}, "_UseRim"),
+            new[]{"_RimColorTex","_RimShadeMask"}, "_UseRim"),
         new SectionDef(new[]{"Emission",     "에미션",        "エミッション"},
-            new[]{"_EmissionMap","_Emission2ndMap"}, "_UseEmission"),
+            new[]{"_EmissionMap","_EmissionBlendMask","_EmissionGradTex","_Emission2ndMap","_Emission2ndBlendMask","_Emission2ndGradTex"}, "_UseEmission"),
         new SectionDef(new[]{"Glitter",      "글리터",        "グリッター"},
-            new[]{"_GlitterColorTex"}, "_UseGlitter"),
+            new[]{"_GlitterColorTex","_GlitterShapeTex"}, "_UseGlitter"),
         new SectionDef(new[]{"Backlight",    "백라이트",      "バックライト"},
             new[]{"_BacklightColorTex"}, "_UseBacklight"),
         new SectionDef(new[]{"Parallax",     "시차",          "パララックス"},

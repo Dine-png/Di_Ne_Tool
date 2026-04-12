@@ -35,7 +35,10 @@
       "Read(//c/Users/butei/OneDrive/문서/GitHub/Di_Ne_Tool/**)",
       "Bash(findstr /n \"AO\\\\|ao\\\\|mask\\\\|Mask\\\\|remove\\\\|Remove\\\\|diet\\\\|Diet\\\\|lil\\\\|Lil\" \"C:\\\\Users\\\\butei\\\\OneDrive\\\\문서\\\\GitHub\\\\Di_Ne_Tool\\\\Packages\\\\com.dinetool.avatar-tools\\\\Editor\\\\MaterialTool\\\\DiNeMaterialTool.cs\")",
       "Bash(Select-String -Path \"C:\\\\Users\\\\butei\\\\OneDrive\\\\문서\\\\GitHub\\\\Di_Ne_Tool\\\\Packages\\\\com.dinetool.avatar-tools\\\\Editor\\\\MaterialTool\\\\DiNeMaterialTool.cs\" -Pattern \"platform|Platform|maxTexture|MaxDimension|GetActive\")",
-      "Bash(Select-Object -First 20)"
+      "Bash(Select-Object -First 20)",
+      "Bash(find /c/Users/butei/OneDrive/문서/GitHub/Di_Ne_Tool -type f \\\\\\( -name \"*.md\" -o -name \"*.txt\" -o -name \"*.json\" \\\\\\) -exec grep -l \"lilToon\\\\|lil_fur\\\\|ShadowStrengthMask\\\\|AOMap\" {} \\\\;)",
+      "Bash(wait)",
+      "Bash(grep -v \"//\")"
     ]
   }
 }
