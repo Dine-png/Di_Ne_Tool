@@ -27,8 +27,8 @@ public class DiNeMaterialTool : EditorWindow
         /* 03 */ new[] { "Target Object",       "대상 오브젝트",       "対象オブジェクト"         },
         /* 04 */ new[] { "Include Children",    "자식 오브젝트 포함",   "子オブジェクトを含む"     },
         /* 05 */ new[] { "Include Inactive",    "비활성 오브젝트 포함", "非アクティブを含む"       },
-        /* 06 */ new[] { "[ Preview Mode ]  No changes will be saved",      "[ 미리보기 모드 ]  실제로 적용되지 않습니다",      "[ プレビューモード ]  変更されません"     },
-        /* 07 */ new[] { "[ Apply Mode ]  Changes will be written to disk", "[ 적용 모드 ]  변경사항이 실제로 저장됩니다",       "[ 適用モード ]  適用されます"             },
+        /* 06 */ new[] { "[ Preview Mode ]",      "[ 미리보기 모드 ]",      "[ プレビューモード ]"     },
+        /* 07 */ new[] { "[ Apply Mode ]",      "[ 적용 모드 ]",       "[ 適用モード ]"             },
         // ── Preset ──
         /* 08 */ new[] { "Preset Library",              "프리셋 라이브러리",               "プリセットライブラリ"             },
         /* 09 */ new[] { "Scan Project",                "프로젝트 스캔",                   "プロジェクトスキャン"             },
