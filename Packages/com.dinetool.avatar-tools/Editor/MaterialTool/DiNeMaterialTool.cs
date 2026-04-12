@@ -140,9 +140,10 @@ public class DiNeMaterialTool : EditorWindow
     private static readonly SectionDef[] SECTIONS = new[]
     {
         new SectionDef(new[]{"Shadow / AO",    "쉐도우 / AO",    "シャドウ / AO"},
-            new[]{"_ShadowStrengthMask","_ShadowColorTex","_Shadow2ndColorTex","_Shadow3rdColorTex"}),
+            // _ShadowBorderMask = lilToon inspector의 "AO Map" 슬롯 (lilToon AO Map은 Shadow Border Mask에 저장됨)
+            new[]{"_ShadowStrengthMask","_ShadowBorderMask","_ShadowColorTex","_Shadow2ndColorTex","_Shadow3rdColorTex"}),
         new SectionDef(new[]{"Shadow Mask",    "쉐도우 마스크",  "シャドウマスク"},
-            new[]{"_ShadowBorderMask","_ShadowBlurMask"}),
+            new[]{"_ShadowBlurMask"}),
         new SectionDef(new[]{"Outline",      "아웃라인",      "アウトライン"},
             new[]{"_OutlineTex","_OutlineWidthMask","_OutlineVectorTex"},
             "_UseOutline"),   // lilToon unified: _UseOutline=0 / Outline variant: _OutlineWidth=0
