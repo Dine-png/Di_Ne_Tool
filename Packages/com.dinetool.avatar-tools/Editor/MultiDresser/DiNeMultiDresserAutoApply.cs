@@ -3,7 +3,7 @@ using UnityEditor;
 using UnityEngine;
 using VRC.SDKBase.Editor.BuildPipeline;
 
-public class DiNeMultiDresserAutoApply : IVRCSDKPreprocessAvatarCallback
+public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKPreprocessAvatarCallback
 {
     public int callbackOrder => 0;
 
@@ -37,11 +37,27 @@ public class DiNeMultiDresserAutoApply : IVRCSDKPreprocessAvatarCallback
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    //  IVRCSDKBuildRequestedCallback
+    //  VRC SDK가 에셋을 메모리에 로드하기 전에 실행되므로
+    //  여기서 Generate해야 수정된 애니메이터 컨트롤러가 빌드에 반영된다.
+    // ─────────────────────────────────────────────────────────────────────────
+    public bool OnBuildRequested(VRCSDKRequestedBuildType requestedBuildType)
+    {
+        if (requestedBuildType == VRCSDKRequestedBuildType.Avatar)
+        {
+            Debug.Log("[DiNe] 🏗 빌드 요청 감지 — SDK 에셋 로드 전에 멀티 드레서 생성 시작");
+            ApplyAllDressersInScene();
+        }
+        return true;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  IVRCSDKPreprocessAvatarCallback
+    //  안전망 역할 (OnBuildRequested가 있으면 사실상 중복이지만 남겨둠)
+    // ─────────────────────────────────────────────────────────────────────────
     public bool OnPreprocessAvatar(GameObject avatarGameObject)
     {
-        // 빌드 클론에서는 에디터 전용 컴포넌트가 제거되어 검색되지 않으므로
-        // 씬 원본 오브젝트에서 직접 드레서를 찾아 적용
-        ApplyAllDressersInScene();
         return true;
     }
 

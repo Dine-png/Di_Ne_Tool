@@ -808,14 +808,20 @@ public class DiNeMaterialTool : EditorWindow
         string tog = sec.Toggle;
         if (tog == null) return false;
 
-        // 아웃라인: _UseOutline 토글(unified) 또는 _OutlineWidth(변형 쉐이더) 기준
+        // 아웃라인: unified(_UseOutline=1) 또는 Outline 변형 쉐이더 판단
         if (tog == "_UseOutline")
         {
+            bool isOutlineVariant = mat.shader != null && mat.shader.name.Contains("Outline");
+            if (isOutlineVariant)
+            {
+                // 변형 쉐이더는 항상 아웃라인이 켜진 상태 → _OutlineWidth가 0보다 크면 활성
+                if (mat.HasProperty("_OutlineWidth"))
+                    return mat.GetFloat("_OutlineWidth") > 0f;
+                return true; // width 프로퍼티 없어도 변형 쉐이더는 켜진 것으로 간주
+            }
+            // Unified 쉐이더: _UseOutline 토글 기준
             if (mat.HasProperty("_UseOutline"))
                 return mat.GetFloat("_UseOutline") > 0.5f;
-            // 아웃라인 변형 쉐이더(_UseOutline 없음): _OutlineWidth > 0 이면 켜진 것으로 판단
-            if (mat.HasProperty("_OutlineWidth"))
-                return mat.GetFloat("_OutlineWidth") > 0f;
             return false;
         }
 
@@ -1225,15 +1231,17 @@ public class DiNeMaterialTool : EditorWindow
                     // ApplyDiet 함수 안의 if (disableFeatures) 내부
                     if (tog == "_UseOutline")
                     {
-                        if (info.Material.HasProperty("_UseOutline"))
+                        bool isVariant = info.Material.shader != null && info.Material.shader.name.Contains("Outline");
+                        if (isVariant)
+                        {
+                            // 변형 쉐이더: _OutlineWidth=0으로 시각적 비활성화
+                            if (info.Material.HasProperty("_OutlineWidth"))
+                                info.Material.SetFloat("_OutlineWidth", 0f);
+                        }
+                        else if (info.Material.HasProperty("_UseOutline"))
                         {
                             info.Material.SetFloat("_UseOutline", 0f);
                             info.Material.DisableKeyword("_OUTLINE");
-                        }
-                        else if (info.Material.HasProperty("_OutlineWidth"))
-                        {
-                            // 아웃라인 변형 쉐이더: 너비를 0으로 설정해 시각적으로 비활성화
-                            info.Material.SetFloat("_OutlineWidth", 0f);
                         }
                     }
                     else if (tog != null)
