@@ -39,7 +39,9 @@ public class DiNeMultiDresserAutoApply : IVRCSDKPreprocessAvatarCallback
 
     public bool OnPreprocessAvatar(GameObject avatarGameObject)
     {
-        ApplyAllDressers(avatarGameObject);
+        // 빌드 클론에서는 에디터 전용 컴포넌트가 제거되어 검색되지 않으므로
+        // 씬 원본 오브젝트에서 직접 드레서를 찾아 적용
+        ApplyAllDressersInScene();
         return true;
     }
 
@@ -51,19 +53,6 @@ public class DiNeMultiDresserAutoApply : IVRCSDKPreprocessAvatarCallback
             if (dresser.gameObject.activeInHierarchy)
             {
                 GenerateDresser(dresser);
-            }
-        }
-    }
-
-    private static void ApplyAllDressers(GameObject root)
-    {
-        var dressers = root.GetComponentsInChildren<DiNeMultiDresser>(true);
-        foreach (var dresser in dressers)
-        {
-            if (dresser.gameObject.activeSelf)
-            {
-                // 업로드 시에는 빌드 클론의 임시 참조가 프로필에 저장되지 않도록 saveProfile=false
-                GenerateDresser(dresser, saveProfile: false);
             }
         }
     }

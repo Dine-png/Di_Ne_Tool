@@ -808,10 +808,16 @@ public class DiNeMaterialTool : EditorWindow
         string tog = sec.Toggle;
         if (tog == null) return false;
 
-        // 아웃라인: _UseOutline 토글만 사용
-        // 아웃라인 변형 쉐이더(_UseOutline 없음)는 width 폴백 사용 안 함 → 텍스쳐 제거만 처리
+        // 아웃라인: _UseOutline 토글(unified) 또는 _OutlineWidth(변형 쉐이더) 기준
         if (tog == "_UseOutline")
-            return mat.HasProperty("_UseOutline") && mat.GetFloat("_UseOutline") > 0.5f;
+        {
+            if (mat.HasProperty("_UseOutline"))
+                return mat.GetFloat("_UseOutline") > 0.5f;
+            // 아웃라인 변형 쉐이더(_UseOutline 없음): _OutlineWidth > 0 이면 켜진 것으로 판단
+            if (mat.HasProperty("_OutlineWidth"))
+                return mat.GetFloat("_OutlineWidth") > 0f;
+            return false;
+        }
 
         // 메인 토글 체크
         if (mat.HasProperty(tog) && mat.GetFloat(tog) > 0.5f) return true;
@@ -1224,7 +1230,11 @@ public class DiNeMaterialTool : EditorWindow
                             info.Material.SetFloat("_UseOutline", 0f);
                             info.Material.DisableKeyword("_OUTLINE");
                         }
-                        // 아웃라인 변형 쉐이더(_UseOutline 없음)는 텍스쳐 제거만으로 처리
+                        else if (info.Material.HasProperty("_OutlineWidth"))
+                        {
+                            // 아웃라인 변형 쉐이더: 너비를 0으로 설정해 시각적으로 비활성화
+                            info.Material.SetFloat("_OutlineWidth", 0f);
+                        }
                     }
                     else if (tog != null)
                     {
