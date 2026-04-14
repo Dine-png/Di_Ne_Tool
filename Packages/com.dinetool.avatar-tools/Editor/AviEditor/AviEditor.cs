@@ -10,7 +10,7 @@ public class ArmatureScalerEditor : EditorWindow
     private LanguagePreset language = LanguagePreset.Korean;
 
     // ─── 에디터 모드 ───
-    private enum EditorMode { Armature, ShapeKey, Expression }
+    private enum EditorMode { Armature, ShapeKey, Expression, ShapeKeyEditor }
     [SerializeField] private EditorMode currentMode = EditorMode.Armature;
 
     [SerializeField] private GameObject targetAvatarRoot;
@@ -92,6 +92,25 @@ public class ArmatureScalerEditor : EditorWindow
     private GameObject               _prevExprTarget;
     // 제스처 쉐이프키 포함 옵션
     [SerializeField] private bool    _includeGestureKeys  = true;
+
+    // ─── ShapeKey Editor 탭 필드 ───
+    private SkinnedMeshRenderer _skeSmr;
+    private int                 _skeSubMode    = 0;   // 0 = 새로 만들기, 1 = 수정하기
+    private List<DiNeSkeMixEntry> _skeMixEntries = new List<DiNeSkeMixEntry>();
+    private string              _skeNewName     = "";
+    private Vector2             _skeMixScroll;
+    private int                 _skeModifyIndex = 0;
+    private float               _skeModifyScale = 100f;
+    private string              _skeStatus      = "";
+    private bool                _skeStatusIsError = false;
+    private GameObject          _skePrevTarget;
+
+    [System.Serializable]
+    private class DiNeSkeMixEntry
+    {
+        public int   index  = 0;
+        public float weight = 100f;
+    }
 
     private enum HumanoidBodyPart
     {
@@ -345,9 +364,9 @@ public class ArmatureScalerEditor : EditorWindow
         GUILayout.Space(5);
 
         // ─── 모드 탭 ───
-        string[] modeLabels = language == LanguagePreset.Korean   ? new[] { "아마추어", "애니메이션", "표정" }
-                            : language == LanguagePreset.Japanese  ? new[] { "アーマチュア", "アニメーション", "表情" }
-                            : new[] { "Armature", "Animation", "Expression" };
+        string[] modeLabels = language == LanguagePreset.Korean   ? new[] { "아마추어", "애니메이션", "표정", "쉐이프키" }
+                            : language == LanguagePreset.Japanese  ? new[] { "アーマチュア", "アニメーション", "表情", "シェイプキー" }
+                            : new[] { "Armature", "Animation", "Expression", "Shape Key" };
         int newMode = DrawCustomToolbar((int)currentMode, modeLabels, 30);
         if (newMode != (int)currentMode)
         {
@@ -359,8 +378,10 @@ public class ArmatureScalerEditor : EditorWindow
             DrawArmatureGUI();
         else if (currentMode == EditorMode.ShapeKey)
             DrawShapeKeyGUI();
-        else
+        else if (currentMode == EditorMode.Expression)
             DrawExpressionGUI();
+        else
+            DrawShapeKeyEditorGUI();
     }
 
     // ─── 아마추어 모드 GUI ───
@@ -2736,5 +2757,230 @@ public class ArmatureScalerEditor : EditorWindow
             }
             break;
         }
+    }
+
+    // ════════════════════════════════════════════
+    //  SHAPE KEY EDITOR TAB
+    // ════════════════════════════════════════════
+
+    private void DrawShapeKeyEditorGUI()
+    {
+        var prevBg = GUI.backgroundColor;
+
+        // ─ 대상 설정 ────────────────────────────────────────────────────────
+        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.LabelField(
+            language == LanguagePreset.Korean  ? "대상 설정"
+          : language == LanguagePreset.Japanese ? "対象設定" : "Target Settings",
+            EditorStyles.boldLabel);
+
+        EditorGUILayout.BeginHorizontal();
+        EditorGUI.BeginChangeCheck();
+        targetAvatarRoot = (GameObject)EditorGUILayout.ObjectField(
+            language == LanguagePreset.Korean  ? "아바타 루트"
+          : language == LanguagePreset.Japanese ? "アバタールート" : "Avatar Root",
+            targetAvatarRoot, typeof(GameObject), true);
+        if (EditorGUI.EndChangeCheck())
+        {
+            _skePrevTarget = targetAvatarRoot;
+            _skeSmr = DiNeShapeKeyEditorCore.FindBodySmr(targetAvatarRoot);
+            _skeStatus = "";
+        }
+        // 타겟이 외부에서 변경된 경우 자동 갱신
+        if (targetAvatarRoot != _skePrevTarget)
+        {
+            _skePrevTarget = targetAvatarRoot;
+            _skeSmr = DiNeShapeKeyEditorCore.FindBodySmr(targetAvatarRoot);
+            _skeStatus = "";
+        }
+
+        EditorGUI.BeginDisabledGroup(targetAvatarRoot == null);
+        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+        if (GUILayout.Button("↺", GUILayout.Width(28), GUILayout.Height(18)))
+        {
+            _skeSmr = DiNeShapeKeyEditorCore.FindBodySmr(targetAvatarRoot);
+            _skeStatus = "";
+        }
+        GUI.backgroundColor = prevBg;
+        EditorGUI.EndDisabledGroup();
+        EditorGUILayout.EndHorizontal();
+
+        EditorGUI.BeginChangeCheck();
+        _skeSmr = (SkinnedMeshRenderer)EditorGUILayout.ObjectField(
+            language == LanguagePreset.Korean  ? "대상 메쉬"
+          : language == LanguagePreset.Japanese ? "対象メッシュ" : "Target Mesh",
+            _skeSmr, typeof(SkinnedMeshRenderer), true);
+        if (EditorGUI.EndChangeCheck()) _skeStatus = "";
+
+        EditorGUILayout.EndVertical();
+        GUILayout.Space(5);
+
+        if (_skeSmr == null || _skeSmr.sharedMesh == null)
+        {
+            EditorGUILayout.HelpBox(
+                language == LanguagePreset.Korean  ? "아바타 루트를 지정하거나 대상 메쉬를 직접 드래그해 주세요."
+              : language == LanguagePreset.Japanese ? "アバタールートを指定するか、対象メッシュを直接ドラッグしてください。"
+              : "Set an Avatar Root or drag a Target Mesh directly.", MessageType.Info);
+            return;
+        }
+
+        if (_skeSmr.sharedMesh.blendShapeCount == 0)
+        {
+            EditorGUILayout.HelpBox(
+                language == LanguagePreset.Korean  ? "쉐이프키가 없는 메쉬입니다."
+              : language == LanguagePreset.Japanese ? "シェイプキーのないメッシュです。"
+              : "This mesh has no shape keys.", MessageType.Warning);
+            return;
+        }
+
+        // ─ 서브 모드 탭 ──────────────────────────────────────────────────────
+        string[] subLabels = language == LanguagePreset.Korean  ? new[] { "새로 만들기", "수정하기" }
+                           : language == LanguagePreset.Japanese ? new[] { "新規作成", "編集" }
+                           : new[] { "Create New", "Modify" };
+        int newSubMode = DrawCustomToolbar(_skeSubMode, subLabels, 26);
+        if (newSubMode != _skeSubMode) { _skeSubMode = newSubMode; _skeStatus = ""; }
+        GUILayout.Space(8);
+
+        string[] shapeNames = DiNeShapeKeyEditorCore.GetShapeKeyNames(_skeSmr);
+
+        if (_skeSubMode == 0)
+            DrawSkeCreateMix(shapeNames, prevBg);
+        else
+            DrawSkeModify(shapeNames, prevBg);
+
+        // ─ 상태 메시지 ───────────────────────────────────────────────────────
+        if (!string.IsNullOrEmpty(_skeStatus))
+        {
+            GUILayout.Space(4);
+            EditorGUILayout.HelpBox(_skeStatus, _skeStatusIsError ? MessageType.Error : MessageType.Info);
+        }
+    }
+
+    private void DrawSkeCreateMix(string[] shapeNames, Color prevBg)
+    {
+        // ─ 혼합 목록 ────────────────────────────────────────────────────────
+        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.LabelField(
+            language == LanguagePreset.Korean  ? "혼합 목록"
+          : language == LanguagePreset.Japanese ? "ミックスリスト" : "Mix List",
+            EditorStyles.boldLabel);
+        GUILayout.Space(3);
+
+        _skeMixScroll = EditorGUILayout.BeginScrollView(_skeMixScroll, GUILayout.MaxHeight(200));
+        int removeAt = -1;
+        for (int i = 0; i < _skeMixEntries.Count; i++)
+        {
+            var entry = _skeMixEntries[i];
+            EditorGUILayout.BeginHorizontal();
+
+            entry.index = EditorGUILayout.Popup(entry.index, shapeNames, GUILayout.Width(160));
+            entry.weight = EditorGUILayout.Slider(entry.weight, 0f, 200f);
+
+            GUI.backgroundColor = new Color(0.8f, 0.3f, 0.3f);
+            if (GUILayout.Button("✕", GUILayout.Width(24), GUILayout.Height(18)))
+                removeAt = i;
+            GUI.backgroundColor = prevBg;
+
+            EditorGUILayout.EndHorizontal();
+        }
+        EditorGUILayout.EndScrollView();
+
+        if (removeAt >= 0) _skeMixEntries.RemoveAt(removeAt);
+
+        GUILayout.Space(3);
+        GUI.backgroundColor = new Color(0.25f, 0.55f, 0.25f);
+        string addLabel = language == LanguagePreset.Korean  ? "+ 쉐이프키 추가"
+                        : language == LanguagePreset.Japanese ? "+ シェイプキーを追加" : "+ Add Shape Key";
+        if (GUILayout.Button(addLabel, GUILayout.Height(22)))
+            _skeMixEntries.Add(new DiNeSkeMixEntry());
+        GUI.backgroundColor = prevBg;
+
+        EditorGUILayout.EndVertical();
+        GUILayout.Space(5);
+
+        // ─ 이름 및 생성 버튼 ─────────────────────────────────────────────────
+        EditorGUILayout.BeginVertical("box");
+        string nameLabel = language == LanguagePreset.Korean  ? "새 쉐이프키 이름"
+                         : language == LanguagePreset.Japanese ? "新規シェイプキー名" : "New Shape Key Name";
+        _skeNewName = EditorGUILayout.TextField(nameLabel, _skeNewName);
+        GUILayout.Space(4);
+
+        bool canCreate = _skeMixEntries.Count > 0 && !string.IsNullOrWhiteSpace(_skeNewName);
+        EditorGUI.BeginDisabledGroup(!canCreate);
+        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+        string createLabel = language == LanguagePreset.Korean  ? "쉐이프키 생성"
+                           : language == LanguagePreset.Japanese ? "シェイプキー生成" : "Create Shape Key";
+        if (GUILayout.Button(createLabel, GUILayout.Height(28)))
+        {
+            var entries = _skeMixEntries
+                .Select(e => ((int)e.index, e.weight))
+                .ToList<(int, float)>();
+            bool ok = DiNeShapeKeyEditorCore.CreateMixedShapeKey(_skeSmr, entries, _skeNewName, out string err);
+            _skeStatus = ok
+                ? (language == LanguagePreset.Korean  ? $"✅ '{_skeNewName}' 생성 완료"
+                 : language == LanguagePreset.Japanese ? $"✅ '{_skeNewName}' 生成完了"
+                 : $"✅ '{_skeNewName}' created successfully")
+                : err;
+            _skeStatusIsError = !ok;
+            if (ok) _skeNewName = "";
+        }
+        GUI.backgroundColor = prevBg;
+        EditorGUI.EndDisabledGroup();
+        EditorGUILayout.EndVertical();
+    }
+
+    private void DrawSkeModify(string[] shapeNames, Color prevBg)
+    {
+        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.LabelField(
+            language == LanguagePreset.Korean  ? "수정할 쉐이프키"
+          : language == LanguagePreset.Japanese ? "編集するシェイプキー" : "Shape Key to Modify",
+            EditorStyles.boldLabel);
+        GUILayout.Space(3);
+
+        _skeModifyIndex = EditorGUILayout.Popup(
+            language == LanguagePreset.Korean  ? "쉐이프키"
+          : language == LanguagePreset.Japanese ? "シェイプキー" : "Shape Key",
+            Mathf.Clamp(_skeModifyIndex, 0, shapeNames.Length - 1), shapeNames);
+
+        GUILayout.Space(4);
+
+        // 배율 슬라이더 (0 ~ 200%, 100 = 변화 없음)
+        string scaleLabel = language == LanguagePreset.Korean  ? "새 배율 (%)"
+                          : language == LanguagePreset.Japanese ? "新しい倍率 (%)" : "New Scale (%)";
+        _skeModifyScale = EditorGUILayout.Slider(scaleLabel, _skeModifyScale, 0f, 200f);
+
+        if (!Mathf.Approximately(_skeModifyScale, 100f))
+        {
+            string info = language == LanguagePreset.Korean
+                ? $"기존 100% 값이 새 100% 기준 {_skeModifyScale:F0}%로 변경됩니다"
+                : language == LanguagePreset.Japanese
+                ? $"既存の100%が新しい基準で{_skeModifyScale:F0}%に変更されます"
+                : $"The existing 100% value will become {_skeModifyScale:F0}% of the new maximum";
+            EditorGUILayout.HelpBox(info, MessageType.None);
+        }
+
+        GUILayout.Space(4);
+
+        EditorGUI.BeginDisabledGroup(Mathf.Approximately(_skeModifyScale, 0f));
+        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+        string applyLabel = language == LanguagePreset.Korean  ? "배율 적용"
+                          : language == LanguagePreset.Japanese ? "倍率を適用" : "Apply Scale";
+        if (GUILayout.Button(applyLabel, GUILayout.Height(28)))
+        {
+            float factor = _skeModifyScale / 100f;
+            bool ok = DiNeShapeKeyEditorCore.ModifyShapeKeyScale(_skeSmr, _skeModifyIndex, factor, out string err);
+            string keyName = _skeModifyIndex < shapeNames.Length ? shapeNames[_skeModifyIndex] : _skeModifyIndex.ToString();
+            _skeStatus = ok
+                ? (language == LanguagePreset.Korean  ? $"✅ '{keyName}' 배율 수정 완료"
+                 : language == LanguagePreset.Japanese ? $"✅ '{keyName}' 倍率修正完了"
+                 : $"✅ '{keyName}' scale modified successfully")
+                : err;
+            _skeStatusIsError = !ok;
+        }
+        GUI.backgroundColor = prevBg;
+        EditorGUI.EndDisabledGroup();
+
+        EditorGUILayout.EndVertical();
     }
 }
