@@ -99,6 +99,88 @@ public static class DiNeShapeKeyEditorCore
         return SaveMesh(smr, newMesh, out error);
     }
 
+    // ─── 기존 쉐이프키를 믹스로 교체 ────────────────────────────────────────────
+
+    /// <summary>
+    /// 기존 쉐이프키(targetIndex)의 버텍스 델타를
+    /// 다른 쉐이프키들의 혼합으로 완전히 교체한다.
+    /// </summary>
+    public static bool ReplaceShapeKeyWithMix(
+        SkinnedMeshRenderer smr,
+        int targetIndex,
+        IList<(int index, float weight)> entries,
+        out string error)
+    {
+        error = null;
+        if (!ValidateSmr(smr, out error)) return false;
+        var mesh = smr.sharedMesh;
+        if (targetIndex < 0 || targetIndex >= mesh.blendShapeCount)
+        { error = "잘못된 대상 쉐이프키 인덱스입니다."; return false; }
+        if (entries == null || entries.Count == 0)
+        { error = "혼합할 쉐이프키를 추가해주세요."; return false; }
+
+        int vCount = mesh.vertexCount;
+
+        // 믹스 계산
+        var totalDelta   = new Vector3[vCount];
+        var totalNormal  = new Vector3[vCount];
+        var totalTangent = new Vector3[vCount];
+        bool anyValid = false;
+        foreach (var (idx, wt) in entries)
+        {
+            if (idx < 0 || idx >= mesh.blendShapeCount) continue;
+            if (Mathf.Approximately(wt, 0f)) continue;
+            int frames = mesh.GetBlendShapeFrameCount(idx);
+            if (frames == 0) continue;
+            int lastFrame = frames - 1;
+            float frameW = mesh.GetBlendShapeFrameWeight(idx, lastFrame);
+            if (Mathf.Approximately(frameW, 0f)) continue;
+            var d  = new Vector3[vCount];
+            var dn = new Vector3[vCount];
+            var dt = new Vector3[vCount];
+            mesh.GetBlendShapeFrameVertices(idx, lastFrame, d, dn, dt);
+            float scale = (wt / 100f) / (frameW / 100f);
+            for (int i = 0; i < vCount; i++)
+            {
+                totalDelta[i]   += d[i]  * scale;
+                totalNormal[i]  += dn[i] * scale;
+                totalTangent[i] += dt[i] * scale;
+            }
+            anyValid = true;
+        }
+        if (!anyValid) { error = "유효한 쉐이프키 항목이 없습니다."; return false; }
+
+        // 메시 재구성 — 대상 키만 델타 교체
+        int shapeCount = mesh.blendShapeCount;
+        var newMesh = BuildMeshBase(mesh);
+        for (int si = 0; si < shapeCount; si++)
+        {
+            string name = mesh.GetBlendShapeName(si);
+            int frames = mesh.GetBlendShapeFrameCount(si);
+            float lastFW = mesh.GetBlendShapeFrameWeight(si, frames - 1);
+            for (int fi = 0; fi < frames; fi++)
+            {
+                float fw = mesh.GetBlendShapeFrameWeight(si, fi);
+                var d  = new Vector3[vCount];
+                var dn = new Vector3[vCount];
+                var dt = new Vector3[vCount];
+                mesh.GetBlendShapeFrameVertices(si, fi, d, dn, dt);
+                if (si == targetIndex)
+                {
+                    float ratio = Mathf.Approximately(lastFW, 0f) ? 1f : fw / lastFW;
+                    for (int i = 0; i < vCount; i++)
+                    {
+                        d[i]  = totalDelta[i]   * ratio;
+                        dn[i] = totalNormal[i]  * ratio;
+                        dt[i] = totalTangent[i] * ratio;
+                    }
+                }
+                newMesh.AddBlendShapeFrame(name, fw, d, dn, dt);
+            }
+        }
+        return SaveMesh(smr, newMesh, out error);
+    }
+
     // ─── 기존 쉐이프키 배율 수정 ─────────────────────────────────────────────
 
     /// <summary>
