@@ -297,4 +297,4 @@ MIT License - Free for personal and commercial use
 
 **Made with ❤️ for avatar creators**
 
-*Last Updated: 2026*
+[*Last Updated: 2026*](https://booth.pm/en/items/8179911)
