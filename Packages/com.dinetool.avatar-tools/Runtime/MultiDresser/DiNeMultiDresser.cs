@@ -66,6 +66,17 @@ public class DiNeMultiDresser : MonoBehaviour
     [SerializeField] public List<DresserLayer> layers = new List<DresserLayer>();
     [SerializeField] private DiNeProfile savedProfile;
 
+    private void OnEnable()
+    {
+        // 도메인 리로드(코드 업데이트) 후 layers가 비어있으면 프로필에서 자동 복구
+        if (layers.Count == 0)
+        {
+            EditorApplication.delayCall += () => {
+                if (this != null && layers.Count == 0) TryRestoreFromProfile();
+            };
+        }
+    }
+
     private void Reset()
     {
         TryAutoAssignFXController();
@@ -222,7 +233,7 @@ public class DiNeMultiDresser : MonoBehaviour
     //  프로필 저장
     // ──────────────────────────────────────────────
 
-    private void SaveProfile()
+    public void SaveProfile()
     {
         string folder = "Assets/Di Ne/MultiDresser/Profiles";
         if (!Directory.Exists(folder)) Directory.CreateDirectory(folder);
@@ -272,6 +283,26 @@ public class DiNeMultiDresser : MonoBehaviour
 
         EditorUtility.SetDirty(savedProfile);
         AssetDatabase.SaveAssets();
+        Debug.Log($"💾 [DiNe] 프리셋 저장 완료: {AssetDatabase.GetAssetPath(savedProfile)}");
+    }
+
+    /// <summary>
+    /// 새 이름으로 프리셋 파일을 새로 만들어 저장. 기존 savedProfile은 교체됨.
+    /// </summary>
+    public void SaveProfileAs(string profileName)
+    {
+        string folder = "Assets/Di Ne/MultiDresser/Profiles";
+        if (!Directory.Exists(folder)) Directory.CreateDirectory(folder);
+
+        string safeName = string.Join("_", profileName.Split(Path.GetInvalidFileNameChars()));
+        string path = AssetDatabase.GenerateUniqueAssetPath($"{folder}/{safeName}.asset");
+
+        var newProfile = ScriptableObject.CreateInstance<DiNeProfile>();
+        AssetDatabase.CreateAsset(newProfile, path);
+        savedProfile = newProfile;          // 현재 컴포넌트에 새 프리셋 연결
+        EditorUtility.SetDirty(this);
+
+        SaveProfile();                       // 내용 채워서 저장
     }
 
     // ──────────────────────────────────────────────
