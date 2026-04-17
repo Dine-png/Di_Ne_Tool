@@ -13,8 +13,10 @@ public class DiNeProfile : ScriptableObject
         public List<GameObject> targets = new();
         public List<string> labels = new();
         public List<Texture2D> icons = new();
-        public List<DiNeMultiDresser.LinkedGroup> linkedObjects = new();
-        public List<DiNeMultiDresser.ShapeKeyMeshList> perButtonShapeKeyStates = new();
+        public List<DiNeMultiDresser.LinkedGroup>       linkedObjects           = new();
+        public List<DiNeMultiDresser.ShapeKeyMeshList>  perButtonShapeKeyStates = new();
+        public List<DiNeMultiDresser.MaterialSwapList>  perButtonMaterialSwaps  = new();
+        public GameObject                               particleObject;
     }
 
     // ── 아바타 식별 ──

@@ -8,7 +8,14 @@ public class DiNeMultiSupporter : Editor
 {
     private Texture2D windowIcon;
     private Font      titleFont;
-    private int selectedLayerIndex = 0; 
+    private int selectedLayerIndex = 0;
+    private int draggedItemIndex = -1;
+    private int dragTargetIndex  = -1;
+    private readonly List<Rect> itemRects = new List<Rect>();
+
+    private int previewLayerIndex  = -1;
+    private int previewButtonIndex = -1;
+    private readonly List<System.Action> previewRestoreActions = new List<System.Action>();
     
     private enum Language { English, Korean, Japanese }
     private static readonly string[] LangButtonLabels = { "English", "한국어", "日本語" };
@@ -56,7 +63,10 @@ public class DiNeMultiSupporter : Editor
                 { "cleanupDialogTitle", "데이터 초기화" },
                 { "cleanupDialogMsg", "드레서에 설정된 모든 데이터(레이어, 오브젝트, 쉐이프키)를 초기화합니다.\n이 작업은 되돌릴 수 없습니다." },
                 { "cleanupDialogOk", "초기화 (Yes)" },
-                { "cleanupDialogCancel", "취소 (No)" }
+                { "cleanupDialogCancel", "취소 (No)" },
+                { "particle",   "파티클 오브젝트" },
+                { "matSwap",    "마테리얼 교체" },
+                { "addMatSwap", "+ 추가" }
             }
         },
         {
@@ -89,7 +99,10 @@ public class DiNeMultiSupporter : Editor
                 { "cleanupDialogTitle", "Reset Data" },
                 { "cleanupDialogMsg", "This will clear all dresser settings (layers, objects, shape keys).\nThis action cannot be undone." },
                 { "cleanupDialogOk", "Reset (Yes)" },
-                { "cleanupDialogCancel", "Cancel (No)" }
+                { "cleanupDialogCancel", "Cancel (No)" },
+                { "particle",   "Particle Object" },
+                { "matSwap",    "Material Swap" },
+                { "addMatSwap", "+ Add" }
             }
         },
         {
@@ -122,10 +135,15 @@ public class DiNeMultiSupporter : Editor
                 { "cleanupDialogTitle", "データ初期化" },
                 { "cleanupDialogMsg", "ドレッサーに設定された全データ（レイヤー、オブジェクト、シェイプキー）を初期化します。\nこの操作は元に戻せません。" },
                 { "cleanupDialogOk", "初期化 (Yes)" },
-                { "cleanupDialogCancel", "キャンセル (No)" }
+                { "cleanupDialogCancel", "キャンセル (No)" },
+                { "particle",   "パーティクル" },
+                { "matSwap",    "マテリアル交換" },
+                { "addMatSwap", "+ 追加" }
             }
         }
     };
+
+    private void OnDisable() => ClearPreview();
 
     private void OnEnable()
     {
@@ -290,6 +308,9 @@ public class DiNeMultiSupporter : Editor
         currentLayerData.EnsureSize(targets.arraySize);
         SyncShapeKeyData(gen, currentLayerData);
 
+        // 레이어 전환 시 미리보기 해제
+        if (previewLayerIndex >= 0 && previewLayerIndex != index) ClearPreview();
+
         EditorGUILayout.BeginVertical("helpBox"); 
         GUILayout.Space(5);
         EditorGUILayout.BeginHorizontal();
@@ -327,42 +348,69 @@ public class DiNeMultiSupporter : Editor
         GUILayout.Space(5);
         EditorGUILayout.EndVertical(); 
 
-        EditorGUILayout.Space(10);
-        
-        Rect dropArea = GUILayoutUtility.GetRect(0, 45, GUILayout.ExpandWidth(true)); 
-        Color originalColor = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.6f, 0.9f, 1f); 
-        GUI.Box(dropArea, lang["mainDragHint"], EditorStyles.helpBox);
-        GUI.backgroundColor = originalColor;
+        EditorGUILayout.Space(8);
 
-        HandleDragDrop(dropArea, (objs) => {
-            foreach(var go in objs) {
-                currentLayerData.targets.Add(go);
-                currentLayerData.labels.Add(go.name);
-                currentLayerData.icons.Add(null);
-                currentLayerData.linkedObjects.Add(new DiNeMultiDresser.LinkedGroup());
-                currentLayerData.perButtonShapeKeyStates.Add(new DiNeMultiDresser.ShapeKeyMeshList());
-            }
-            SyncShapeKeyData(gen, currentLayerData);
-            EditorUtility.SetDirty(target);
-            serializedObject.Update();
-        });
+        // 파티클 오브젝트 (레이어 공통)
+        SerializedProperty particleProp = layerProp.FindPropertyRelative("particleObject");
+        EditorGUILayout.BeginHorizontal("helpBox");
+        GUILayout.Label(lang["particle"], GUILayout.Width(120));
+        particleProp.objectReferenceValue = EditorGUILayout.ObjectField(particleProp.objectReferenceValue, typeof(GameObject), true);
+        EditorGUILayout.EndHorizontal();
 
         EditorGUILayout.Space(5);
 
+        Event evt = Event.current;
+        if (evt.type == EventType.Repaint) itemRects.Clear();
+
         for (int i = 0; i < targets.arraySize; i++)
         {
-            SerializedProperty t = targets.GetArrayElementAtIndex(i);
-            SerializedProperty l = labels.GetArrayElementAtIndex(i);
+            SerializedProperty t    = targets.GetArrayElementAtIndex(i);
+            SerializedProperty l    = labels.GetArrayElementAtIndex(i);
             SerializedProperty icon = icons.GetArrayElementAtIndex(i);
 
+            // ── 삽입 표시줄 ──
+            Rect insertRect = GUILayoutUtility.GetRect(0, 4, GUILayout.ExpandWidth(true));
+            if (evt.type == EventType.Repaint && draggedItemIndex >= 0 && dragTargetIndex == i)
+                EditorGUI.DrawRect(new Rect(insertRect.x, insertRect.y + 1, insertRect.width, 2),
+                                   new Color(0.3f, 0.82f, 0.9f));
+
+            // ── 아이템 helpBox ──
             EditorGUILayout.BeginVertical("helpBox");
-            
+
+            // 헤더 행: [grip] [레이블] [X]
             EditorGUILayout.BeginHorizontal();
+
+            Rect handleRect = GUILayoutUtility.GetRect(18, 18, GUILayout.Width(18), GUILayout.Height(18));
+            if (evt.type == EventType.Repaint)
+            {
+                Color lc = (draggedItemIndex == i)
+                    ? new Color(0.3f, 0.82f, 0.9f)
+                    : new Color(0.6f, 0.6f, 0.6f);
+                float lx = handleRect.x + 2f;
+                float ly = handleRect.center.y - 3f;
+                EditorGUI.DrawRect(new Rect(lx, ly,      13, 1.5f), lc);
+                EditorGUI.DrawRect(new Rect(lx, ly + 3f, 13, 1.5f), lc);
+                EditorGUI.DrawRect(new Rect(lx, ly + 6f, 13, 1.5f), lc);
+            }
+            EditorGUIUtility.AddCursorRect(handleRect, MouseCursor.Pan);
+
             string headerLabel = (i == 0) ? lang["defaultState"] : $"{lang["menuButton"]} {i}";
             EditorGUILayout.LabelField(headerLabel, EditorStyles.boldLabel);
+
+            // ── 미리보기 토글 ──
+            bool isPreviewing = (previewLayerIndex == index && previewButtonIndex == i);
+            GUI.backgroundColor = isPreviewing ? new Color(0.3f, 0.82f, 0.9f) : new Color(0.55f, 0.55f, 0.55f);
+            GUIStyle previewStyle = new GUIStyle(GUI.skin.button) { fontSize = 14, normal = { textColor = Color.white } };
+            if (GUILayout.Button(isPreviewing ? "●" : "○", previewStyle, GUILayout.Width(26), GUILayout.Height(20)))
+            {
+                if (isPreviewing) ClearPreview();
+                else { ClearPreview(); ApplyPreview(gen, currentLayerData, i, index); }
+            }
+            GUI.backgroundColor = Color.white;
+
             if (GUILayout.Button("X", GUILayout.Width(30), GUILayout.Height(20)))
             {
+                ClearPreview();
                 currentLayerData.RemoveAt(i);
                 EditorUtility.SetDirty(target);
                 serializedObject.Update();
@@ -370,8 +418,10 @@ public class DiNeMultiSupporter : Editor
             }
             EditorGUILayout.EndHorizontal();
 
+            EditorGUI.BeginChangeCheck();
+
             t.objectReferenceValue = EditorGUILayout.ObjectField(GUIContent.none, t.objectReferenceValue, typeof(GameObject), true);
-            
+
             if (i != 0)
             {
                 EditorGUILayout.BeginHorizontal();
@@ -391,9 +441,11 @@ public class DiNeMultiSupporter : Editor
             }
 
             DrawPerButtonShapeKeyUI(gen, currentLayerData, i, index, lang);
+            DrawPerButtonMaterialSwapUI(currentLayerData, i, index, lang);
 
             if (currentLayerData.linkedObjects.Count > i)
             {
+                int capturedI = i;
                 EditorGUILayout.LabelField(lang["linkedObj"]);
                 for (int j = 0; j < currentLayerData.linkedObjects[i].objects.Count; j++)
                 {
@@ -404,12 +456,16 @@ public class DiNeMultiSupporter : Editor
                     {
                         EditorUtility.SetDirty(target);
                         serializedObject.Update();
+                        if (previewLayerIndex == index && previewButtonIndex == i)
+                            RefreshPreview(gen, currentLayerData);
                     }
                     if (GUILayout.Button("-", GUILayout.Width(25)))
                     {
                         currentLayerData.linkedObjects[i].objects.RemoveAt(j);
                         EditorUtility.SetDirty(target);
                         serializedObject.Update();
+                        if (previewLayerIndex == index && previewButtonIndex == i)
+                            RefreshPreview(gen, currentLayerData);
                         break;
                     }
                     EditorGUILayout.EndHorizontal();
@@ -422,14 +478,114 @@ public class DiNeMultiSupporter : Editor
                 GUI.backgroundColor = subOriginalColor;
 
                 HandleDragDrop(subDrop, (objs) => {
-                    foreach(var o in objs) currentLayerData.linkedObjects[i].objects.Add(o);
+                    foreach(var o in objs) currentLayerData.linkedObjects[capturedI].objects.Add(o);
                     EditorUtility.SetDirty(target);
                     serializedObject.Update();
+                    if (previewLayerIndex == index && previewButtonIndex == capturedI)
+                        RefreshPreview(gen, currentLayerData);
                 });
             }
 
-            EditorGUILayout.EndVertical();
-            EditorGUILayout.Space(5);
+            // 변경 감지 → 미리보기 즉시 갱신
+            if (EditorGUI.EndChangeCheck() && previewLayerIndex == index && previewButtonIndex == i)
+            {
+                serializedObject.ApplyModifiedProperties();
+                RefreshPreview(gen, currentLayerData);
+            }
+
+            EditorGUILayout.EndVertical(); // helpBox 끝
+
+            // 아이템 rect 저장
+            if (evt.type == EventType.Repaint)
+                itemRects.Add(GUILayoutUtility.GetLastRect());
+
+            // 핸들 클릭 → 드래그 시작
+            if (evt.type == EventType.MouseDown && handleRect.Contains(evt.mousePosition))
+            {
+                draggedItemIndex = i;
+                dragTargetIndex  = i;
+                evt.Use();
+            }
+        }
+
+        // ── 마지막 아이템 뒤 삽입 표시줄 ──
+        Rect lastInsertRect = GUILayoutUtility.GetRect(0, 4, GUILayout.ExpandWidth(true));
+        if (evt.type == EventType.Repaint && draggedItemIndex >= 0 && dragTargetIndex == targets.arraySize)
+            EditorGUI.DrawRect(new Rect(lastInsertRect.x + 28, lastInsertRect.y + 1, lastInsertRect.width - 28, 2),
+                               new Color(0.3f, 0.82f, 0.9f));
+
+        // ── 의상 추가 드래그 영역 (하단) ──
+        EditorGUILayout.Space(4);
+        GUIStyle dragHintStyle = new GUIStyle(EditorStyles.helpBox)
+        {
+            fontSize  = 13,
+            alignment = TextAnchor.MiddleCenter,
+            normal    = { textColor = Color.white }
+        };
+        Rect dropArea = GUILayoutUtility.GetRect(0, 50, GUILayout.ExpandWidth(true));
+        Color dropOrigColor = GUI.backgroundColor;
+        GUI.backgroundColor = new Color(0.6f, 0.9f, 1f);
+        GUI.Box(dropArea, lang["mainDragHint"], dragHintStyle);
+        GUI.backgroundColor = dropOrigColor;
+
+        HandleDragDrop(dropArea, (objs) => {
+            foreach (var go in objs) {
+                currentLayerData.targets.Add(go);
+                currentLayerData.labels.Add(go.name);
+                currentLayerData.icons.Add(null);
+                currentLayerData.linkedObjects.Add(new DiNeMultiDresser.LinkedGroup());
+                currentLayerData.perButtonShapeKeyStates.Add(new DiNeMultiDresser.ShapeKeyMeshList());
+                currentLayerData.perButtonMaterialSwaps.Add(new DiNeMultiDresser.MaterialSwapList());
+            }
+            SyncShapeKeyData(gen, currentLayerData);
+            EditorUtility.SetDirty(target);
+            serializedObject.Update();
+        });
+
+        EditorGUILayout.Space(4);
+
+        // ── 드래그 이벤트 처리 ──
+        if (draggedItemIndex >= 0)
+        {
+            if (evt.type == EventType.MouseDrag)
+            {
+                float mouseY = evt.mousePosition.y;
+                dragTargetIndex = itemRects.Count;
+                for (int i = 0; i < itemRects.Count; i++)
+                {
+                    if (mouseY < itemRects[i].center.y)
+                    {
+                        dragTargetIndex = i;
+                        break;
+                    }
+                }
+                Repaint();
+                evt.Use();
+            }
+            else if (evt.type == EventType.MouseUp)
+            {
+                int from     = draggedItemIndex;
+                int to       = dragTargetIndex;
+                int actualTo = (to > from) ? to - 1 : to;
+
+                if (actualTo != from && actualTo >= 0 && actualTo < targets.arraySize)
+                {
+                    serializedObject.ApplyModifiedProperties();
+                    Undo.RecordObject(gen, "Reorder Dresser Items");
+                    MoveItem(currentLayerData, from, actualTo);
+                    EditorUtility.SetDirty(gen);
+                    serializedObject.Update();
+                }
+
+                draggedItemIndex = -1;
+                dragTargetIndex  = -1;
+                Repaint();
+                evt.Use();
+            }
+
+            EditorGUIUtility.AddCursorRect(
+                new Rect(0, 0, EditorGUIUtility.currentViewWidth, Screen.height),
+                MouseCursor.Pan);
         }
     }
     
@@ -466,6 +622,193 @@ public class DiNeMultiSupporter : Editor
             var tempShape = layerData.perButtonShapeKeyStates[indexA];
             layerData.perButtonShapeKeyStates[indexA] = layerData.perButtonShapeKeyStates[indexB];
             layerData.perButtonShapeKeyStates[indexB] = tempShape;
+        }
+    }
+
+    private void MoveItem(DiNeMultiDresser.DresserLayer layerData, int from, int to)
+    {
+        MoveInList(layerData.targets,                from, to);
+        MoveInList(layerData.labels,                 from, to);
+        MoveInList(layerData.icons,                  from, to);
+        MoveInList(layerData.linkedObjects,           from, to);
+        MoveInList(layerData.perButtonShapeKeyStates, from, to);
+        MoveInList(layerData.perButtonMaterialSwaps,  from, to);
+    }
+
+    private void MoveInList<T>(List<T> list, int from, int to)
+    {
+        if (from < 0 || to < 0 || from >= list.Count || to >= list.Count) return;
+        T item = list[from];
+        list.RemoveAt(from);
+        list.Insert(to, item);
+    }
+
+    private void ApplyPreview(DiNeMultiDresser gen, DiNeMultiDresser.DresserLayer layerData, int buttonIdx, int layerIdx)
+    {
+        previewLayerIndex  = layerIdx;
+        previewButtonIndex = buttonIdx;
+        previewRestoreActions.Clear();
+
+        // ── 메인 타겟 오브젝트 ──
+        for (int j = 0; j < layerData.targets.Count; j++)
+        {
+            var go = layerData.targets[j];
+            if (go == null) continue;
+            bool was  = go.activeSelf;
+            bool next = (j == buttonIdx);
+            previewRestoreActions.Add(() => { if (go != null) SafeSetActive(go, was); });
+            SafeSetActive(go, next);
+        }
+
+        // ── 링크 오브젝트 (애니메이션 생성 로직과 동일) ──
+        var linkedMap = new Dictionary<GameObject, bool>();
+        for (int j = 0; j < layerData.linkedObjects.Count; j++)
+        {
+            if (layerData.linkedObjects[j] == null) continue;
+            foreach (var linkObj in layerData.linkedObjects[j].objects)
+            {
+                if (linkObj == null) continue;
+                if (j == buttonIdx)               linkedMap[linkObj] = true;
+                else if (!linkedMap.ContainsKey(linkObj)) linkedMap[linkObj] = false;
+            }
+        }
+        foreach (var kvp in linkedMap)
+        {
+            var go    = kvp.Key;
+            bool was  = go.activeSelf;
+            bool next = kvp.Value;
+            previewRestoreActions.Add(() => { if (go != null) SafeSetActive(go, was); });
+            SafeSetActive(go, next);
+        }
+
+        // ── 쉐이프키 ──
+        // 레이어 내 어느 버튼에서든 한 번이라도 everRecorded된 키만 "관리 대상"으로 수집
+        var managedKeys = new Dictionary<int, HashSet<string>>(); // meshIndex → keyName set
+        for (int j = 0; j < layerData.perButtonShapeKeyStates.Count; j++)
+        {
+            var bs = layerData.perButtonShapeKeyStates[j];
+            for (int m = 0; m < gen.shapeKeyTargets.Count; m++)
+            {
+                if (m >= bs.meshShapeKeys.Count) continue;
+                if (!managedKeys.ContainsKey(m)) managedKeys[m] = new HashSet<string>();
+                foreach (var sk in bs.meshShapeKeys[m].shapeKeys)
+                    if (sk.everRecorded) managedKeys[m].Add(sk.name);
+            }
+        }
+
+        var currentBtnState = buttonIdx < layerData.perButtonShapeKeyStates.Count
+            ? layerData.perButtonShapeKeyStates[buttonIdx] : null;
+
+        foreach (var kvp in managedKeys)
+        {
+            int m = kvp.Key;
+            var meshObj = gen.shapeKeyTargets[m];
+            if (meshObj == null) continue;
+            var smr = meshObj.GetComponent<SkinnedMeshRenderer>();
+            if (smr == null || smr.sharedMesh == null) continue;
+
+            foreach (var skName in kvp.Value)
+            {
+                int skIdx = smr.sharedMesh.GetBlendShapeIndex(skName);
+                if (skIdx < 0) continue;
+
+                var   capturedSmr = smr;
+                int   capturedIdx = skIdx;
+                float was         = smr.GetBlendShapeWeight(skIdx);
+                previewRestoreActions.Add(() => { if (capturedSmr != null) capturedSmr.SetBlendShapeWeight(capturedIdx, was); });
+
+                // 현재 버튼에서 이 키가 everRecorded면 그 값, 아니면 0
+                float targetValue = 0f;
+                if (currentBtnState != null && m < currentBtnState.meshShapeKeys.Count)
+                {
+                    var found = currentBtnState.meshShapeKeys[m].shapeKeys.Find(k => k.name == skName);
+                    if (found.name != null && found.everRecorded) targetValue = found.value;
+                }
+                smr.SetBlendShapeWeight(skIdx, targetValue);
+            }
+        }
+    }
+
+    // VRC SDK가 에디터에서 SetActive 시 뱉는 MissingReferenceException 억제
+    private static void SafeSetActive(GameObject go, bool active)
+    {
+        try { go.SetActive(active); }
+        catch (System.Exception) { /* VRC 내부 stale 참조 — 무시 */ }
+    }
+
+    private void ClearPreview()
+    {
+        foreach (var action in previewRestoreActions) action?.Invoke();
+        previewRestoreActions.Clear();
+        previewLayerIndex  = -1;
+        previewButtonIndex = -1;
+    }
+
+    // 원상태 저장 없이 현재 데이터를 다시 아바타에 적용 (미리보기 중 실시간 갱신용)
+    private void RefreshPreview(DiNeMultiDresser gen, DiNeMultiDresser.DresserLayer layerData)
+    {
+        int buttonIdx = previewButtonIndex;
+
+        // 메인 타겟
+        for (int j = 0; j < layerData.targets.Count; j++)
+        {
+            var go = layerData.targets[j];
+            if (go != null) SafeSetActive(go, j == buttonIdx);
+        }
+
+        // 링크 오브젝트
+        var linkedMap = new Dictionary<GameObject, bool>();
+        for (int j = 0; j < layerData.linkedObjects.Count; j++)
+        {
+            if (layerData.linkedObjects[j] == null) continue;
+            foreach (var linkObj in layerData.linkedObjects[j].objects)
+            {
+                if (linkObj == null) continue;
+                if (j == buttonIdx)                      linkedMap[linkObj] = true;
+                else if (!linkedMap.ContainsKey(linkObj)) linkedMap[linkObj] = false;
+            }
+        }
+        foreach (var kvp in linkedMap)
+            if (kvp.Key != null) SafeSetActive(kvp.Key, kvp.Value);
+
+        // 쉐이프키 — 관리 대상 키(어느 버튼이든 everRecorded된 것)만 갱신
+        var refreshManaged = new Dictionary<int, HashSet<string>>();
+        for (int j = 0; j < layerData.perButtonShapeKeyStates.Count; j++)
+        {
+            var bs = layerData.perButtonShapeKeyStates[j];
+            for (int m = 0; m < gen.shapeKeyTargets.Count; m++)
+            {
+                if (m >= bs.meshShapeKeys.Count) continue;
+                if (!refreshManaged.ContainsKey(m)) refreshManaged[m] = new HashSet<string>();
+                foreach (var sk in bs.meshShapeKeys[m].shapeKeys)
+                    if (sk.everRecorded) refreshManaged[m].Add(sk.name);
+            }
+        }
+
+        var refreshBtnState = buttonIdx < layerData.perButtonShapeKeyStates.Count
+            ? layerData.perButtonShapeKeyStates[buttonIdx] : null;
+
+        foreach (var kvp in refreshManaged)
+        {
+            int m = kvp.Key;
+            var meshObj = gen.shapeKeyTargets[m];
+            if (meshObj == null) continue;
+            var smr = meshObj.GetComponent<SkinnedMeshRenderer>();
+            if (smr == null || smr.sharedMesh == null) continue;
+
+            foreach (var skName in kvp.Value)
+            {
+                int skIdx = smr.sharedMesh.GetBlendShapeIndex(skName);
+                if (skIdx < 0) continue;
+
+                float targetValue = 0f;
+                if (refreshBtnState != null && m < refreshBtnState.meshShapeKeys.Count)
+                {
+                    var found = refreshBtnState.meshShapeKeys[m].shapeKeys.Find(k => k.name == skName);
+                    if (found.name != null && found.everRecorded) targetValue = found.value;
+                }
+                smr.SetBlendShapeWeight(skIdx, targetValue);
+            }
         }
     }
 
@@ -531,6 +874,75 @@ public class DiNeMultiSupporter : Editor
                 }
             }
         }
+    }
+
+    private void DrawPerButtonMaterialSwapUI(DiNeMultiDresser.DresserLayer layerData, int buttonIdx, int layerIdx, Dictionary<string, string> lang)
+    {
+        while (layerData.perButtonMaterialSwaps.Count <= buttonIdx)
+            layerData.perButtonMaterialSwaps.Add(new DiNeMultiDresser.MaterialSwapList());
+
+        var swapList = layerData.perButtonMaterialSwaps[buttonIdx];
+
+        string foldoutKey = $"DiNe_MS_{layerIdx}_{buttonIdx}";
+        bool foldout = EditorPrefs.GetBool(foldoutKey, false);
+
+        EditorGUILayout.BeginHorizontal();
+        foldout = EditorGUILayout.Foldout(foldout, lang["matSwap"], true);
+        GUI.backgroundColor = new Color(0.7f, 0.9f, 0.7f);
+        if (GUILayout.Button(lang["addMatSwap"], GUILayout.Width(60), GUILayout.Height(16)))
+        {
+            swapList.entries.Add(new DiNeMultiDresser.MaterialSwapEntry());
+            foldout = true;
+            EditorUtility.SetDirty(target);
+        }
+        GUI.backgroundColor = Color.white;
+        EditorGUILayout.EndHorizontal();
+
+        EditorPrefs.SetBool(foldoutKey, foldout);
+
+        if (!foldout || swapList.entries.Count == 0) return;
+
+        EditorGUI.indentLevel++;
+        for (int e = 0; e < swapList.entries.Count; e++)
+        {
+            var entry = swapList.entries[e];
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+            // Renderer 행
+            EditorGUILayout.BeginHorizontal();
+            EditorGUI.BeginChangeCheck();
+            entry.renderer = (Renderer)EditorGUILayout.ObjectField(entry.renderer, typeof(Renderer), true);
+            if (EditorGUI.EndChangeCheck() && entry.renderer != null)
+            {
+                entry.materials.Clear();
+                foreach (var m in entry.renderer.sharedMaterials) entry.materials.Add(m);
+                EditorUtility.SetDirty(target);
+            }
+            if (GUILayout.Button("−", GUILayout.Width(22)))
+            {
+                swapList.entries.RemoveAt(e);
+                EditorUtility.SetDirty(target);
+                EditorGUILayout.EndHorizontal();
+                EditorGUILayout.EndVertical();
+                break;
+            }
+            EditorGUILayout.EndHorizontal();
+
+            // 마테리얼 슬롯
+            for (int mi = 0; mi < entry.materials.Count; mi++)
+            {
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Space(12);
+                GUILayout.Label($"[{mi}]", GUILayout.Width(24));
+                EditorGUI.BeginChangeCheck();
+                entry.materials[mi] = (Material)EditorGUILayout.ObjectField(entry.materials[mi], typeof(Material), false);
+                if (EditorGUI.EndChangeCheck()) EditorUtility.SetDirty(target);
+                EditorGUILayout.EndHorizontal();
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+        EditorGUI.indentLevel--;
     }
 
     private void DrawPerButtonShapeKeyUI(DiNeMultiDresser gen, DiNeMultiDresser.DresserLayer layerData, int buttonIdx, int layerIdx, Dictionary<string, string> lang)

@@ -18,6 +18,10 @@ public class DiNeMultiDresser : MonoBehaviour
     [System.Serializable]
     public class ShapeKeyMeshList { public List<ShapeKeyList> meshShapeKeys = new List<ShapeKeyList>(); }
     [System.Serializable]
+    public class MaterialSwapEntry { public Renderer renderer; public List<Material> materials = new List<Material>(); }
+    [System.Serializable]
+    public class MaterialSwapList   { public List<MaterialSwapEntry> entries = new List<MaterialSwapEntry>(); }
+    [System.Serializable]
     public class LinkedGroup { public List<GameObject> objects = new List<GameObject>(); }
 
     [System.Serializable]
@@ -29,15 +33,18 @@ public class DiNeMultiDresser : MonoBehaviour
         public List<string> labels = new List<string>();
         public List<Texture2D> icons = new List<Texture2D>();
         public List<LinkedGroup> linkedObjects = new List<LinkedGroup>();
-        public List<ShapeKeyMeshList> perButtonShapeKeyStates = new List<ShapeKeyMeshList>();
+        public List<ShapeKeyMeshList>  perButtonShapeKeyStates  = new List<ShapeKeyMeshList>();
+        public List<MaterialSwapList>  perButtonMaterialSwaps   = new List<MaterialSwapList>();
+        public GameObject              particleObject;
 
         public void EnsureSize(int size)
         {
-            while (targets.Count < size) targets.Add(null);
-            while (labels.Count < size) labels.Add("");
-            while (icons.Count < size) icons.Add(null);
-            while (linkedObjects.Count < size) linkedObjects.Add(new LinkedGroup());
+            while (targets.Count < size)                targets.Add(null);
+            while (labels.Count < size)                 labels.Add("");
+            while (icons.Count < size)                  icons.Add(null);
+            while (linkedObjects.Count < size)          linkedObjects.Add(new LinkedGroup());
             while (perButtonShapeKeyStates.Count < size) perButtonShapeKeyStates.Add(new ShapeKeyMeshList());
+            while (perButtonMaterialSwaps.Count < size)  perButtonMaterialSwaps.Add(new MaterialSwapList());
         }
 
         public void RemoveAt(int index)
@@ -46,8 +53,9 @@ public class DiNeMultiDresser : MonoBehaviour
             targets.RemoveAt(index);
             labels.RemoveAt(index);
             icons.RemoveAt(index);
-            if (index < linkedObjects.Count) linkedObjects.RemoveAt(index);
+            if (index < linkedObjects.Count)           linkedObjects.RemoveAt(index);
             if (index < perButtonShapeKeyStates.Count) perButtonShapeKeyStates.RemoveAt(index);
+            if (index < perButtonMaterialSwaps.Count)  perButtonMaterialSwaps.RemoveAt(index);
         }
     }
 
@@ -254,7 +262,9 @@ public class DiNeMultiDresser : MonoBehaviour
                 labels = new List<string>(layer.labels),
                 icons = new List<Texture2D>(layer.icons),
                 linkedObjects = new List<LinkedGroup>(layer.linkedObjects),
-                perButtonShapeKeyStates = new List<ShapeKeyMeshList>(layer.perButtonShapeKeyStates)
+                perButtonShapeKeyStates = new List<ShapeKeyMeshList>(layer.perButtonShapeKeyStates),
+                perButtonMaterialSwaps  = new List<MaterialSwapList>(layer.perButtonMaterialSwaps),
+                particleObject          = layer.particleObject
             };
             savedProfile.savedLayers.Add(saved);
         }
@@ -375,6 +385,22 @@ public class DiNeMultiDresser : MonoBehaviour
     }
 
     /// <summary>
+    /// ShapeKeyMeshList 리스트를 깊은 복사 (버튼 간 쉐이프키 값 공유 방지)
+    /// </summary>
+    private static List<ShapeKeyMeshList> DeepCopyShapeKeyMeshLists(List<ShapeKeyMeshList> source)
+    {
+        var result = new List<ShapeKeyMeshList>(source.Count);
+        foreach (var sml in source)
+        {
+            var newSml = new ShapeKeyMeshList();
+            foreach (var sl in sml.meshShapeKeys)
+                newSml.meshShapeKeys.Add(new ShapeKeyList { shapeKeys = new List<ShapeKeyState>(sl.shapeKeys) });
+            result.Add(newSml);
+        }
+        return result;
+    }
+
+    /// <summary>
     /// 프로필 데이터를 실제 레이어에 복원. Null 참조 정리 포함.
     /// </summary>
     private void RestoreInternal(DiNeProfile profile)
@@ -392,7 +418,9 @@ public class DiNeMultiDresser : MonoBehaviour
                 labels = new List<string>(saved.labels),
                 icons = new List<Texture2D>(saved.icons),
                 linkedObjects = new List<LinkedGroup>(saved.linkedObjects),
-                perButtonShapeKeyStates = new List<ShapeKeyMeshList>(saved.perButtonShapeKeyStates)
+                perButtonShapeKeyStates = DeepCopyShapeKeyMeshLists(saved.perButtonShapeKeyStates),
+                perButtonMaterialSwaps  = new List<MaterialSwapList>(saved.perButtonMaterialSwaps),
+                particleObject          = saved.particleObject
             };
 
             // Null 참조 검증: 삭제된 오브젝트가 있으면 경고
@@ -574,6 +602,25 @@ public class DiNeMultiDresser : MonoBehaviour
             }
         }
 
+        // 마테리얼 교체: 사용된 모든 Renderer 수집 + 기본 마테리얼 결정
+        var allSwapRenderers = new List<Renderer>();
+        var rendSet = new HashSet<Renderer>();
+        foreach (var swapList in layerData.perButtonMaterialSwaps)
+            foreach (var entry in swapList.entries)
+                if (entry.renderer != null && rendSet.Add(entry.renderer))
+                    allSwapRenderers.Add(entry.renderer);
+
+        var defaultMaterials = new Dictionary<Renderer, Material[]>();
+        foreach (var rend in allSwapRenderers)
+        {
+            if (layerData.perButtonMaterialSwaps.Count > 0)
+            {
+                var e = layerData.perButtonMaterialSwaps[0].entries.Find(x => x.renderer == rend);
+                if (e != null && e.materials.Count > 0) { defaultMaterials[rend] = e.materials.ToArray(); continue; }
+            }
+            defaultMaterials[rend] = rend.sharedMaterials;
+        }
+
         for (int i = 0; i < layerData.targets.Count; i++)
         {
             AnimationClip clip = new AnimationClip();
@@ -650,6 +697,35 @@ public class DiNeMultiDresser : MonoBehaviour
                         EditorCurveBinding.FloatCurve(AnimationUtility.CalculateTransformPath(meshObj.transform, rootTransform), typeof(SkinnedMeshRenderer), "blendShape." + skName),
                         new AnimationCurve(new Keyframe(0, targetValue)));
                 }
+            }
+
+            // (4) Material Swaps
+            foreach (var rend in allSwapRenderers)
+            {
+                var mats = defaultMaterials.ContainsKey(rend) ? (Material[])defaultMaterials[rend].Clone() : rend.sharedMaterials;
+                if (i < layerData.perButtonMaterialSwaps.Count)
+                {
+                    var e = layerData.perButtonMaterialSwaps[i].entries.Find(x => x.renderer == rend);
+                    if (e != null && e.materials.Count > 0) mats = e.materials.ToArray();
+                }
+                string rPath = AnimationUtility.CalculateTransformPath(rend.transform, rootTransform);
+                System.Type rType = rend.GetType();
+                for (int mi = 0; mi < mats.Length; mi++)
+                {
+                    if (mats[mi] == null) continue;
+                    AnimationUtility.SetObjectReferenceCurve(clip,
+                        EditorCurveBinding.PPtrCurve(rPath, rType, $"m_Materials.Array.data[{mi}]"),
+                        new ObjectReferenceKeyframe[] { new ObjectReferenceKeyframe { time = 0f, value = mats[mi] } });
+                }
+            }
+
+            // (5) Particle (0s=OFF → 0.01s=ON)
+            if (layerData.particleObject != null)
+            {
+                string pPath = AnimationUtility.CalculateTransformPath(layerData.particleObject.transform, rootTransform);
+                AnimationUtility.SetEditorCurve(clip,
+                    EditorCurveBinding.FloatCurve(pPath, typeof(GameObject), "m_IsActive"),
+                    new AnimationCurve(new Keyframe(0f, 0f), new Keyframe(0.01f, 1f)));
             }
 
             AssetDatabase.CreateAsset(clip, clipPath);
