@@ -400,8 +400,8 @@ public class DiNeMultiSupporter : Editor
             // ── 미리보기 토글 ──
             bool isPreviewing = (previewLayerIndex == index && previewButtonIndex == i);
             GUI.backgroundColor = isPreviewing ? new Color(0.3f, 0.82f, 0.9f) : new Color(0.55f, 0.55f, 0.55f);
-            GUIStyle previewStyle = new GUIStyle(GUI.skin.button) { fontSize = 14, normal = { textColor = Color.white } };
-            if (GUILayout.Button(isPreviewing ? "●" : "○", previewStyle, GUILayout.Width(26), GUILayout.Height(20)))
+            GUIStyle previewStyle = new GUIStyle(GUI.skin.button) { fontSize = 11, normal = { textColor = Color.white } };
+            if (GUILayout.Button("미리보기", previewStyle, GUILayout.Width(60), GUILayout.Height(20)))
             {
                 if (isPreviewing) ClearPreview();
                 else { ClearPreview(); ApplyPreview(gen, currentLayerData, i, index); }
@@ -727,6 +727,29 @@ public class DiNeMultiSupporter : Editor
                 smr.SetBlendShapeWeight(skIdx, targetValue);
             }
         }
+
+        // ── 머티리얼 교체 ──
+        if (buttonIdx < layerData.perButtonMaterialSwaps.Count)
+        {
+            var swapList = layerData.perButtonMaterialSwaps[buttonIdx];
+            foreach (var entry in swapList.entries)
+            {
+                var rend = entry.renderer;
+                if (rend == null) continue;
+                var capturedRend = rend;
+                var wasMats = rend.sharedMaterials;  // 원본 배열 캡처
+                previewRestoreActions.Add(() => { if (capturedRend != null) capturedRend.sharedMaterials = wasMats; });
+
+                // entry.materials 슬롯 수만큼 교체 (나머지 슬롯은 원본 유지)
+                var newMats = (Material[])wasMats.Clone();
+                for (int si = 0; si < entry.materials.Count && si < newMats.Length; si++)
+                {
+                    if (entry.materials[si] != null)
+                        newMats[si] = entry.materials[si];
+                }
+                rend.sharedMaterials = newMats;
+            }
+        }
     }
 
     // VRC SDK가 에디터에서 SetActive 시 뱉는 MissingReferenceException 억제
@@ -808,6 +831,26 @@ public class DiNeMultiSupporter : Editor
                     if (found.name != null && found.everRecorded) targetValue = found.value;
                 }
                 smr.SetBlendShapeWeight(skIdx, targetValue);
+            }
+        }
+
+        // 머티리얼 교체 갱신
+        if (buttonIdx < layerData.perButtonMaterialSwaps.Count)
+        {
+            var swapList = layerData.perButtonMaterialSwaps[buttonIdx];
+            foreach (var entry in swapList.entries)
+            {
+                var rend = entry.renderer;
+                if (rend == null) continue;
+                // previewRestoreActions에 저장된 원본으로 일단 되돌린 뒤 재적용
+                var baseMats = (Material[])rend.sharedMaterials.Clone();
+                var newMats  = baseMats;
+                for (int si = 0; si < entry.materials.Count && si < newMats.Length; si++)
+                {
+                    if (entry.materials[si] != null)
+                        newMats[si] = entry.materials[si];
+                }
+                rend.sharedMaterials = newMats;
             }
         }
     }
