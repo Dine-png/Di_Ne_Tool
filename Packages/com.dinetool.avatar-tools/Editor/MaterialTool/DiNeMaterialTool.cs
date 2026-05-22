@@ -286,9 +286,9 @@ public class DiNeMaterialTool : EditorWindow
 
     void OnEnable()
     {
-        _windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
-        _tabIcon    = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
-        _titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
+        _windowIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
+        _tabIcon    = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe_Icon.png");
+        _titleFont  = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
         titleContent = new GUIContent("Material", _tabIcon);
         if (_dietEnabled == null || _dietEnabled.Length != SECTIONS.Length)
         {
@@ -458,9 +458,12 @@ public class DiNeMaterialTool : EditorWindow
     private void AutoScan()
     {
         if (_targetObject == null) { _presetMats.Clear(); _presetScanned = false; _dietMats.Clear(); _dietScanned = false; _vramTextures.Clear(); _vramScanned = false; _status = ""; return; }
-        if (_mode == ToolMode.PresetApply) PresetScanMaterials();
-        else if (_mode == ToolMode.Diet) DietScanMaterials();
-        else VRAMScanTextures();
+        if (_mode == ToolMode.PresetApply)
+            PresetScanMaterials();
+        else if (_mode == ToolMode.Diet)
+            DietScanMaterials();
+        else
+            VRAMScanTextures();
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -811,13 +814,16 @@ public class DiNeMaterialTool : EditorWindow
         // 아웃라인: unified(_UseOutline=1) 또는 Outline 변형 쉐이더 판단
         if (tog == "_UseOutline")
         {
-            bool isOutlineVariant = mat.shader != null && mat.shader.name.Contains("Outline");
+            bool isOutlineVariant = IsOutlineVariantShader(mat.shader);
             if (isOutlineVariant)
             {
-                // 변형 쉐이더는 항상 아웃라인이 켜진 상태 → _OutlineWidth가 0보다 크면 활성
+                // 변형 쉐이더 자체가 "Outline"을 포함 → 쉐이더가 남아있으면 켜진 것
+                // (Diet 적용 시 쉐이더가 비아웃라인으로 교체되므로, 교체 후에는 여기 안 들어옴)
+                if (mat.HasProperty("_UseOutline"))
+                    return mat.GetFloat("_UseOutline") > 0.5f;
                 if (mat.HasProperty("_OutlineWidth"))
-                    return mat.GetFloat("_OutlineWidth") > 0f;
-                return true; // width 프로퍼티 없어도 변형 쉐이더는 켜진 것으로 간주
+                    return mat.GetFloat("_OutlineWidth") > 0.0001f;
+                return true;
             }
             // Unified 쉐이더: _UseOutline 토글 기준
             if (mat.HasProperty("_UseOutline"))
@@ -934,9 +940,11 @@ public class DiNeMaterialTool : EditorWindow
                         if (thumb != null)
                             GUI.DrawTexture(previewRect, thumb, ScaleMode.ScaleToFit);
                         else if (res.Textures[j] is Texture2D raw)
-                            { EditorGUI.DrawPreviewTexture(previewRect, raw); Repaint(); }
+                            EditorGUI.DrawPreviewTexture(previewRect, raw);
                         else
-                            { GUI.Box(previewRect, ""); Repaint(); }
+                            GUI.Box(previewRect, GUIContent.none);
+                        if (thumb == null && AssetPreview.IsLoadingAssetPreview(res.Textures[j].GetInstanceID()))
+                            Repaint();
 
                         if (Event.current.type == EventType.MouseDown && previewRect.Contains(Event.current.mousePosition))
                         { EditorGUIUtility.PingObject(res.Textures[j]); Event.current.Use(); }
@@ -1231,17 +1239,25 @@ public class DiNeMaterialTool : EditorWindow
                     // ApplyDiet 함수 안의 if (disableFeatures) 내부
                     if (tog == "_UseOutline")
                     {
-                        bool isVariant = info.Material.shader != null && info.Material.shader.name.Contains("Outline");
+                        bool isVariant = IsOutlineVariantShader(info.Material.shader);
                         if (isVariant)
                         {
-                            // 변형 쉐이더: _OutlineWidth=0으로 시각적 비활성화
-                            if (info.Material.HasProperty("_OutlineWidth"))
-                                info.Material.SetFloat("_OutlineWidth", 0f);
+                            // 변형 쉐이더: 쉐이더 이름에서 " Outline" 제거 → 비아웃라인 쉐이더로 교체
+                            Shader baseShader = FindBaseOutlineShader(info.Material.shader);
+                            if (baseShader != null)
+                            {
+                                info.Material.shader = baseShader;
+                            }
+                            else
+                            {
+                                // 대응 쉐이더를 찾지 못한 경우 fallback: 두께 0
+                                if (info.Material.HasProperty("_OutlineWidth"))
+                                    info.Material.SetFloat("_OutlineWidth", 0f);
+                            }
                         }
-                        else if (info.Material.HasProperty("_UseOutline"))
+                        if (isVariant || info.Material.HasProperty("_UseOutline") || info.Material.HasProperty("_OutlineWidth") || info.Material.HasProperty("_OutlineEnable"))
                         {
-                            info.Material.SetFloat("_UseOutline", 0f);
-                            info.Material.DisableKeyword("_OUTLINE");
+                            DisableOutlineFeature(info.Material);
                         }
                     }
                     else if (tog != null)
@@ -1348,9 +1364,12 @@ public class DiNeMaterialTool : EditorWindow
         if (thumb != null)
             GUI.DrawTexture(thumbRect, thumb, ScaleMode.ScaleToFit);
         else if (info.Texture is Texture2D t2d)
-            { EditorGUI.DrawPreviewTexture(thumbRect, t2d); Repaint(); }
+            EditorGUI.DrawPreviewTexture(thumbRect, t2d);
         else
-            { GUI.Box(thumbRect, ""); Repaint(); }
+            GUI.Box(thumbRect, GUIContent.none);
+        // 아직 로딩 중일 때만 Repaint 요청 (완료/포기된 경우 무한 루프 방지)
+        if (thumb == null && AssetPreview.IsLoadingAssetPreview(info.Texture.GetInstanceID()))
+            Repaint();
 
         if (Event.current.type == EventType.MouseDown && Event.current.button == 0 && thumbRect.Contains(Event.current.mousePosition))
         {
@@ -1805,6 +1824,69 @@ public class DiNeMaterialTool : EditorWindow
         return sn.Contains("liltoon") || sn.Contains("lil_toon");
     }
 
+    private static bool IsOutlineVariantShader(Shader shader)
+    {
+        return shader != null && shader.name.Contains("Outline");
+    }
+
+    private static Shader FindBaseOutlineShader(Shader outlineShader)
+    {
+        if (outlineShader == null) return null;
+
+        string outlineShaderName = outlineShader.name;
+        var candidateNames = new HashSet<string>();
+
+        void AddCandidate(string candidateName)
+        {
+            if (string.IsNullOrWhiteSpace(candidateName)) return;
+
+            string normalized = candidateName.Trim();
+            while (normalized.Contains("  "))
+                normalized = normalized.Replace("  ", " ");
+
+            if (normalized == outlineShaderName) return;
+            candidateNames.Add(normalized);
+        }
+
+        AddCandidate(outlineShaderName.Replace("Hidden/lilToonOutline", "Hidden/lilToon"));
+        AddCandidate(outlineShaderName.Replace("lilToonOutline", "lilToon"));
+        AddCandidate(outlineShaderName.Replace("/Outline", ""));
+        AddCandidate(outlineShaderName.Replace(" Outline", ""));
+
+        if (outlineShaderName.IndexOf("Outline", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            AddCandidate(outlineShaderName.Replace("Outline", ""));
+
+        foreach (string candidateName in candidateNames.ToArray())
+        {
+            if (candidateName.StartsWith("Hidden/"))
+                AddCandidate(candidateName.Substring("Hidden/".Length));
+        }
+
+        foreach (string candidateName in candidateNames)
+        {
+            Shader candidate = Shader.Find(candidateName);
+            if (candidate != null)
+                return candidate;
+        }
+
+        return null;
+    }
+
+    private static void DisableOutlineFeature(Material mat)
+    {
+        if (mat == null) return;
+
+        if (mat.HasProperty("_UseOutline"))
+            mat.SetFloat("_UseOutline", 0f);
+        if (mat.HasProperty("_OutlineWidth"))
+            mat.SetFloat("_OutlineWidth", 0f);
+        if (mat.HasProperty("_OutlineEnable"))
+            mat.SetFloat("_OutlineEnable", 0f);
+
+        mat.DisableKeyword("_OUTLINE");
+        mat.DisableKeyword("OUTLINE");
+    }
+
     private void SetStatus(string msg, bool warn) { _status = msg; _statusWarn = warn; }
 
     private void SectionLabel(string text) =>
@@ -1869,7 +1951,10 @@ public class DiNeMaterialTool : EditorWindow
         if (EditorPrefs.HasKey("DiNeMaterialTool_Lang"))
             _lang = (Lang)EditorPrefs.GetInt("DiNeMaterialTool_Lang");
         if (EditorPrefs.HasKey("DiNeMaterialTool_Mode"))
-            _mode = (ToolMode)EditorPrefs.GetInt("DiNeMaterialTool_Mode");
+        {
+            int savedMode = EditorPrefs.GetInt("DiNeMaterialTool_Mode");
+            _mode = (ToolMode)Mathf.Clamp(savedMode, 0, 2);
+        }
         if (EditorPrefs.HasKey("DiNeMaterialTool_Children"))
             _includeChildren = EditorPrefs.GetBool("DiNeMaterialTool_Children");
         if (EditorPrefs.HasKey("DiNeMaterialTool_Inactive"))

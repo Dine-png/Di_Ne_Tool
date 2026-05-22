@@ -7,6 +7,9 @@ using System.Collections.Generic;
 public class DiNeMultiSupporter : Editor
 {
     private Texture2D windowIcon;
+    private Texture2D dresserPresetIcon;
+    private Texture2D hairPresetIcon;
+    private Texture2D accPresetIcon;
     private Font      titleFont;
     private int selectedLayerIndex = 0;
     private int draggedItemIndex = -1;
@@ -16,7 +19,39 @@ public class DiNeMultiSupporter : Editor
     private int previewLayerIndex  = -1;
     private int previewButtonIndex = -1;
     private readonly List<System.Action> previewRestoreActions = new List<System.Action>();
-    private string pendingProfileName = "";
+    private readonly Dictionary<Renderer, Material[]> previewBaseMaterials = new Dictionary<Renderer, Material[]>();
+
+    private static Material[] CloneMaterials(Material[] materials)
+    {
+        return materials != null ? (Material[])materials.Clone() : new Material[0];
+    }
+
+    private static DiNeMultiDresser.MaterialSwapEntry FindMaterialSwapEntry(DiNeMultiDresser.DresserLayer layerData, int buttonIdx, Renderer renderer)
+    {
+        if (layerData == null || renderer == null) return null;
+        if (buttonIdx < 0 || buttonIdx >= layerData.perButtonMaterialSwaps.Count) return null;
+
+        var swapList = layerData.perButtonMaterialSwaps[buttonIdx];
+        if (swapList == null || swapList.entries == null) return null;
+
+        return swapList.entries.Find(entry => entry != null && entry.renderer == renderer);
+    }
+
+    private static Material[] BuildPreviewBaseMaterials(DiNeMultiDresser.DresserLayer layerData, Renderer renderer)
+    {
+        var baseMaterials = CloneMaterials(renderer != null ? renderer.sharedMaterials : null);
+        var defaultEntry = FindMaterialSwapEntry(layerData, 0, renderer);
+        if (defaultEntry == null || defaultEntry.materials == null)
+            return baseMaterials;
+
+        for (int i = 0; i < defaultEntry.materials.Count && i < baseMaterials.Length; i++)
+        {
+            if (defaultEntry.materials[i] != null)
+                baseMaterials[i] = defaultEntry.materials[i];
+        }
+
+        return baseMaterials;
+    }
     
     private enum Language { English, Korean, Japanese }
     private static readonly string[] LangButtonLabels = { "English", "한국어", "日本語" };
@@ -60,9 +95,9 @@ public class DiNeMultiSupporter : Editor
                 { "fxController", "FX 컨트롤러" },
                 { "expressionMenu", "익스프레션 메뉴" },
                 { "newLayer", "새 레이어" },
-                { "autoApplyHint", "플레이 모드 진입 및 아바타 업로드 시 전체 설정이 자동으로 생성/적용됩니다." },
+                { "autoApplyHint", "Play Mode/업로드용 임시 아바타에만 자동 생성·적용됩니다. 원본 아바타는 변경되지 않습니다." },
                 { "cleanupDialogTitle", "데이터 초기화" },
-                { "cleanupDialogMsg", "드레서에 설정된 모든 데이터(레이어, 오브젝트, 쉐이프키)를 초기화합니다.\n이 작업은 되돌릴 수 없습니다." },
+                { "cleanupDialogMsg", "드레서에 설정된 모든 데이터(레이어, 오브젝트, 쉐이프키)를 초기화하고 연결된 프리셋도 해제합니다.\n이 작업은 되돌릴 수 없습니다." },
                 { "cleanupDialogOk", "초기화 (Yes)" },
                 { "cleanupDialogCancel", "취소 (No)" },
                 { "particle",   "파티클 오브젝트" },
@@ -106,9 +141,9 @@ public class DiNeMultiSupporter : Editor
                 { "fxController", "FX Controller" },
                 { "expressionMenu", "Expression Menu" },
                 { "newLayer", "New Layer" },
-                { "autoApplyHint", "All settings will be automatically generated/applied when entering Play Mode or uploading the avatar." },
+                { "autoApplyHint", "All settings are generated/applied only on the temporary Play Mode or upload avatar. The original avatar is left untouched." },
                 { "cleanupDialogTitle", "Reset Data" },
-                { "cleanupDialogMsg", "This will clear all dresser settings (layers, objects, shape keys).\nThis action cannot be undone." },
+                { "cleanupDialogMsg", "This will clear all dresser settings (layers, objects, shape keys) and unlink the connected preset.\nThis action cannot be undone." },
                 { "cleanupDialogOk", "Reset (Yes)" },
                 { "cleanupDialogCancel", "Cancel (No)" },
                 { "particle",   "Particle Object" },
@@ -152,9 +187,9 @@ public class DiNeMultiSupporter : Editor
                 { "fxController", "FX コントローラー" },
                 { "expressionMenu", "表情メニュー" },
                 { "newLayer", "新しいレイヤー" },
-                { "autoApplyHint", "プレイモード開始またはアバターアップロード時に全設定が自動生成/適用されます。" },
+                { "autoApplyHint", "Play Mode / アップロード用の一時アバターにのみ自動生成・適用されます。元のアバターは変更されません。" },
                 { "cleanupDialogTitle", "データ初期化" },
-                { "cleanupDialogMsg", "ドレッサーに設定された全データ（レイヤー、オブジェクト、シェイプキー）を初期化します。\nこの操作は元に戻せません。" },
+                { "cleanupDialogMsg", "ドレッサーに設定された全データ（レイヤー、オブジェクト、シェイプキー）を初期化し、接続されたプリセットも解除します。\nこの操作は元に戻せません。" },
                 { "cleanupDialogOk", "初期化 (Yes)" },
                 { "cleanupDialogCancel", "キャンセル (No)" },
                 { "particle",   "パーティクル" },
@@ -174,21 +209,27 @@ public class DiNeMultiSupporter : Editor
         }
     };
 
+    private string SkSessionKey => $"DiNe_SKWas_{target.GetInstanceID()}";
+    private string GoSessionKey => $"DiNe_GOWas_{target.GetInstanceID()}";
+
     private void OnDisable()
     {
         ClearPreview();
         // 인스펙터 비활성화 시 프로필 자동 저장 (도메인 리로드·플레이모드 진입 전 최신값 보존)
-        var gen = target as DiNeMultiDresser;
-        if (gen != null && gen.layers.Count > 0)
-            gen.SaveProfile();
     }
 
     private void OnEnable()
     {
-        windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
-        titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
+        windowIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
+        dresserPresetIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/MultiDresser/DNDresser.png");
+        hairPresetIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/MultiDresser/DNHair.png");
+        accPresetIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/MultiDresser/DNAcc.png");
+        titleFont  = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
         DiNeMultiDresser gen = (DiNeMultiDresser)target;
         if(gen.rootTransform == null) gen.TryAutoAssignFXController();
+
+        RestoreOrphanedObjectPreview();
+        RestoreOrphanedShapeKeyPreview();
     }
 
     public override void OnInspectorGUI()
@@ -221,7 +262,6 @@ public class DiNeMultiSupporter : Editor
         if (GUILayout.Button(new GUIContent("↺", lang["refreshTooltip"]), GUILayout.Width(30), GUILayout.Height(20)))
         {
             gen.TryAutoAssignFXController(); 
-            gen.TryRestoreFromProfile(); 
             serializedObject.Update();   
         }
         EditorGUILayout.EndHorizontal();
@@ -230,7 +270,6 @@ public class DiNeMultiSupporter : Editor
             root.objectReferenceValue = after;
             serializedObject.ApplyModifiedProperties();
             gen.TryAutoAssignFXController();
-            gen.TryRestoreFromProfile(); 
         }
 
         EditorGUILayout.BeginHorizontal();
@@ -251,7 +290,6 @@ public class DiNeMultiSupporter : Editor
         EditorGUILayout.Space(6);
 
         // ── 프리셋 섹션 ──────────────────────────────────────────────
-        DrawPresetUI(gen, lang);
 
         EditorGUILayout.Space(10);
         EditorGUILayout.LabelField(lang["layerCategory"], EditorStyles.boldLabel);
@@ -259,17 +297,11 @@ public class DiNeMultiSupporter : Editor
         if (layers.arraySize == 0)
         {
             // 빈 레이어면 프로필 복구 먼저 시도 (플레이 모드 후 유실 케이스 포함)
-            gen.TryRestoreFromProfile();
-            serializedObject.Update();
-
-            if (layers.arraySize == 0)
-            {
                 // 프로필도 없으면 기본 레이어 생성
-                layers.InsertArrayElementAtIndex(0);
-                layers.GetArrayElementAtIndex(0).FindPropertyRelative("layerName").stringValue = "Main";
-                serializedObject.ApplyModifiedProperties();
-                gen.layers[0].EnsureSize(0);
-            }
+            layers.InsertArrayElementAtIndex(0);
+            layers.GetArrayElementAtIndex(0).FindPropertyRelative("layerName").stringValue = "Main";
+            serializedObject.ApplyModifiedProperties();
+            gen.layers[0].EnsureSize(0);
         }
 
         List<string> tabNames = new List<string>();
@@ -319,16 +351,24 @@ public class DiNeMultiSupporter : Editor
         // [삭제 버튼] - 붉은색 경고 느낌
         GUI.backgroundColor = new Color(0.60f, 0.25f, 0.25f);
         var cleanBtnStyle = new GUIStyle(GUI.skin.button) { fixedHeight = 30, fontStyle = FontStyle.Bold, normal = { textColor = Color.white } };
-        if (GUILayout.Button(lang["cleanup"], cleanBtnStyle))
+        if (false && GUILayout.Button(lang["cleanup"], cleanBtnStyle))
         {
             if (EditorUtility.DisplayDialog(lang["cleanupDialogTitle"], lang["cleanupDialogMsg"], lang["cleanupDialogOk"], lang["cleanupDialogCancel"]))
             {
+                ClearPreview();
                 Undo.RecordObject(gen, "Clear Multi Dresser Data");
-                gen.layers.Clear();
-                gen.shapeKeyTargets.Clear();
+                DiNeMultiIconGenerator.ReleaseIcons(gen);
+                gen.DeleteAllGeneratedData();
+
+                layers.ClearArray();
+                shapeKeyTargets.ClearArray();
+                serializedObject.ApplyModifiedPropertiesWithoutUndo();
+
+                gen.ClearAllData(clearGeneratedData: false);
                 selectedLayerIndex = 0;
                 EditorUtility.SetDirty(gen);
                 serializedObject.Update();
+                GUIUtility.ExitGUI();
             }
         }
         GUI.backgroundColor = Color.white;
@@ -361,6 +401,13 @@ public class DiNeMultiSupporter : Editor
         EditorGUILayout.BeginVertical(GUILayout.Width(70));
         GUILayout.Label(lang["catIcon"], EditorStyles.centeredGreyMiniLabel);
         layerIcon.objectReferenceValue = EditorGUILayout.ObjectField(layerIcon.objectReferenceValue, typeof(Texture2D), false, GUILayout.Width(64), GUILayout.Height(64));
+        EditorGUILayout.EndVertical();
+
+        EditorGUILayout.BeginVertical(GUILayout.Width(74));
+        GUILayout.Space(18);
+        DrawLayerIconPresetButton(layerIcon, "Clothes", dresserPresetIcon);
+        DrawLayerIconPresetButton(layerIcon, "Hair", hairPresetIcon);
+        DrawLayerIconPresetButton(layerIcon, "ACC", accPresetIcon);
         EditorGUILayout.EndVertical();
 
         EditorGUILayout.BeginVertical();
@@ -454,6 +501,12 @@ public class DiNeMultiSupporter : Editor
             if (GUILayout.Button("X", GUILayout.Width(30), GUILayout.Height(20)))
             {
                 ClearPreview();
+                if (i < currentLayerData.icons.Count)
+                {
+                    var releasedIcon = currentLayerData.icons[i];
+                    DiNeMultiIconGenerator.ReleaseIconReference(ref releasedIcon);
+                    currentLayerData.icons[i] = releasedIcon;
+                }
                 currentLayerData.RemoveAt(i);
                 EditorUtility.SetDirty(target);
                 serializedObject.Update();
@@ -463,7 +516,32 @@ public class DiNeMultiSupporter : Editor
 
             EditorGUI.BeginChangeCheck();
 
+            var previousTarget = t.objectReferenceValue as GameObject;
             t.objectReferenceValue = EditorGUILayout.ObjectField(GUIContent.none, t.objectReferenceValue, typeof(GameObject), true);
+            var currentTarget = t.objectReferenceValue as GameObject;
+
+            if (previousTarget != currentTarget)
+            {
+                serializedObject.ApplyModifiedProperties();
+                var liveLayerData = gen.layers[index];
+
+                if (i != 0)
+                {
+                    if (i < liveLayerData.labels.Count &&
+                        (string.IsNullOrEmpty(liveLayerData.labels[i]) || liveLayerData.labels[i] == previousTarget?.name))
+                    {
+                        liveLayerData.labels[i] = currentTarget != null ? currentTarget.name : "";
+                    }
+
+                    DiNeMultiIconGenerator.RegenerateIcon(liveLayerData, i);
+                }
+
+                EditorUtility.SetDirty(gen);
+                serializedObject.Update();
+
+                if (previewLayerIndex == index && previewButtonIndex == i)
+                    RefreshPreview(gen, gen.layers[index]);
+            }
 
             if (i != 0)
             {
@@ -579,6 +657,7 @@ public class DiNeMultiSupporter : Editor
                 currentLayerData.linkedObjects.Add(new DiNeMultiDresser.LinkedGroup());
                 currentLayerData.perButtonShapeKeyStates.Add(new DiNeMultiDresser.ShapeKeyMeshList());
                 currentLayerData.perButtonMaterialSwaps.Add(new DiNeMultiDresser.MaterialSwapList());
+                DiNeMultiIconGenerator.RegenerateIcon(currentLayerData, currentLayerData.targets.Count - 1);
             }
             SyncShapeKeyData(gen, currentLayerData);
             EditorUtility.SetDirty(target);
@@ -691,6 +770,9 @@ public class DiNeMultiSupporter : Editor
         previewLayerIndex  = layerIdx;
         previewButtonIndex = buttonIdx;
         previewRestoreActions.Clear();
+        previewBaseMaterials.Clear();
+        SessionState.EraseString(SkSessionKey);
+        SessionState.EraseString(GoSessionKey);
 
         // ── 메인 타겟 오브젝트 ──
         for (int j = 0; j < layerData.targets.Count; j++)
@@ -700,6 +782,8 @@ public class DiNeMultiSupporter : Editor
             bool was  = go.activeSelf;
             bool next = (j == buttonIdx);
             previewRestoreActions.Add(() => { if (go != null) SafeSetActive(go, was); });
+            string prevGO = SessionState.GetString(GoSessionKey, "");
+            SessionState.SetString(GoSessionKey, prevGO + $"{go.GetInstanceID()}:{(was ? 1 : 0)};");
             SafeSetActive(go, next);
         }
 
@@ -721,6 +805,8 @@ public class DiNeMultiSupporter : Editor
             bool was  = go.activeSelf;
             bool next = kvp.Value;
             previewRestoreActions.Add(() => { if (go != null) SafeSetActive(go, was); });
+            string prevGO = SessionState.GetString(GoSessionKey, "");
+            SessionState.SetString(GoSessionKey, prevGO + $"{go.GetInstanceID()}:{(was ? 1 : 0)};");
             SafeSetActive(go, next);
         }
 
@@ -759,6 +845,9 @@ public class DiNeMultiSupporter : Editor
                 int   capturedIdx = skIdx;
                 float was         = smr.GetBlendShapeWeight(skIdx);
                 previewRestoreActions.Add(() => { if (capturedSmr != null) capturedSmr.SetBlendShapeWeight(capturedIdx, was); });
+                string prev = SessionState.GetString(SkSessionKey, "");
+                SessionState.SetString(SkSessionKey,
+                    prev + $"{smr.GetInstanceID()}:{skIdx}:{was.ToString(System.Globalization.CultureInfo.InvariantCulture)};");
 
                 // 현재 버튼에서 이 키가 everRecorded면 그 값, 아니면 0
                 float targetValue = 0f;
@@ -779,9 +868,14 @@ public class DiNeMultiSupporter : Editor
             {
                 var rend = entry.renderer;
                 if (rend == null) continue;
-                var capturedRend = rend;
-                var wasMats = rend.sharedMaterials;  // 원본 배열 캡처
-                previewRestoreActions.Add(() => { if (capturedRend != null) capturedRend.sharedMaterials = wasMats; });
+                if (!previewBaseMaterials.ContainsKey(rend))
+                {
+                    var capturedRend = rend;
+                    var baseMats = BuildPreviewBaseMaterials(layerData, rend);
+                    previewBaseMaterials[rend] = baseMats;
+                    previewRestoreActions.Add(() => { if (capturedRend != null) capturedRend.sharedMaterials = CloneMaterials(baseMats); });
+                }
+                var wasMats = CloneMaterials(previewBaseMaterials[rend]);
 
                 // entry.materials 슬롯 수만큼 교체 (나머지 슬롯은 원본 유지)
                 var newMats = (Material[])wasMats.Clone();
@@ -806,8 +900,55 @@ public class DiNeMultiSupporter : Editor
     {
         foreach (var action in previewRestoreActions) action?.Invoke();
         previewRestoreActions.Clear();
+        previewBaseMaterials.Clear();
         previewLayerIndex  = -1;
         previewButtonIndex = -1;
+        SessionState.EraseString(SkSessionKey);
+        SessionState.EraseString(GoSessionKey);
+    }
+
+    private void RestoreOrphanedObjectPreview()
+    {
+        string data = SessionState.GetString(GoSessionKey, "");
+        if (string.IsNullOrEmpty(data)) return;
+
+        foreach (var entry in data.TrimEnd(';').Split(';'))
+        {
+            if (string.IsNullOrEmpty(entry)) continue;
+            var parts = entry.Split(':');
+            if (parts.Length != 2) continue;
+            if (!int.TryParse(parts[0], out int instanceID)) continue;
+            if (!int.TryParse(parts[1], out int wasInt)) continue;
+
+            var go = EditorUtility.InstanceIDToObject(instanceID) as GameObject;
+            if (go != null)
+                SafeSetActive(go, wasInt == 1);
+        }
+
+        SessionState.EraseString(GoSessionKey);
+    }
+
+    private void RestoreOrphanedShapeKeyPreview()
+    {
+        string data = SessionState.GetString(SkSessionKey, "");
+        if (string.IsNullOrEmpty(data)) return;
+
+        foreach (var entry in data.TrimEnd(';').Split(';'))
+        {
+            if (string.IsNullOrEmpty(entry)) continue;
+            var parts = entry.Split(':');
+            if (parts.Length != 3) continue;
+            if (!int.TryParse(parts[0], out int instanceID)) continue;
+            if (!int.TryParse(parts[1], out int skIdx)) continue;
+            if (!float.TryParse(parts[2], System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out float wasVal)) continue;
+
+            var smr = EditorUtility.InstanceIDToObject(instanceID) as SkinnedMeshRenderer;
+            if (smr != null)
+                smr.SetBlendShapeWeight(skIdx, wasVal);
+        }
+
+        SessionState.EraseString(SkSessionKey);
     }
 
     // 원상태 저장 없이 현재 데이터를 다시 아바타에 적용 (미리보기 중 실시간 갱신용)
@@ -885,9 +1026,12 @@ public class DiNeMultiSupporter : Editor
             {
                 var rend = entry.renderer;
                 if (rend == null) continue;
-                // previewRestoreActions에 저장된 원본으로 일단 되돌린 뒤 재적용
-                var baseMats = (Material[])rend.sharedMaterials.Clone();
-                var newMats  = baseMats;
+                if (!previewBaseMaterials.TryGetValue(rend, out var baseMats))
+                {
+                    baseMats = BuildPreviewBaseMaterials(layerData, rend);
+                    previewBaseMaterials[rend] = baseMats;
+                }
+                var newMats = CloneMaterials(baseMats);
                 for (int si = 0; si < entry.materials.Count && si < newMats.Length; si++)
                 {
                     if (entry.materials[si] != null)
@@ -1118,6 +1262,19 @@ public class DiNeMultiSupporter : Editor
         EditorGUILayout.EndVertical();
     }
 
+    private void DrawLayerIconPresetButton(SerializedProperty layerIcon, string label, Texture2D presetIcon)
+    {
+        var previousColor = GUI.backgroundColor;
+        GUI.backgroundColor = new Color(0.5f, 0.5f, 0.5f, 1f);
+        GUI.enabled = presetIcon != null;
+        if (GUILayout.Button(label, GUILayout.Width(68), GUILayout.Height(18)))
+        {
+            layerIcon.objectReferenceValue = presetIcon;
+        }
+        GUI.enabled = true;
+        GUI.backgroundColor = previousColor;
+    }
+
     private int DrawCustomToolbar(int selected, string[] options, float height)
     {
         EditorGUILayout.BeginHorizontal();
@@ -1141,6 +1298,7 @@ public class DiNeMultiSupporter : Editor
         return newSelected;
     }
 
+#if false
     private void DrawPresetUI(DiNeMultiDresser gen, Dictionary<string, string> lang)
     {
         SerializedProperty savedProfileProp = serializedObject.FindProperty("savedProfile");
@@ -1219,5 +1377,6 @@ public class DiNeMultiSupporter : Editor
 
         EditorGUILayout.EndVertical();
     }
+#endif
 }
 #endif

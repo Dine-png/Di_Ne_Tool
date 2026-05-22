@@ -1,0 +1,89 @@
+{
+    "name": "com.anatawa12.avatar-optimizer.editor",
+    "rootNamespace": "Anatawa12.AvatarOptimizer",
+    "references": [
+        "com.anatawa12.avatar-optimizer.development.analyzers",
+        "com.anatawa12.avatar-optimizer.internal.localization.editor",
+        "com.anatawa12.avatar-optimizer.internal.localization.runtime",
+        "com.anatawa12.avatar-optimizer.runtime",
+        "com.anatawa12.avatar-optimizer.internal.unsafe",
+        "com.anatawa12.avatar-optimizer.internal.prefab-safe-set.editor",
+        "com.anatawa12.avatar-optimizer.internal.prefab-safe-set",
+        "com.anatawa12.avatar-optimizer.internal.trace-and-optimize-base",
+        "com.anatawa12.avatar-optimizer.internal.object-mapping",
+        "com.anatawa12.avatar-optimizer.internal.animator-optimizer",
+        "com.anatawa12.avatar-optimizer.internal.meshinfo2",
+        "com.anatawa12.avatar-optimizer.internal.utils",
+        "Unity.Burst",
+        "Unity.Mathematics",
+        "nadena.dev.ndmf",
+        "nadena.dev.ndmf.runtime",
+        "nadena.dev.ndmf.reactive-query.core",
+        "com.anatawa12.avatar-optimizer.api.editor",
+        "VRC.SDKBase",
+        "UniHumanoid",
+        "VRM",
+        "VRM10",
+        "net.nekobako.MaskTextureEditor.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "Newtonsoft.Json.dll",
+        "VRC.Dynamics.dll",
+        "VRC.SDK3.Dynamics.PhysBone.dll",
+        "VRC.SDK3.Dynamics.Contact.dll",
+        "VRCCore-Editor.dll",
+        "VRCSDK3A-Editor.dll",
+        "VRCSDK3A.dll",
+        "VRCSDKBase-Editor.dll",
+        "VRCSDKBase.dll",
+        "VRC.SDK3.Dynamics.Constraint.dll",
+        "System.Memory.dll",
+        "System.Collections.Immutable.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "nadena.dev.modular-avatar",
+            "expression": "(,1.8-a)",
+            "define": "LEGACY_MODULAR_AVATAR"
+        },
+        {
+            "name": "com.vrchat.avatars",
+            "expression": "",
+            "define": "AAO_VRCSDK3_AVATARS"
+        },
+        {
+            "name": "com.vrchat.avatars",
+            "expression": "3.8.0",
+            "define": "AAO_VRCSDK3_AVATARS_IGNORE_OTHER_PHYSBONE"
+        },
+        {
+            "name": "com.vrchat.avatars",
+            "expression": "3.10.3-beta.2",
+            "define": "AAO_VRCSDK3_AVATARS_VRC_RAYCAST"
+        },
+        {
+            "name": "com.vrmc.univrm",
+            "expression": "",
+            "define": "AAO_VRM0"
+        },
+        {
+            "name": "com.vrmc.vrm",
+            "expression": "",
+            "define": "AAO_VRM1"
+        },
+        {
+            "name": "net.nekobako.mask-texture-editor",
+            "expression": "[1,2)",
+            "define": "AAO_MASK_TEXTURE_EDITOR"
+        }
+    ],
+    "noEngineReferences": false
+}

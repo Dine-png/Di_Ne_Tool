@@ -1,0 +1,14 @@
+{
+    "name": "DiNeTool.Editor.NDMF",
+    "references": [
+        "DiNeTool.Editor",
+        "DiNeTool.Runtime",
+        "nadena.dev.ndmf"
+    ],
+    "includePlatforms": ["Editor"],
+    "excludePlatforms": [],
+    "defineConstraints": [
+        "DINE_HAS_NDMF"
+    ],
+    "autoReferenced": true
+}

@@ -8,7 +8,7 @@ using System.Collections.Generic;
 
 public static class DiNeIconMaker
 {
-    private const string SavePath = "Assets/Di Ne/IconMaker/Icons";
+    private const string SavePath = "Assets/Di Ne/Icons";
     private const int TargetLayer = 21;
 
     [MenuItem("GameObject/Di Ne/IconMaker", false, 0)]

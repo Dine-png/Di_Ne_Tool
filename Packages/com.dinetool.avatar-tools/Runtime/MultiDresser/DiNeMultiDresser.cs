@@ -64,42 +64,75 @@ public class DiNeMultiDresser : MonoBehaviour
     [SerializeField] public Transform rootTransform;
     [SerializeField] public List<GameObject> shapeKeyTargets = new List<GameObject>();
     [SerializeField] public List<DresserLayer> layers = new List<DresserLayer>();
-    [SerializeField] private DiNeProfile savedProfile;
+
+    private static Material[] CloneMaterials(Material[] materials)
+    {
+        return materials != null ? (Material[])materials.Clone() : new Material[0];
+    }
+
+    private static Material[] BuildMaterialSwap(Material[] baseMaterials, MaterialSwapEntry entry)
+    {
+        var result = CloneMaterials(baseMaterials);
+        if (entry == null || entry.materials == null) return result;
+
+        for (int i = 0; i < entry.materials.Count && i < result.Length; i++)
+        {
+            if (entry.materials[i] != null)
+                result[i] = entry.materials[i];
+        }
+
+        return result;
+    }
+
+    private static MaterialSwapEntry FindMaterialSwapEntry(DresserLayer layerData, int buttonIdx, Renderer renderer)
+    {
+        if (layerData == null || renderer == null) return null;
+        if (buttonIdx < 0 || buttonIdx >= layerData.perButtonMaterialSwaps.Count) return null;
+
+        var swapList = layerData.perButtonMaterialSwaps[buttonIdx];
+        if (swapList == null || swapList.entries == null) return null;
+
+        return swapList.entries.Find(entry => entry != null && entry.renderer == renderer);
+    }
+
+    private static Material[] BuildDefaultMaterials(DresserLayer layerData, Renderer renderer)
+    {
+        var baseMaterials = CloneMaterials(renderer != null ? renderer.sharedMaterials : null);
+        return BuildMaterialSwap(baseMaterials, FindMaterialSwapEntry(layerData, 0, renderer));
+    }
 
     private void OnEnable()
     {
         // 도메인 리로드(코드 업데이트) 후 layers가 비어있으면 프로필에서 자동 복구
-        if (layers.Count == 0)
-        {
-            EditorApplication.delayCall += () => {
-                if (this != null && layers.Count == 0) TryRestoreFromProfile();
-            };
-        }
     }
 
     private void Reset()
     {
         TryAutoAssignFXController();
-        EditorApplication.delayCall += () => {
-            if (this != null) TryRestoreFromProfile();
-        };
     }
 
-    public void Generate(bool saveProfile = true)
+    public void Generate(
+        bool saveProfile = true,
+        string generatedRootFolder = "Assets/Di Ne/MultiDresser",
+        bool clearExistingGeneratedData = true,
+        bool mergeIntoExistingMenu = false)
     {
         Debug.Log("🚀 [DiNe] 생성 프로세스 시작...");
         TryAutoAssignFXController();
 
         // 1. 기존 데이터 말소 (Clean Up)
-        DeleteAllGeneratedData();
+        if (clearExistingGeneratedData)
+            DeleteAllGeneratedData();
 
         // 2. 데이터 재생성
         TryAddExpressionParameters();
-        TryCreateAnimationLayers();         // 내부에서 AssetDatabase.Refresh() 호출됨
-        DiNeMultiMenuGenerator.TryCreateExpressionMenu(this);
+        TryCreateAnimationLayers(generatedRootFolder);         // 내부에서 AssetDatabase.Refresh() 호출됨
+        DiNeMultiMenuGenerator.TryCreateExpressionMenu(this, generatedRootFolder);
 
         // 3. 프로필 저장 — Refresh() 이후에 실행해야 씬 오브젝트 참조가 재임포트로 null이 되는 것을 방지
-        if (saveProfile) SaveProfile();
+        TryAddExpressionParameters();
+        DiNeMultiMenuGenerator.TryCreateExpressionMenu(this, generatedRootFolder, mergeIntoExistingMenu);
+
 
         Debug.Log("✨ [DiNe] 모든 작업 완료! (기존 데이터 삭제 후 재생성됨)");
     }
@@ -165,6 +198,37 @@ public class DiNeMultiDresser : MonoBehaviour
         AssetDatabase.SaveAssets();
     }
 
+    public void ClearAllData(bool clearGeneratedData = true)
+    {
+        if (clearGeneratedData)
+            DeleteAllGeneratedData();
+
+        layers.Clear();
+        shapeKeyTargets.Clear();
+
+        EditorUtility.SetDirty(this);
+    }
+
+    public bool HasConfiguredContent()
+    {
+        if (shapeKeyTargets != null && shapeKeyTargets.Count > 0)
+            return true;
+
+        if (layers == null)
+            return false;
+
+        foreach (var layer in layers)
+        {
+            if (layer == null) continue;
+            if (layer.targets != null && layer.targets.Count > 0)
+                return true;
+            if (layer.particleObject != null)
+                return true;
+        }
+
+        return false;
+    }
+
     public void TryAutoAssignFXController()
     {
         var descriptor = GetComponentInParent<VRCAvatarDescriptor>();
@@ -214,14 +278,6 @@ public class DiNeMultiDresser : MonoBehaviour
     /// FX Controller 에셋의 GUID를 반환. 아바타별로 고유한 값.
     /// 이름을 바꿔도 GUID는 변하지 않으므로 안정적인 식별자.
     /// </summary>
-    private string GetAvatarGUID()
-    {
-        if (animatorController == null) return null;
-        string path = AssetDatabase.GetAssetPath(animatorController);
-        if (string.IsNullOrEmpty(path)) return null;
-        return AssetDatabase.AssetPathToGUID(path);
-    }
-
     private string GetSafeName(string name)
     {
         if (string.IsNullOrEmpty(name)) return "Unknown";
@@ -229,11 +285,57 @@ public class DiNeMultiDresser : MonoBehaviour
         return name;
     }
 
+    private static string GetSafeAnimatorName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return "State";
+
+        var chars = name.ToCharArray();
+        for (int i = 0; i < chars.Length; i++)
+        {
+            char c = chars[i];
+            if (char.IsLetterOrDigit(c) || c == ' ' || c == '_' || c == '-' || c == '(' || c == ')' || c == '[' || c == ']')
+                continue;
+
+            chars[i] = '_';
+        }
+
+        var safeName = new string(chars).Trim();
+        return string.IsNullOrEmpty(safeName) ? "State" : safeName;
+    }
+
+    private static void ClearAnimatorStateMachine(AnimatorStateMachine stateMachine)
+    {
+        if (stateMachine == null)
+            return;
+
+        stateMachine.defaultState = null;
+
+        foreach (var transition in stateMachine.entryTransitions.ToArray())
+        {
+            if (transition != null)
+                stateMachine.RemoveEntryTransition(transition);
+        }
+
+        foreach (var transition in stateMachine.anyStateTransitions.ToArray())
+        {
+            if (transition != null)
+                stateMachine.RemoveAnyStateTransition(transition);
+        }
+
+        foreach (var childState in stateMachine.states.ToArray())
+        {
+            if (childState.state != null)
+                stateMachine.RemoveState(childState.state);
+        }
+    }
+
+#if false
+
     // ──────────────────────────────────────────────
     //  프로필 저장
     // ──────────────────────────────────────────────
 
-    public void SaveProfile()
     {
         string folder = "Assets/Di Ne/MultiDresser/Profiles";
         if (!Directory.Exists(folder)) Directory.CreateDirectory(folder);
@@ -431,6 +533,24 @@ public class DiNeMultiDresser : MonoBehaviour
         return result;
     }
 
+    private static int RemoveMissingTargetEntries(DresserLayer layer)
+    {
+        if (layer == null || layer.targets == null)
+            return 0;
+
+        int removedCount = 0;
+        for (int i = layer.targets.Count - 1; i >= 1; i--)
+        {
+            if (layer.targets[i] != null)
+                continue;
+
+            layer.RemoveAt(i);
+            removedCount++;
+        }
+
+        return removedCount;
+    }
+
     /// <summary>
     /// 프로필 데이터를 실제 레이어에 복원. Null 참조 정리 포함.
     /// </summary>
@@ -493,6 +613,8 @@ public class DiNeMultiDresser : MonoBehaviour
     //  VRC 파라미터 생성
     // ──────────────────────────────────────────────
 
+#endif
+
     public void TryAddExpressionParameters()
     {
         if (rootTransform == null) return;
@@ -526,7 +648,7 @@ public class DiNeMultiDresser : MonoBehaviour
     //  애니메이션 레이어 생성
     // ──────────────────────────────────────────────
 
-    private void TryCreateAnimationLayers()
+    private void TryCreateAnimationLayers(string generatedRootFolder)
     {
         if (rootTransform == null || animatorController == null)
         {
@@ -534,19 +656,54 @@ public class DiNeMultiDresser : MonoBehaviour
             return;
         }
 
-        string baseFolder = "Assets/Di Ne/MultiDresser/Animations";
+        string baseFolder = $"{generatedRootFolder}/Animations";
         if (!Directory.Exists(baseFolder)) { Directory.CreateDirectory(baseFolder); AssetDatabase.Refresh(); }
 
         var controllerLayers = animatorController.layers;
+        var materialOwners = new Dictionary<Renderer, List<string>>();
+
+        foreach (var layerData in layers)
+        {
+            if (layerData?.perButtonMaterialSwaps == null) continue;
+
+            foreach (var swapList in layerData.perButtonMaterialSwaps)
+            {
+                if (swapList?.entries == null) continue;
+
+                foreach (var entry in swapList.entries)
+                {
+                    if (entry?.renderer == null) continue;
+
+                    if (!materialOwners.TryGetValue(entry.renderer, out var ownerLayers))
+                    {
+                        ownerLayers = new List<string>();
+                        materialOwners.Add(entry.renderer, ownerLayers);
+                    }
+
+                    string ownerName = string.IsNullOrEmpty(layerData.layerName) ? "Layer" : layerData.layerName;
+                    if (!ownerLayers.Contains(ownerName))
+                        ownerLayers.Add(ownerName);
+                }
+            }
+        }
+
+        foreach (var pair in materialOwners)
+        {
+            if (pair.Value.Count > 1)
+            {
+                Debug.LogWarning($"[DiNe] Renderer '{pair.Key.name}' material swap is controlled by multiple layers: {string.Join(", ", pair.Value)}");
+            }
+        }
 
         foreach (var layerData in layers)
         {
             if (layerData.targets == null || layerData.targets.Count <= 1) continue;
 
             string safeLayerName = string.IsNullOrEmpty(layerData.layerName) ? "Layer" : layerData.layerName;
+            string safeAnimatorLayerName = GetSafeAnimatorName(safeLayerName);
             string paramName = $"DiNe/MultiDresser/{safeLayerName}";
-            string animLayerName = $"DiNe {safeLayerName}";
-            string layerFolder = $"{baseFolder}/{safeLayerName}";
+            string animLayerName = $"DiNe {safeAnimatorLayerName}";
+            string layerFolder = $"{baseFolder}/{GetSafeName(safeLayerName)}";
 
             if (!Directory.Exists(layerFolder)) Directory.CreateDirectory(layerFolder);
 
@@ -579,9 +736,7 @@ public class DiNeMultiDresser : MonoBehaviour
                 controllerLayers[layerIndex].stateMachine = sm;
             }
 
-            sm.states = new ChildAnimatorState[0];
-            sm.anyStateTransitions = new AnimatorStateTransition[0];
-            sm.entryTransitions = new AnimatorTransition[0];
+            ClearAnimatorStateMachine(sm);
 
             CreateStatesForLayer(layerData, sm, layerFolder, paramName);
         }
@@ -643,20 +798,15 @@ public class DiNeMultiDresser : MonoBehaviour
 
         var defaultMaterials = new Dictionary<Renderer, Material[]>();
         foreach (var rend in allSwapRenderers)
-        {
-            if (layerData.perButtonMaterialSwaps.Count > 0)
-            {
-                var e = layerData.perButtonMaterialSwaps[0].entries.Find(x => x.renderer == rend);
-                if (e != null && e.materials.Count > 0) { defaultMaterials[rend] = e.materials.ToArray(); continue; }
-            }
-            defaultMaterials[rend] = rend.sharedMaterials;
-        }
+            defaultMaterials[rend] = BuildDefaultMaterials(layerData, rend);
 
         for (int i = 0; i < layerData.targets.Count; i++)
         {
             AnimationClip clip = new AnimationClip();
-            string clipName = $"Changer_{layerData.layerName}_{i}_{layerData.targets[i]?.name ?? "Null"}";
-            string clipPath = $"{folderPath}/{clipName}.anim";
+            string rawStateName = $"Changer_{layerData.layerName}_{i}_{layerData.targets[i]?.name ?? "Null"}";
+            string clipName = GetSafeAnimatorName(rawStateName);
+            string clipFileName = GetSafeName(rawStateName);
+            string clipPath = $"{folderPath}/{clipFileName}.anim";
 
             // (1) Main Targets
             for (int j = 0; j < layerData.targets.Count; j++)
@@ -733,11 +883,25 @@ public class DiNeMultiDresser : MonoBehaviour
             // (4) Material Swaps
             foreach (var rend in allSwapRenderers)
             {
-                var mats = defaultMaterials.ContainsKey(rend) ? (Material[])defaultMaterials[rend].Clone() : rend.sharedMaterials;
-                if (i < layerData.perButtonMaterialSwaps.Count)
+                var defaultEntry = FindMaterialSwapEntry(layerData, 0, rend);
+                var currentEntry = FindMaterialSwapEntry(layerData, i, rend);
+
+                // Only animate this renderer when the current state explicitly owns it,
+                // or when state 0 defines the layer-wide default for it.
+                if (currentEntry == null && defaultEntry == null)
+                    continue;
+
+                var mats = defaultMaterials.ContainsKey(rend)
+                    ? CloneMaterials(defaultMaterials[rend])
+                    : CloneMaterials(rend.sharedMaterials);
+
+                if (i == 0)
                 {
-                    var e = layerData.perButtonMaterialSwaps[i].entries.Find(x => x.renderer == rend);
-                    if (e != null && e.materials.Count > 0) mats = e.materials.ToArray();
+                    mats = BuildMaterialSwap(CloneMaterials(rend.sharedMaterials), defaultEntry);
+                }
+                else if (currentEntry != null && currentEntry.materials.Count > 0)
+                {
+                    mats = BuildMaterialSwap(mats, currentEntry);
                 }
                 string rPath = AnimationUtility.CalculateTransformPath(rend.transform, rootTransform);
                 System.Type rType = rend.GetType();
@@ -746,7 +910,11 @@ public class DiNeMultiDresser : MonoBehaviour
                     if (mats[mi] == null) continue;
                     AnimationUtility.SetObjectReferenceCurve(clip,
                         EditorCurveBinding.PPtrCurve(rPath, rType, $"m_Materials.Array.data[{mi}]"),
-                        new ObjectReferenceKeyframe[] { new ObjectReferenceKeyframe { time = 0f, value = mats[mi] } });
+                        new ObjectReferenceKeyframe[]
+                        {
+                            new ObjectReferenceKeyframe { time = 0f, value = mats[mi] },
+                            new ObjectReferenceKeyframe { time = 1f, value = mats[mi] }
+                        });
                 }
             }
 

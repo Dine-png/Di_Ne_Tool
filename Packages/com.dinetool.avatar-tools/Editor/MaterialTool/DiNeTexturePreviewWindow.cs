@@ -6,6 +6,7 @@ public class DiNeTexturePreviewWindow : EditorWindow
     private Texture _texture;
     private Vector2 _scroll;
     private float   _zoom = 1f;
+    private bool    _isNormalMap;
 
     public static void Open(Texture texture)
     {
@@ -20,6 +21,11 @@ public class DiNeTexturePreviewWindow : EditorWindow
         float zoom = maxSide / Mathf.Max(texture.width, texture.height);
         float imgW = texture.width  * zoom;
         float imgH = texture.height * zoom;
+
+        // 노멀맵 여부 판단 (알파 투명 처리 방식 결정에 사용)
+        string assetPath = AssetDatabase.GetAssetPath(texture);
+        var importer = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+        win._isNormalMap = importer != null && importer.textureType == TextureImporterType.NormalMap;
 
         win._zoom    = zoom;
         win.minSize  = new Vector2(120, 120);
@@ -62,7 +68,11 @@ public class DiNeTexturePreviewWindow : EditorWindow
         Rect texRect = GUILayoutUtility.GetRect(drawW, drawH,
             GUILayout.Width(drawW), GUILayout.Height(drawH));
 
-        EditorGUI.DrawTextureTransparent(texRect, _texture, ScaleMode.StretchToFill);
+        // 노멀맵은 DrawPreviewTexture (RGB 불투명), 일반 텍스처는 DrawTextureTransparent (알파 포함)
+        if (_isNormalMap)
+            EditorGUI.DrawPreviewTexture(texRect, _texture, null, ScaleMode.StretchToFill);
+        else
+            EditorGUI.DrawTextureTransparent(texRect, _texture, ScaleMode.StretchToFill);
 
         EditorGUILayout.EndScrollView();
 

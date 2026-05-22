@@ -1,0 +1,1326 @@
+msgid ""
+msgstr ""
+"Language: en-us\n"
+
+msgid "CheckForUpdate:out-of-date"
+msgstr "Newer release of Avatar Optimizer, {0} is available! (Current: {1})"
+
+msgid "OptimizationMetrics:Results"
+msgstr "AAO Optimization Results:\n{0}"
+
+msgid "OptimizationMetrics:Results:description"
+msgstr "You can disable this logging in the top menu under 'Tools/Avatar Optimizer/Optimization Metrics'."
+
+msgid "OptimizationMetrics:DownloadSize"
+msgstr "Download Size"
+
+msgid "OptimizationMetrics:UncompressedSize"
+msgstr "Uncompressed Size"
+
+msgid "OptimizationMetrics:PolyCount"
+msgstr "Triangles"
+
+msgid "OptimizationMetrics:AABB"
+msgstr "Bounds Size"
+
+msgid "OptimizationMetrics:SkinnedMeshCount"
+msgstr "Skinned Meshes"
+
+msgid "OptimizationMetrics:MeshCount"
+msgstr "Basic Meshes"
+
+msgid "OptimizationMetrics:MaterialCount"
+msgstr "Material Slots"
+
+msgid "OptimizationMetrics:PhysBoneComponentCount"
+msgstr "PhysBones Components"
+
+msgid "OptimizationMetrics:PhysBoneTransformCount"
+msgstr "PhysBones Affected Transforms"
+
+msgid "OptimizationMetrics:PhysBoneColliderCount"
+msgstr "PhysBones Colliders"
+
+msgid "OptimizationMetrics:PhysBoneCollisionCheckCount"
+msgstr "PhysBones Collision Check Count"
+
+msgid "OptimizationMetrics:ContactCount"
+msgstr "Contacts"
+
+msgid "OptimizationMetrics:AnimatorCount"
+msgstr "Animators"
+
+msgid "OptimizationMetrics:BoneCount"
+msgstr "Bones"
+
+msgid "OptimizationMetrics:LightCount"
+msgstr "Lights"
+
+msgid "OptimizationMetrics:ParticleSystemCount"
+msgstr "Particle Systems"
+
+msgid "OptimizationMetrics:ParticleTotalCount"
+msgstr "Total Particles Active"
+
+msgid "OptimizationMetrics:ParticleMaxMeshPolyCount"
+msgstr "Mesh Particle Active Polys"
+
+msgid "OptimizationMetrics:ParticleTrailsEnabled"
+msgstr "Particle Trails Enabled"
+
+msgid "OptimizationMetrics:ParticleCollisionEnabled"
+msgstr "Particle Collision Enabled"
+
+msgid "OptimizationMetrics:TrailRendererCount"
+msgstr "Trail Renderers"
+
+msgid "OptimizationMetrics:LineRendererCount"
+msgstr "Line Renderers"
+
+msgid "OptimizationMetrics:ClothCount"
+msgstr "Cloths"
+
+msgid "OptimizationMetrics:ClothMaxVertices"
+msgstr "Total Cloth Vertices"
+
+msgid "OptimizationMetrics:PhysicsColliderCount"
+msgstr "Physics Colliders"
+
+msgid "OptimizationMetrics:PhysicsRigidbodyCount"
+msgstr "Physics Rigidbodies"
+
+msgid "OptimizationMetrics:AudioSourceCount"
+msgstr "Audio Sources"
+
+msgid "OptimizationMetrics:TextureMegabytes"
+msgstr "Texture Memory"
+
+msgid "OptimizationMetrics:ConstraintsCount"
+msgstr "Constraint Count"
+
+msgid "OptimizationMetrics:ConstraintDepth"
+msgstr "Constraint Depth"
+
+msgid "OptimizationMetrics:BlendShapeCount"
+msgstr "Blend Shapes"
+
+msgid "OptimizationMetrics:AnimatorLayerCount"
+msgstr "Animator Layers"
+
+msgid "OptimizationMetrics:GameObjectCount"
+msgstr "Game Objects"
+
+msgid "LegacyModularAvatarWarning:message"
+msgstr ""
+"We found Modular Avatar 1.7.x or older is installed!\n"
+"This version of AvatarOptimizer is not compatible with Modular Avatar 1.7.x or older!\n"
+"Please upgrade Modular Avatar to 1.8.0 or later!"
+
+msgid "LegacyModularAvatarWarning:readWithNextLocale"
+msgstr "日本語で読む"
+
+msgid "LegacyModularAvatarWarning:nextLocale"
+msgstr "ja"
+
+msgid "UnityPlayerBuildErrorBug:non-ascii-detected"
+msgstr "Due to a Unity bug, builds may fail if the project path contains non-ASCII characters. Please check your project path and consider moving it to a path with only ASCII characters."
+
+msgid "NonVRChatPlatformSupport:experimentalMessage"
+msgstr ""
+"Non-VRChat platform support for Trace and Optimize is EXPERIMENTAL.\n"
+"You might experience some bugs, or incompatible changes in future updates.\n"
+"Use at your own risk."
+
+msgid "NonVRChatPlatformSupport:genericPlatformMessage"
+msgstr ""
+"You're using Trace and Optimize for Generic-Unity platform.\n"
+"Currently Avatar Optimizer assumes VRChat platform in general, so some optimizations may not work well on other platforms.\n"
+"Please configure NDMF platform correctly if you're building for other platform."
+
+msgid "NonVRChatPlatformSupport:noPlatformSettings"
+msgstr ""
+"No platform settings found for platform '{0}' ('{1}').\n"
+"Avatar Optimizer will optimize the avatar for VRChat platform, but this may not be optimal for the target platform.\n"
+"Please create TraceAndOptimizePlatformSettings asset for this platform to get better optimization results."
+
+msgid "NonVRChatPlatformSupport:manyPlatformSettings"
+msgstr ""
+"Multiple platform settings are found for platform '{0}' ('{1}').\n"
+"Picking first one at '{2}'.\n"
+
+msgid "NonVRChatPlatformSupport:versionMismatchMessage:inspector"
+msgstr ""
+"This platform settings asset has settings version {0}, but your Avatar Optimizer requires version {1}.\n"
+"Please migrate platform settings asset to correct version, or create new one."
+
+msgid "NonVRChatPlatformSupport:versionMismatchMessage:build"
+msgstr ""
+"The best matching platform settings asset found at '{0}' has settings version {1}, but your Avatar Optimizer requires version {2}.\n"
+"Some settings may not work properly. Please create or migrate platform settings asset to correct version."
+
+# region PrefabSafeSet
+
+msgid "PrefabSafeSet:label:Multi editing not supported"
+msgstr "Multi editing not supported"
+
+msgid "PrefabSafeSet:label:Element type is not supported"
+msgstr "Element type is not supported"
+
+msgid "PrefabSafeSet:label:Add Not Supported"
+msgstr "Add Not Supported"
+
+msgid "PrefabSafeSet:label:Element to add"
+msgstr "Element to add"
+
+msgid "PrefabSafeSet:tooltip:Element to add"
+msgstr "Drag & Drop value to here to add element to this set."
+
+msgid "PrefabSafeSet:tooltip:Force Add Button"
+msgstr "Add this element in current prefab modifications."
+
+msgid "PrefabSafeSet:tooltip:Remove Button"
+msgstr "Remove Element"
+
+# , csharp-format
+msgid "PrefabSafeSet:label:Element {0}"
+msgstr "Element {0}"
+
+# , csharp-format
+msgid "PrefabSafeSet:label:(Removed)"
+msgstr "(Removed)"
+
+# , csharp-format
+msgid "PrefabSafeSet:label:Element {0} (Added twice)"
+msgstr "Element {0} (Added twice)"
+
+# , csharp-format
+msgid "PrefabSafeSet:label:(Removed but not found)"
+msgstr "(Removed but not found)"
+
+# endregion
+
+# region ObjectMapping
+
+msgid "ObjectMapping:DummyAnimationObject:1"
+msgstr "Keys removed by AAO becuase Target object is absent. (This message is only available in play mode)"
+
+msgid "ObjectMapping:DummyAnimationObject:2"
+msgstr "AAO may have deleted the target object if target object is 'unused'."
+
+msgid "ObjectMapping:DummyAnimationObject:3"
+msgstr "Report to AAO if this breaks your animation."
+
+# endregion
+
+# start Avatar Optimizer core modules
+
+# region ClearEndpointPosition
+
+msgid "ClearEndpointPosition:description"
+msgstr ""
+"You clear Endpoint Position with _end bones.\n"
+"This can be useful for MergeBone component."
+
+msgid "ClearEndpointPosition:button:Apply and Remove Component"
+msgstr "Apply and Remove Component"
+
+# endregion
+
+# region FreezeBlendShape
+
+msgid "FreezeBlendShape:button:Check All"
+msgstr "Check All"
+
+msgid "FreezeBlendShape:button:Invert All"
+msgstr "Invert All"
+
+msgid "FreezeBlendShape:warning:animation"
+msgstr ""
+"You're freezing the following animated BlendShapes."
+"The animation will not work. This might not be intended, but if it's intended, ignore this warning.\n"
+"{0}"
+
+# endregion
+
+# region MakeChildren
+
+msgid "MakeChildren:description"
+msgstr "This component will make children at build time"
+
+msgid "MakeChildren:tooltip:executeEarly"
+msgstr "Execute Early"
+
+msgid "MakeChildren:tooltip:executeEarly"
+msgstr "Execute MakeChildren before many other tools such as Modular Avatar."
+
+msgid "MakeChildren:prop:children"
+msgstr "Children"
+
+msgid "MakeChildren:executeEarly does not support animation"
+msgstr "Execute Early doesn't support Animation Remapping. Make sure you made animation for MakeChildren-ed GameObject hierarchy."
+
+# endregion
+
+# region MergeBone
+
+msgid "MergeBone:description"
+msgstr "You will remove this GameObject and merge bone to parent"
+
+msgid "MergeBone:prop:avoidNameConflict"
+msgstr "Avoid Name Conflict"
+
+msgid "MergeBone:tooltip:avoidNameConflict"
+msgstr "Renames child GameObjects to avoid name conflict"
+
+msgid "MergeBone:validation:onAvatarRoot"
+msgstr "MergeBone on the Avatar Root is not supported."
+
+msgid "MergeBone:validation:thereAreComponent"
+msgstr "There are some components other than Transform. This is not supported."
+
+msgid "MergeBone:validation:unevenScaling"
+msgstr "Merging bones with uneven scale is not supported if there are descendant bone which is not merged."
+
+# endregion
+
+# region
+
+msgid "MergePhysBone:prop:makeParent"
+msgstr "Make Children of Me"
+
+msgid "MergePhysBone:tooltip:makeParent"
+msgstr "Make every PhysBones child of this GameObject"
+
+msgid "MergePhysBone:error:makeParentWithChildren"
+msgstr "There's children with Make Children of Me enabled."
+
+msgid "MergePhysBone:error:parentDiffer"
+msgstr "Parent of source PhysBone are differ. move to same parent OR use Make Children of Me."
+
+msgid "MergePhysBone:error:noSources"
+msgstr "There's no source PhysBones"
+
+msgid "MergePhysBone:error:oneSource"
+msgstr "There is only one source PhysBone. You must specify two or more merge source PhysBones."
+
+msgid "MergePhysBone:error:multiChildType"
+msgstr "Some PhysBone has multi child type != Ignore"
+
+msgid "MergePhysBone:error:unsupportedPbVersion"
+msgstr "The PhysBone Version is not supported (yet) by Avatar Optimizer.\n"
+"Please tell author on twitter (@anatawa12_vrc) or GitHub (anatawa12/AvatarOptimizer)!"
+
+msgid "MergePhysBone:message:fix-yaw-pitch"
+msgstr "Fix Roll with rotating bones"
+
+msgid "MergePhysBone:error:differValues"
+msgstr "The values is differ between two or more sources. You have to set same value OR override this property: {0}"
+
+msgid "MergePhysBone:error:differValueSingle"
+msgstr "The value is differ between two or more sources. You have to set same value OR override this property"
+
+msgid "MergePhysBone:warning:differChainLength"
+msgstr "The chain length is differ between two or more sources. Shorter chain will be thicker than original."
+
+msgid "MergePhysBone:error:LimitRotationFix:SkewScaling"
+msgstr ""
+"Skew scaling is not supported with Limit Rotation mode Fix.\n"
+"Please change the Limit Rotation mode to other than Fix, or fix the skew scaling."
+
+msgid "MergePhysBone:error:LimitRotationFix:DifferRotation"
+msgstr ""
+"Limit Rotation of source PhysBones differs in unfixable way.\n"
+"Please fix Limit Rotation of source PhysBones to same value, or change to other mode."
+
+msgid "MergePhysBone:error:LimitRotationFix:DifferRotation:description"
+msgstr ""
+"Limit Rotation Fix can fix Roll axis of different rotation but we cannot fix difference in other axis.\n"
+"Roll axis in this context is local X axis, and might be differs from Roll config on PhysBone inspector if there is Yaw rotation."
+
+msgid "MergePhysBone:error:LimitRotationFix:NonZeroEndpointPosition"
+msgstr ""
+"Endpoint Position is not zero while Limit Rotation mode is Fix.\n"
+"Please set Endpoint Position to zero, set Endpoint Position mode to Clear, or change Limit Rotation mode to other than Fix."
+
+msgid "MergePhysBone:dialog:versionInfo:title"
+msgstr "Version Info" 
+
+msgid "MergePhysBone:dialog:versionInfo:message"
+msgstr ""
+"Changing VRCPhysBone versions will change the way your component works.\n" 
+"Some values may act differently and will need to be manually changed.\n\n" 
+"Please read our online documentation for information on version differences." 
+
+msgid "MergePhysBone:dialog:versionInfo:openDoc"
+msgstr "Open Documentation" 
+
+msgid "MergePhysBone:dialog:versionInfo:revert"
+msgstr "Revert"
+
+msgid "MergePhysBone:dialog:versionInfo:continue"
+msgstr "Continue Without Documentation"
+
+msgid "MergePhysBone:prop:merged"
+msgstr "Merged"
+
+msgid "MergePhysBone:prop:forces"
+msgstr "Forces"
+
+msgid "MergePhysBone:prop:pull"
+msgstr "Pull"
+
+msgid "MergePhysBone:prop:spring"
+msgstr "Spring"
+
+msgid "MergePhysBone:prop:stiffness"
+msgstr "Stiffness"
+
+msgid "MergePhysBone:prop:gravity"
+msgstr "Gravity"
+
+msgid "MergePhysBone:prop:gravityFalloff"
+msgstr "Gravity Falloff"
+
+msgid "MergePhysBone:prop:immobile"
+msgstr "Immobile"
+
+msgid "MergePhysBone:prop:limits"
+msgstr "Limits"
+
+msgid "MergePhysBone:prop:maxAngleX"
+msgstr "Max Angle X"
+
+msgid "MergePhysBone:prop:Max Angle"
+msgstr "Max Angle"
+
+msgid "MergePhysBone:prop:maxAngleZ"
+msgstr "Max Angle Z"
+
+msgid "MergePhysBone:prop:limitRotation"
+msgstr "Limit Rotation"
+
+msgid "MergePhysBone:prop:radius"
+msgstr "Radius"
+
+msgid "MergePhysBone:prop:allowCollision"
+msgstr "Allow Collision"
+
+msgid "MergePhysBone:prop:colliders"
+msgstr "Colliders"
+
+msgid "MergePhysBone:prop:allowGrabbing"
+msgstr "Allow Grabbing"
+
+msgid "MergePhysBone:prop:grabMovement"
+msgstr "Grab Movement"
+
+msgid "MergePhysBone:prop:allowPosing"
+msgstr "Allow Posing"
+
+msgid "MergePhysBone:prop:maxStretch"
+msgstr "Max Stretch"
+
+msgid "MergePhysBone:prop:snapToHand"
+msgstr "Snap To Hand"
+
+msgid "MergePhysBone:prop:isAnimated"
+msgstr "Is Animated"
+
+msgid "MergePhysBone:prop:resetWhenDisabled"
+msgstr "Reset When Disabled"
+
+msgid "MergePhysBone:prop:components"
+msgstr "Components"
+
+msgid "MergePhysBone:warning:limit-rotation-fix-animation"
+msgstr "Limit Rotation mode is Fix but physBone affected transforms are animated."
+
+msgid "MergePhysBone:warning:limit-rotation-fix-animation"
+msgstr "Merge Bone on PhysBone for Merge PhysBone with Limit Rotation mode Fix does not work and completely unsupported."
+
+msgid "MergePhysBone:warning:limit-rotation-fix-animation:description"
+msgstr "This is not supported with Limit Rotation mode Fix for now."
+
+msgid "MergePhysBone:error:physbone-outside-of-avatar-root"
+msgstr "VRCPhysBone components whose Root Transform is outside of the avatar are not supported as source of Merge PhysBone."
+
+# endregion
+
+#region EditSkinnedMeshComponents
+
+msgid "EditSkinnedMeshComponents:invalid-renderer-type"
+msgstr "This component is expected to be used with SkinnedMeshRenderer or MeshRenderer, but the target GameObject has different Renderer.\n"
+"This is not supported, and this component will be ignored."
+
+#endregion
+
+# region MergeSkinnedMesh
+
+msgid "MergeSkinnedMesh:warning:blendShapeWeightMismatch"
+msgstr ""
+"Some weights of BlendShape '{0}' of some source SkinnedMeshRenderer are not same value.\n"
+"In this case, the weight of final SkinnedMeshRenderer is not defined so please make uniform weight or freeze BlendShape."
+
+msgid "MergeSkinnedMesh:warning:VRM:FirstPersonFlagsMismatch"
+msgstr ""
+"Source Renderers had specified mixed FirstPersonFlags values, so fallbacked into '{0}'.\n"
+"It is recommended to set same FirstPersonFlags values for Renderers to be merged by MergeSkinnedMesh.\n"
+
+msgid "MergeSkinnedMesh:warning:MeshIsNotNone"
+msgstr ""
+"Mesh of SkinnedMeshRenderer is not None!\n"
+"You should add MergeSkinnedMesh onto new GameObject with new SkinnedMeshRenderer!"
+
+msgid "MergeSkinnedMesh:validation:self-recursive"
+msgstr "Skinned Renderers contains the SkinnedMeshRenderer of MergeSkinnedMesh!"
+
+msgid "MergeSkinnedMesh:warn:TraditionalBlendShapeMode"
+msgstr ""
+"You're using v1.7.x or older compability mode.\n"
+"This mode is only for compatibility with old versions of Avatar Optimizer.\n"
+"Please consider change to other mode."
+
+msgid "MergeSkinnedMesh:prop:blendShapeMode"
+msgstr "BlendShape Mode"
+
+msgid "MergeSkinnedMesh:prop:blendShapeMode:MergeSameName"
+msgstr "Merge BlendShapes with same name"
+
+msgid "MergeSkinnedMesh:prop:blendShapeMode:RenameToAvoidConflict"
+msgstr "Rename BlendShapes to avoid conflict"
+
+msgid "MergeSkinnedMesh:prop:blendShapeMode:TraditionalCompability"
+msgstr "v1.7.x or older compability mode"
+
+msgid "MergeSkinnedMesh:prop:renderers"
+msgstr "Skinned Renderers"
+
+msgid "MergeSkinnedMesh:prop:staticRenderers"
+msgstr "Basic Renderers"
+
+msgid "MergeSkinnedMesh:prop:removeEmptyRendererObject"
+msgstr "Remove Empty Renderer Object"
+
+msgid "MergeSkinnedMesh:prop:skipEnablementMismatchedRenderers"
+msgstr "Skip Enablement Mismatched Renderers"
+
+msgid "MergeSkinnedMesh:prop:copyEnablementAnimation"
+msgstr "Copy Enablement Animation"
+
+msgid "MergeSkinnedMesh:label:Merge Materials"
+msgstr "Merge Materials"
+
+msgid "MergeSkinnedMesh:label:Merge"
+msgstr "Merge"
+
+msgid "MergeSkinnedMesh:label:Renderers"
+msgstr "Renderers:"
+
+msgid "MergeSkinnedMesh:error:mix-normal-existence"
+msgstr ""
+"Merging both meshes with and without normal is not supported."
+"Please change import setting of models to include normals!"
+
+msgid "MergeSkinnedMesh:error:blendShape-animated-by-multiple-renderers"
+msgstr "Differently animated BlendShape is detected: {0}"
+
+msgid "MergeSkinnedMesh:error:blendShape-animated-by-multiple-renderers:description"
+msgstr ""
+"You're merging meshes that their BlendShapes are animated differently between meshes.\n"
+"Since BlendShapes are configured to merge, applied animation cannot be determined if animated differently.\n"
+"\n"
+"Please remove animation for some source SkinnedMeshRenderers or make them animated similarly."
+
+msgid "MergeSkinnedMesh:warning:removeZeroSizedPolygonOnSources"
+msgstr "Since Remove Zero Sized Polygons are processed later, it has no effects if it is added with the source Skinned Mesh Renderers."
+
+msgid "MergeSkinnedMesh:warning:animation-mesh-hide"
+msgstr ""
+"You're merging meshes that visibility animated differently than the merged mesh."
+"The animation will not work. This might not be intended, but if it's intended, ignore this warning."
+
+msgid "MergeSkinnedMesh:warning:material-animation-differently"
+msgstr "Differently animated material property is detected: {0}"
+
+msgid "MergeSkinnedMesh:warning:material-animation-differently:description"
+msgstr ""
+"You're merging meshes that material properties are animated differently between meshes.\n"
+"Since material property animation affects whole mesh, the animation will affects unintended area.\n"
+
+msgid "MergeSkinnedMesh:warning:material-animation-differently:hint"
+msgstr ""
+"If the animation is intended to apply to whole merged mesh, \n"
+"- Animate each source meshes with same curve and animation clip,\n"
+"- Animate the merged mesh, or\n"
+"- Just ignore this warning\n"
+"\n"
+"If you think you're animating all renderers with same curve, the way animating multiple renderers might not be good.\n"
+"Avatar Optimizer assumes it's animated similarly if property is animated with same shaped curve and same animation clip on the exactly same state.\n"
+"This means if you animated similarly with different layer or clip, your animation will be recognized as animated differently.\n"
+"\n"
+"If the animation will not affects to other meshes, (for example, it affects only to the disabled shader features of meshes) please report this issue to Avatar Optimizer.\n"
+"If the shader is well-known, I'll add logic to check if the feature is enabled for renderers other than animated.\n"
+
+msgid "MergeSkinnedMesh:error:clothOnSources"
+msgstr "Cloth component is attached to this source SkinnedMeshRenderer, so this cannot be merged."
+
+msgid "MergeSkinnedMesh:error:clothOnSources:description"
+msgstr "Please exclude this from the source SkinnedMeshRenderers or remove Cloth component from this."
+
+msgid "MergeSkinnedMesh:warning:no-root-bone"
+msgstr "Root Bone of the merged mesh is not set. This may cause unexpected behavior."
+
+msgid "MergeSkinnedMesh:warning:no-root-bone:description"
+msgstr "MergeSkinnedMesh does not automatically set the Root Bone of the merged mesh."
+
+msgid "MergeSkinnedMesh:warning:no-root-bone:hint"
+msgstr "You need to set it manually. If you are using Modular Avatar, you can also add MA Mesh Settings component to the root of the avatar to set the Root Bone for the whole avatar."
+
+msgid "MergeSkinnedMesh:warning:no-probe-anchor"
+msgstr "Anchor Override of the merged mesh is not set. This may cause unexpected behavior."
+
+msgid "MergeSkinnedMesh:warning:no-probe-anchor:description"
+msgstr "MergeSkinnedMesh does not automatically set the Anchor Override of the merged mesh."
+
+msgid "MergeSkinnedMesh:warning:no-probe-anchor:hint"
+msgstr "You need to set it manually. If you are using Modular Avatar, you can also add MA Mesh Settings component to the root of the avatar to set the Anchor Override for the whole avatar."
+
+msgid "MergeSkinnedMesh:copy-enablement-animation:error:enablement-of-merged-mesh-is-animated"
+msgstr "'enabled' of the merged mesh is animated."
+
+msgid "MergeSkinnedMesh:copy-enablement-animation:error:enablement-of-merged-mesh-is-animated:description"
+msgstr "When 'Copy Enablement Animation' is enabled, Merge Skinned Mesh will create an animation for 'enabled' of the merged mesh.\n"
+"Therefore, you must not animate 'enabled' of the merged mesh."
+
+msgid "MergeSkinnedMesh:copy-enablement-animation:error:too-many-activeness-animation"
+msgstr "Multiple properties related to the activeness of the following source meshes are animated."
+
+msgid "MergeSkinnedMesh:copy-enablement-animation:error:too-many-activeness-animation:description"
+msgid "'Copy Enablement Animation' is designed to copy activeness / enablement animations to 'enabled' of the merged mesh.\n"
+"Therefore, we cannot copy animations if there are multiple properties are animated like both renderer's 'enabled' and GameObject's 'activeSelf', or multiple layers of 'activeSelf'."
+
+msgid "MergeSkinnedMesh:copy-enablement-animation:error:activeness-animation-of-source-mismatch"
+msgid "The animations for the activeness of the source meshes are different between multiple source meshes."
+
+msgid "MergeSkinnedMesh:copy-enablement-animation:error:activeness-animation-of-source-mismatch:description"
+msgid "'Copy Enablement Animation' can work if the activeness of the source meshes are animated with same curve and same animation clip."
+
+# endregion
+
+# region MergeToonLitMaterial
+
+msgid "MergeToonLitMaterial:description"
+msgstr ""
+"The component to merge multiple VRChat Mobile ToonLit materials.\n"
+"This is for quest avoid limitation"
+
+msgid "MergeToonLitMaterial:button:Add Merged Material"
+msgstr "Add Merged Material"
+
+msgid "MergeToonLitMaterial:button:Add Source"
+msgstr "Add Source"
+
+msgid "MergeToonLitMaterial:button:Generate Preview"
+msgstr "Generate Preview"
+
+msgid "MergeToonLitMaterial:suggestMigrate"
+msgstr ""
+"Merge ToonLit Material is obsoleted by Merge Material which supports more shaders and has better save format!\n"
+"We recommend migrating to Merge Material by clicking the button below."
+
+msgid "MergeToonLitMaterial:button:Migrate to MergeMaterial"
+msgstr "Migrate to Merge Material"
+
+msgid "MergeToonLitMaterial:dialog:Migrate to MergeMaterial:title"
+msgstr "Migrate to Merge Material"
+
+msgid "MergeToonLitMaterial:dialog:Migrate to MergeMaterial:message"
+msgstr "You're migrating to Merge Material component from Merge ToonLit Material component.\n"
+"This will copy all settings to new Merge Material component and remove this component.\n"
+"However, this migration does not guarantee perfect migration. Please check the result after migration.\n"
+"In addition, this migration does not support prefabs. Migrate manually if you're using prefabs."
+
+msgid "MergeToonLitMaterial:dialog:Migrate to MergeMaterial:ok"
+msgstr "Migrate"
+
+msgid "MergeToonLitMaterial:dialog:Migrate to MergeMaterial:cancel"
+msgstr "Cancel"
+
+msgid "MergeToonLitMaterial:label:Texture Size"
+msgstr "Texture Size"
+
+# endregion
+
+# region RemoveMeshInBox
+
+msgid "RemoveMeshInBox:prop:removePolygonsInOrOut"
+msgstr "Remove polygons"
+
+msgid "RemoveMeshInBox:prop:removePolygonsInOrOut:inBox"
+msgstr "In the box"
+
+msgid "RemoveMeshInBox:prop:removePolygonsInOrOut:outOfBox"
+msgstr "Out of the box"
+
+msgid "RemoveMeshInBox:BoundingBox:prop:center"
+msgstr "Center"
+
+msgid "RemoveMeshInBox:BoundingBox:prop:size"
+msgstr "Size"
+
+msgid "RemoveMeshInBox:BoundingBox:prop:rotation"
+msgstr "Rotation"
+
+# endregion
+
+# region RemoveMeshByBlendShape
+
+msgid "RemoveMeshByBlendShape:description"
+msgstr "Remove vertices transformed by specified BlendShape and their polygons."
+
+msgid "RemoveMeshByBlendShape:editor:automaticallySetWeightWhenToggle"
+msgstr "Automatically set BlendShape weight for preview when toggled"
+
+msgid "RemoveMeshByBlendShape:tooltip:automaticallySetWeightWhenToggle"
+msgstr "Automatically set weight to 100 or 0 for BlendShapes which are toggled while this option is enabled."
+
+msgid "RemoveMeshByBlendShape:tooltip:automaticallySetWeightWhenToggle:noRenderer"
+msgstr "This option cannot be used because SkinnedMeshRenderer is not found"
+
+msgid "RemoveMeshByBlendShape:tooltip:automaticallySetWeightWhenToggle:noMesh"
+msgstr "This option cannot be used because Mesh is not found"
+
+msgid "RemoveMeshByBlendShape:prop:Tolerance"
+msgstr "Tolerance"
+
+msgid "RemoveMeshByBlendShape:tooltip:Tolerance"
+msgstr ""
+"If a vertex is transformed by more than this amount by any of the selected BlendShapes, it will be deleted.\n"
+"Try increasing this value if vertices are unexpectedly deleted or decreasing it if vertices are unexpectedly not deleted.\n"
+"This is typically a small value."
+
+msgid "RemoveMeshByBlendShape:button:Check All"
+msgstr "Check All"
+
+msgid "RemoveMeshByBlendShape:button:Invert All"
+msgstr "Invert All"
+
+# endregion
+
+# region RemoveZeroSizedPolygon
+
+msgid "RemoveZeroSizedPolygon:description"
+msgstr "Removes polygons whose area are zero"
+
+# endregion
+
+# region RemoveMeshByMask
+
+msgid "RemoveMeshByMask:description"
+msgstr "Remove some polygons in any area specified by mask textures."
+
+msgid "RemoveMeshByMask:prop:enabled"
+msgstr "Apply to Material Slot {0}"
+
+msgid "RemoveMeshByMask:prop:mask"
+msgstr "Mask Texture"
+
+msgid "RemoveMeshByMask:prop:mode"
+msgstr "Remove Mode"
+
+msgid "RemoveMeshByMask:error:maskIsNone"
+msgstr "Mask Texture is not set."
+
+msgid "RemoveMeshByMask:error:maskIsNotReadable"
+msgstr "Mask Texture is not readable."
+
+msgid "RemoveMeshByMask:error:maskIsNotReadable:description"
+msgstr "Please set Read/Write Enabled to true in the import settings of the mask texture."
+
+msgid "RemoveMeshByMask:error:unknownMode"
+msgstr "Unknown Remove Mode is specified."
+
+msgid "RemoveMeshByMask:warning:NoMesh"
+msgstr "No Mesh is specified to the Skinned Mesh Renderer."
+
+msgid "RemoveMeshByMask:button:makeReadable"
+msgstr "Make Readable"
+
+msgid "RemoveMeshByMask:button:create"
+msgstr "Create"
+
+msgid "RemoveMeshByMask:button:edit"
+msgstr "Edit"
+
+msgid "RemoveMeshByMask:dialog:create"
+msgstr "Create"
+
+msgid "RemoveMeshByMask:dialog:error"
+msgstr "Error"
+
+msgid "RemoveMeshByMask:dialog:createMaskFailed"
+msgstr "Failed to create the texture. Refer to the log for details."
+
+msgid "RemoveMeshByMask:dialog:info"
+msgstr "Info"
+
+msgid "RemoveMeshByMask:dialog:maskTextureEditorNotFound"
+msgstr ""
+"Mask Texture Editor is not installed.\n"
+"Since AvatarOptimizer v1.9.0, Mask Texture Editor has been moved to a package in a separate VPM repository.\n"
+"Please add the VPM repository and install \"Mask Texture Editor\" package to this project."
+
+msgid "RemoveMeshByMask:dialog:addRepo"
+msgstr "Open ALCOM (VCC)"
+
+msgid "RemoveMeshByMask:dialog:openWeb"
+msgstr "Open GitHub"
+
+msgid "RemoveMeshByMask:dialog:cancel"
+msgstr "Cancel"
+
+msgid "RemoveMeshByMask:tooltip:textureIsNotImported"
+msgstr "Mask Texture is not imported from image file."
+
+# endregion
+
+# region Remove Mesh By UV Tile
+
+msgid "RemoveMeshByUVTile:warning:NoMesh"
+msgstr "No Mesh is specified to the Skinned Mesh Renderer."
+
+msgid "RemoveMeshByUVTile:prop:MaterialSlot"
+msgstr "Material Slot {0}"
+
+msgid "RemoveMeshByUVTile:prop:Tile"
+msgstr "Tile {0}"
+
+msgid "RemoveMeshByUVTile:prop:UVChannel"
+msgstr "UV Channel"
+
+msgid "RemoveMeshByUVTile:error:uvChannelOutOfRange"
+msgstr "UV Channel is out of range: {0}"
+
+# endregion
+
+# region RenameBlendShape
+
+# used in inspector
+
+msgid "RenameBlendShape:removed"
+msgstr "(Removed)"
+
+msgid "RenameBlendShape:original"
+msgstr "Original"
+
+msgid "RenameBlendShape:changed"
+msgstr "Changed"
+
+msgid "RenameBlendShape:error:empty-name-some"
+msgstr "Some changed names are empty."
+
+msgid "RenameBlendShape:warning:name-conflict-some"
+msgstr "Some changed names are duplicated."
+
+msgid "RenameBlendShape:error:empty-name-this"
+msgstr "Changed name is empty."
+
+msgid "RenameBlendShape:warning:name-conflict-this"
+msgstr "Changed name is duplicated with some other."
+
+# used in NDMF Console
+
+msgid "RenameBlendShape:error:empty-name"
+msgstr "Renamed BlendShape name for '{0}' is empty, which is not allowed."
+
+msgid "RenameBlendShape:error:after-name-conflict"
+msgstr "There are multiple BlendShapes with the same name '{0}' after renaming. This is not allowed."
+
+# endregion
+
+# region ReplaceEndBoneWithEndpointPosition
+
+msgid "ReplaceEndBoneWithEndpointPosition:prop:kind"
+msgstr "Endpoint Position Mode"
+
+msgid "ReplaceEndBoneWithEndpointPosition:prop:overridePosition"
+msgstr "Endpoint Position Override"
+
+msgid "ReplaceEndBoneWithEndpointPosition:validation:endpointPositionAlreadySet"
+msgstr "Endpoint Position is already set, so it cannot be replaced."
+
+msgid "ReplaceEndBoneWithEndpointPosition:validation:overlappedPhysBone"
+msgstr "The affected range is overlapping with another PhysBone. This may change the behavior of the PhysBone."
+
+msgid "ReplaceEndBoneWithEndpointPosition:validation:inequivalentPositions"
+msgstr "You are replacing with an end bone at a different position. This may change the behavior of the PhysBone."
+
+msgid "ReplaceEndBoneWithEndpointPosition:validation:unsafeMultiChild"
+msgstr "The configuration of a bone with multiple children is not suitable for replacing with Endpoint Position, so it cannot be replaced."
+
+# endregion
+
+# region AvatarGlobalComponent
+
+msgid "AvatarGlobalComponent:NotOnAvatarRoot"
+msgstr "This component must be set on root of Avatar"
+
+# endregion
+
+# region NoSourceEditSkinnedMeshComponent
+
+msgid "NoSourceEditSkinnedMeshComponent:HasSourceSkinnedMeshComponent"
+msgstr "This component does not support Merge Skinned Mesh component.\n"
+"So, please add this component to the source renderers of Merge Skinned Mesh."
+
+# endregion
+
+# region UnusedBonesByReferencesTool
+
+# EditorOnlyなメッシュのみから参照されているボーンをEditorOnlyにします
+msgid "UnusedBonesByReferencesTool:description"
+msgstr ""
+"Applies UnusedBonesByReferencesTool (https://narazaka.booth.pm/items/3831781) by Narazaka\n"
+"This tool marks it as EditorOnly that bones referenced only from EditorOnly meshes"
+
+msgid "UnusedBonesByReferencesTool:prop:preserveEndBone"
+msgstr "Preserve EndBone"
+
+# "親がactiveなendボーンを削除しない(ON推奨)"
+msgid "UnusedBonesByReferencesTool:tooltip:preserveEndBone"
+msgstr "If checked, this tool does not remove end bones with active parent."
+
+msgid "UnusedBonesByReferencesTool:prop:detectExtraChild"
+msgstr "Detect Extra Children"
+
+# "子にボーン以外を持つボーンを削除しない"
+msgid "UnusedBonesByReferencesTool:tooltip:detectExtraChild"
+msgstr "If checked, this tool does not remove bones with non-bone children."
+
+msgid "UnusedBonesByReferencesTool:suggestMigrate"
+msgstr ""
+"UnusedBonesByReferencesTool is obsoleted by more intelligent Trace and Optimize!\n"
+"Would you like to migrate to Trace and Optimize by clicking the button below?"
+
+msgid "UnusedBonesByReferencesTool:migrate"
+msgstr "Migrate to Trace and Optimize"
+
+msgid "UnusedBonesByReferencesTool:migrationFinished:title"
+msgstr "Migration Finished!"
+
+msgid "UnusedBonesByReferencesTool:migrationFinished:description"
+msgstr "Migrating to Trace and Optimize is finished!"
+
+
+# endregion
+
+# region TraceAndOptimize
+
+msgid "TraceAndOptimize:report-bugs"
+msgstr ""
+"<b>Any</b> problems (behavioral changes) caused by adding this component are bugs of AAO: Avatar Optimizer.\n"
+"In that case, please report to the author of Avatar Optimizer.\n"
+"For how to report issues, please see https://an12.net/aao/en/tao-bug."
+
+msgid "TraceAndOptimize:report-bug"
+msgstr "Report a Bug"
+
+msgid "TraceAndOptimize:tao-bug-link"
+msgstr "https://an12.net/aao/en/tao-bug"
+
+msgid "TraceAndOptimize:warn:changeFeaturesNotNecessary"
+msgstr "In general, disabling features is not necessary.\n"
+"For VRChat avatars, default settings are best. If you need to change them, it's likely that you are encountering some Avatar Optimizer's bugs.\n"
+"Please report us instead of disabling some optimizations.\n"
+"https://an12.net/aao/en/tao-bug for how to report issues."
+
+msgid "TraceAndOptimize:prop:optimizeBlendShape"
+msgstr "Optimize BlendShape"
+
+msgid "TraceAndOptimize:prop:removeUnusedObjects"
+msgstr "Remove unused Objects Automatically"
+
+msgid "TraceAndOptimize:prop:optimizePhysBone"
+msgstr "Optimize PhysBone Settings"
+
+msgid "TraceAndOptimize:prop:optimizeAnimator"
+msgstr "Optimize Animator"
+
+msgid "TraceAndOptimize:prop:mergeSkinnedMesh"
+msgstr "Merge Skinned Mesh"
+
+msgid "TraceAndOptimize:prop:optimizeTexture"
+msgstr "Optimize Texture"
+
+msgid "TraceAndOptimize:prop:allowShuffleMaterialSlots"
+msgstr "Allow Shuffling Material Slots"
+
+msgid "TraceAndOptimize:tooltip:allowShuffleMaterialSlots"
+msgstr "Allow shuffling material slots to reduce draw calls. This may affect the rendering order."
+
+msgid "TraceAndOptimize:prop:mmdWorldCompatibility"
+msgstr "MMD World Compatibility"
+
+msgid "TraceAndOptimize:tooltip:mmdWorldCompatibility"
+msgstr "Enable MMD World Compatibility features such as keeping some BlendShapes"
+
+msgid "TraceAndOptimize:prop:advancedOptimization"
+msgstr "Advanced Optimizations"
+
+msgid "TraceAndOptimize:note:advancedOptimization"
+msgstr ""
+"Those settings make your avatar more optimized, but may break your avatar.\n"
+"If you have any problem, please disable Advanced Optimization."
+
+msgid "TraceAndOptimize:prop:debugOptions"
+msgstr "Debug Options"
+
+msgid "TraceAndOptimize:dialog:debugOptions:description"
+msgstr ""
+"Debug Options are settings to workaround bugs in Avatar Optimizer.\n"
+"Changing Debug Options may cause your avatar to be not properly optimized or optimization process to fail.\n"
+"In addition, some Debug Options may not work properly or their behavior may be changed.\n"
+"Do you understand this and want to change these settings?"
+
+msgid "TraceAndOptimize:dialog:debugOptions:proceed"
+msgstr "Proceed"
+
+msgid "TraceAndOptimize:dialog:debugOptions:cancel"
+msgstr "Cancel"
+
+msgid "TraceAndOptimize:warn:debugOptions"
+msgstr "Debug Options is for workaround bugs in Avatar Optimizer.\n"
+"Changing Debug Options will make your avatar non well-optimized.\n"
+"In addition, Some modification of Debug Options may not well-tested or its behaviour is likely to be changed. Be careful!"
+
+msgid "TraceAndOptimize:warn:unknown-type"
+msgstr "Unknown Component Type '{0}' Found."
+
+msgid "TraceAndOptimize:warn:unknown-type:description"
+msgstr "There are some components Avatar Optimizer doesn't know. This will reduce optimization performance and may break your Avatar."
+
+msgid "TraceAndOptimize:warn:unknown-type:hint"
+msgstr ""
+"If your avatar is not broken, you can ignore this warning.\n"
+"\n"
+"If it is a component of your tool, please consider registering it to Avatar Optimizer.\n"
+"See https://vpm.anatawa12.com/avatar-optimizer/en/docs/developers/make-your-components-compatible-with-aao/ for more details.\n"
+"\n"
+"If it is a component of a tool you are using, please ask tool author to register the component with Avatar Optimizer\n"
+"or ask Avatar Optimizer to support the component if the tool is a well-known one.\n"
+"\n"
+"If you ask tool author to register the component, please share the link to the documentation for developer ( https://vpm.anatawa12.com/avatar-optimizer/en/docs/developers/make-your-components-compatible-with-aao/ )."
+
+msgid "TraceAndOptimize:warn:unknown-type:autofix"
+msgstr "Ignore This Component"
+
+msgid "TraceAndOptimize:warn:unknown-type:autofix:dialog:title"
+msgstr "Ignore Unknown Component Type"
+
+msgid "TraceAndOptimize:warn:unknown-type:autofix:dialog:message"
+msgstr ""
+"You're about to ignore the unknown component type '{0}'.\n"
+"This will suppress the warning for this component type.\n"
+"(You can revert this setting from Avatar Optimizer section in Project Settings.)\n"
+"\n"
+"However, this is not the recommended approach.\n"
+"If you're a user of this component, please consider asking the tool author to make it compatible with Avatar Optimizer.\n"
+"\n"
+"If you're the author of this component, please register it with Avatar Optimizer.\n"
+"See the documentation for more details."
+
+msgid "TraceAndOptimize:warn:unknown-type:autofix:dialog:ignore"
+msgstr "Ignore Component"
+
+msgid "TraceAndOptimize:warn:unknown-type:autofix:dialog:open-docs"
+msgstr "Open Documentation"
+
+msgid "TraceAndOptimize:warn:unknown-type:autofix:dialog:cancel"
+msgstr "Cancel"
+
+msgid "TraceAndOptimize:warn:unknown-type:autofix:dialog:url"
+msgstr "https://vpm.anatawa12.com/avatar-optimizer/en/docs/developers/make-your-components-compatible-with-aao/"
+
+msgid "TraceAndOptimize:prop:preserveEndBone"
+msgstr "Preserve EndBone"
+
+msgid "TraceAndOptimize:tooltip:preserveEndBone"
+msgstr "Prevents removing end bones whose parent is not removed."
+
+msgid "TraceAndOptimize:prop:removeZeroSizedPolygons"
+msgstr "Automatically Remove Zero Sized Polygons"
+
+msgid "TraceAndOptimize:OptimizePhysBone:UnknownPhysBoneColliderShape"
+msgstr "Unknown PhysBone Collider Shape '{0}' is specified."
+
+# endregion
+
+#region ApplyObjectMapping
+
+msgid "ApplyObjectMapping:VRCAvatarDescriptor:eyelids BlendShape Removed"
+msgstr "BlendShape(s) for eyelids are removed / frozen, or not configured."
+
+msgid "ApplyObjectMapping:VRCAvatarDescriptor:eyelids BlendShape Removed:description"
+msgstr "If some BlendShapes are missing or unset, all eyelids BlendShapes would not work."
+
+msgid "ApplyObjectMapping:VRCAvatarDescriptor:viseme BlendShape Removed"
+msgstr "BlendShape(s) for viseme are removed / frozen, or not configured."
+
+msgid "ApplyObjectMapping:VRCAvatarDescriptor:viseme BlendShape Removed:description"
+msgstr "If some BlendShapes are missing or unset, all viseme BlendShapes would not work."
+
+#endregion
+
+#region ComponentInfos
+
+msgid "ComponentInfos:VRCAvatarDescriptor:warning:UnknownLipSyncStyle"
+msgstr "Unknown LipSync Mode '{0}' is specified."
+
+msgid "ComponentInfos:VRCAvatarDescriptor:warning:UnknownLipSyncStyle:hint"
+msgstr "This is typically a bug of Avatar Optimizer. Please report this issue with the message above."
+
+msgid "ComponentInfos:VRCAvatarDescriptor:warning:UnknownColliderState"
+msgstr "Unknown Standard Collider State '{0}' is specified for {1}."
+
+msgid "ComponentInfos:VRCAvatarDescriptor:warning:UnknownColliderState:hint"
+msgstr "This is typically a bug of Avatar Optimizer. Please report this issue with the message above."
+
+msgid "ComponentInfos:VRCAvatarDescriptor:warning:UnknownEyelidType"
+msgstr "Unknown Eyelid Type '{0}' is specified."
+
+msgid "ComponentInfos:VRCAvatarDescriptor:warning:UnknownEyelidType:description"
+msgstr "This is typically a bug of Avatar Optimizer. Please report this issue with the message above."
+
+#endregion
+
+#region AnimatorParser
+
+msgid "AnimatorParser:PlayableLayerControl:UnknownBlendablePlayableLayer"
+msgstr "Unknown Playable Layer '{0}' is specified for Playable Layer Control."
+
+msgid "AnimatorParser:AnimatorLayerControl:UnknownBlendablePlayableLayer"
+msgstr "Unknown Playable Layer '{0}' is specified for Animator Layer Control."
+
+msgid "AnimatorParser:AnimatorNotFoundOnAvatarRoot"
+msgstr "Animator component not found on Avatar Root"
+
+#endregion
+
+#region OptimizationWarnings
+
+msgid "OptimizationWarnings:multi-pass-rendering-with-same-material"
+msgstr ""
+"Multi pass rendering with the same material is used in the mesh.\n"
+"In general, multi pass rendering with the exactly same material is unnecessary and only increases draw calls.\n"
+"If you are intentionally using this type of multi pass rendering, to avoid causing problems, please contact the author of Avatar Optimizer along with how you are using it."
+
+#endregion
+
+#region MeshInfo2
+
+msgid "MeshInfo2:warning:multiPassRendering"
+msgstr ""
+"Multi pass rendering with multiple materials is used in mesh with '{0}' Component.\n"
+"There's no big difference in actual performance, but the number of polygons in the performance rank will increase.\n"
+"Using multi pass rendering often not be intended. Please check if you intended to use multi pass rendering."
+
+msgid "MeshInfo2:warning:lineStrip"
+msgstr "{0} Component does not process SubMeshes with LineStrip."
+
+#endregion
+
+# region ErrorReporter
+
+msgid "ErrorReporter:error.internal_error"
+msgstr "An internal error has occurred: {0} when processing:"
+
+msgid "ErrorReporter:autoFix"
+msgstr "Auto Fix"
+
+# endregion
+
+# region AssetDescription
+
+msgid "AssetDescription:Description"
+msgstr ""
+"Avatar Optimizer Asset Description is an asset that describe your assets to Avatar Optimizer.\n"
+"For more details, please visit our documentation."
+
+msgid "AssetDescription:OpenDocs"
+msgstr "Open Documentation"
+
+# endregion
+
+# region ContextMenus
+
+msgid "ContextMenus:AddTraceAndOptimize:FailedToAddTraceAndOptimize:Title"
+msgstr "Failed to add Trace and Optimize"
+
+msgid "ContextMenus:AddTraceAndOptimize:FailedToAddTraceAndOptimize:Message"
+msgstr "Trace and Optimize can only be added to the root of the avatar."
+
+# endregion
+
+# region MaxTextureSize
+
+msgid "MaxTextureSize:description"
+msgstr "Limits the maximum size of textures on this GameObject and its children using mipmaps to avoid heavy recompression."
+
+msgid "MaxTextureSize:prop:maxTextureSize"
+msgstr "Max Texture Size"
+
+msgid "MaxTextureSize:warning:crunchedNotSupported"
+msgstr "Crunched texture format is not supported for resizing."
+
+msgid "MaxTextureSize:warning:insufficientMipmaps"
+msgstr "Texture does not have enough mipmaps for the specified max size."
+
+# endregion
+
+# region MergeMaterial
+
+msgid "MergeMaterial:button:Add Merged Material"
+msgstr "Add Merged Material"
+
+msgid "MergeMaterial:button:Add Source"
+msgstr "Add Source Material"
+
+msgid "MergeMaterial:label:Texture Size"
+msgstr "Texture Size"
+
+msgid "MergeMaterial:label:Reference Material"
+msgstr "Reference Material"
+
+msgid "MergeMaterial:Reference Material:tooltip"
+msgstr "All properties in the reference material other than UV-based textures are used for the merged material."
+
+msgid "MergeMaterial:label:Texture Config Overrides"
+msgstr "Texture Config Overrides"
+
+msgid "MergeMaterial:button:Add Texture Config Override"
+msgstr "Add Config Override"
+
+msgid "MergeMaterial:label:Texture Name"
+msgstr "Override Texture Name"
+
+msgid "MergeMaterial:label:Texture Size Override"
+msgstr "Override Size"
+
+msgid "MergeMaterial:label:Texture Format Override"
+msgstr "Override Format"
+
+
+# region errors
+
+msgid "MergeMaterial:error:DuplicateMaterialInMergeSetting"
+msgstr "Some source materials are used in multiple merge settings. This is not supported."
+
+msgid "MergeMaterial:error:MaterialNotFoundInMesh"
+msgstr "Some source materials are not in the Skinned Mesh Renderer."
+
+msgid "MergeMaterial:error:MaterialUsedInMultipleSubMeshes"
+msgstr "Some source materials are used in multiple material slots in the Skinned Mesh Renderer. You have to merge submeshes before processing."
+
+msgid "MergeMaterial:error:MultiMaterialSubMesh"
+msgstr "Some source materials are used by submeshes with multiple materials attached for multi-material multi-pass rendering. This is not supported."
+
+msgid "MergeMaterial:error:UnsupportedShaderInMergeSetting"
+msgstr "The shader of the material configured in the Merge Material is not supported by Merge Material."
+
+msgid "MergeMaterial:error:UnsupportedShaderInMergeSetting:description"
+msgstr "The shader does not provide the ShaderInformation for Avatar Optimizer or the ShaderInformation does not provide 'TextureAndUVUsage' information.\n"
+"Without those information, Avatar Optimizer cannot merge materials correctly."
+
+msgid "MergeMaterial:error:UnsupportedUVTransformInReferenceMaterial"
+msgstr "The reference material (or the first source material) has some textures with unsupported UV Transform applied to the texture: {0}"
+
+msgid "MergeMaterial:error:UnsupportedUVTransformInReferenceMaterial:description"
+msgstr "The reference material must not have UV transform like _ST or parallax."
+
+msgid "MergeMaterial:error:UnknownUVTransform"
+msgstr "The material has some textures with unsupported / unknown UV Transform applied to the texture: {0}"
+
+msgid "MergeMaterial:error:UnknownUVTransform:description"
+msgstr "To merge material, Avatar Optimizer needs to know how the texture is used, but those textures have unknown texture transform or dynamic transform like parallax or scroll.\n"
+"Merge material is incompatible with such features."
+
+msgid "MergeMaterial:error:DifferentShaderInMergeSetting"
+msgstr "Shaders used in source materials of Merge Material are different among configured materials or different from the reference material."
+
+msgid "MergeMaterial:error:ReferenceMaterial:NotAllTexturesUsed"
+msgstr "Some texture properties used in source materials are not used by the reference material. This is currently unsupported: {0}"
+
+# endregion
+
+# endregion
+
+msgid "AvatarOptimizerSettings:Header"
+msgstr "Avatar Optimizer Settings"
+
+msgid "AvatarOptimizerSettings:Description"
+msgstr "Global settings for Avatar Optimizer."
+
+msgid "AvatarOptimizerSettings:OpenDocs"
+msgstr "Open Documentation"
+
+msgid "AvatarOptimizerSettings:DocsUrl"
+msgstr "https://vpm.anatawa12.com/avatar-optimizer/en/docs/developers/make-your-components-compatible-with-aao/"
+
+msgid "AvatarOptimizerSettings:IgnoredComponents"
+msgstr "Ignored Components"
+
+msgid "AvatarOptimizerSettings:ClearAll"
+msgstr "Clear All Ignored Components"
+
+msgid "AvatarOptimizerSettings:ClearAll:Confirm:Title"
+msgstr "Clear All Ignored Components"
+
+msgid "AvatarOptimizerSettings:ClearAll:Confirm:Message"
+msgstr "Are you sure you want to clear all ignored components?"
+
+msgid "AvatarOptimizerSettings:ClearAll:Confirm:OK"
+msgstr "Clear"
+
+msgid "AvatarOptimizerSettings:ClearAll:Confirm:Cancel"
+msgstr "Cancel"
+
+msgid "BugReportHelper:description"
+msgstr ""
+"This window helps you to report bugs of Avatar Optimizer.\n"
+"Please provide avatar information collected with this window when you report bugs of AAO: Avatar Optimizer.\n"
+"\n"
+"Note that this window only collects some information of your avatar, so you may need to provide additional information depending on the issue you're reporting.\n"
+"Please follow Avatar Optimizer author's instruction when reporting bugs.\n"
+"\n"
+"Here is the non-exhaustive list of information collected by this window:\n"
+"- Target platform of the avatar\n"
+"- List of packages used in the avatar\n"
+"- List of components used in the avatar\n"
+"- Information of some components used in the avatar\n"
+"- Some information of mesh\n"
+"- Some animator information\n"
+
+msgid "BugReportHelper:tracing-log"
+msgstr ""
+"You can disable detailed logs to reduce the size of the report, but including detailed logs is recommended to help resolve the issue.\n"
+"Unless you have a specific reason to disable them, or the logs are too large to provide, please keep detailed logging enabled."
+
+msgid "BugReportHelper:play-mode"
+msgstr "Report generation cannot be run in Play Mode. Please exit Play Mode and try again."
+
+msgid "BugReportHelper:copy-warning"
+msgstr ""
+"Copying bug report to clipboard may copy large amount of data (several MBs depending on your avatar complexity).\n"
+"Saving will compress the data to a much smaller size, so saving to a file is recommended.\n"
+"Are you sure you want to proceed?"
+
+msgid "BugReportHelper:select-avatar"
+msgstr "Please select an Avatar Root to generate bug report."
+
+msgid "BugReportHelper:not-avatar-root"
+msgstr "The selected GameObject is not an Avatar Root.\n"
+"The 'Avatar Root' is the GameObject at the top of the avatar hierarchy."
+
+msgid "BugReportHelper:avatar-inactive"
+msgstr "The avatar GameObject must be active in the hierarchy to generate bug report.\n"
+"Please ensure the avatar and all its parent GameObjects are enabled."

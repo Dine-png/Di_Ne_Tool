@@ -1,0 +1,245 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Anatawa12.AvatarOptimizer.Processors.SkinnedMeshes;
+using nadena.dev.ndmf;
+using UnityEngine;
+using UnityEngine.Profiling;
+using UnityEngine.Rendering;
+
+namespace Anatawa12.AvatarOptimizer.Processors.TraceAndOptimizes
+{
+    internal class MergeMaterialSlots : TraceAndOptimizePass<MergeMaterialSlots>
+    {
+        public override string DisplayName => "T&O: MergeMaterialSlots";
+        protected override bool Enabled(TraceAndOptimizeState state) => state.MergeMaterials;
+
+        private delegate (int[][], List<(MeshTopology, Material?)>) MaterialCategorizer(MeshInfo2[] meshes, BuildContext context);
+
+        protected override void Execute(BuildContext context, TraceAndOptimizeState state)
+        {
+            var mergeMeshes = FilterMergeMeshes(context, state);
+            if (mergeMeshes.Count == 0) return;
+
+            MaterialCategorizer createSubMeshes;
+
+            // createSubMeshes must preserve first material to be the first material
+            if (state.AllowShuffleMaterialSlots)
+                createSubMeshes = CreateSubMeshesMergeShuffling;
+            else
+                createSubMeshes = CreateSubMeshesMergePreserveOrder;
+
+            foreach (var orphanMesh in mergeMeshes)
+                MergeMaterialSlot(orphanMesh, createSubMeshes, context);
+        }
+
+        public static List<MeshInfo2> FilterMergeMeshes(BuildContext context, TraceAndOptimizeState state)
+        {
+            Profiler.BeginSample("Collect Merging Targets");
+            var mergeMeshes = new List<MeshInfo2>();
+
+            // first, filter Renderers
+            foreach (var meshRenderer in context.GetComponents<SkinnedMeshRenderer>())
+            {
+                if (state.Exclusions.Contains(meshRenderer.gameObject)) continue;
+
+                var meshInfo = context.GetMeshInfoFor(meshRenderer);
+                if (
+                    // FlattenMultiPassRendering will increase polygon count by VRChat so it's not good for T&O
+                    meshInfo.SubMeshes.All(x => x.SharedMaterials.Length == 1)
+                    // no support for null materials
+                    && meshInfo.SubMeshes.All(x => x.SharedMaterial != null)
+                    // any other components are not supported
+                    && !HasUnsupportedComponents(meshRenderer.gameObject)
+                )
+                {
+                    mergeMeshes.Add(meshInfo);
+                }
+            }
+
+            return mergeMeshes;
+        }
+
+        private void MergeMaterialSlot(MeshInfo2 orphanMesh,
+            MaterialCategorizer createSubMeshes, 
+            BuildContext context)
+        {
+            var (mapping, subMeshInfos) = createSubMeshes(new[] { orphanMesh }, context);
+            var subMeshes = orphanMesh.SubMeshes.ToList();
+
+            orphanMesh.SubMeshes.Clear();
+            foreach (var (meshTopology, material) in subMeshInfos)
+                orphanMesh.SubMeshes.Add(new SubMesh(material, meshTopology));
+            
+            Tracing.Trace(TracingArea.TraceAndOptimizeDecision, $"Merging material slots for {orphanMesh.SourceRenderer.gameObject.name} with mapping: {string.Join(", ", mapping[0].Select((x, i) => $"slot {i} -> slot {x}"))}");
+
+            // we can use mapping[0] since we only have one mesh
+            var mappings = new List<(string, string)>();
+            for (var sourceIndex = 0; sourceIndex < subMeshes.Count; sourceIndex++)
+            {
+                var targetSubMeshIndex = mapping[0][sourceIndex];
+                orphanMesh.SubMeshes[targetSubMeshIndex].Vertices.AddRange(subMeshes[sourceIndex].Vertices);
+                mappings.Add(($"m_Materials.Array.data[{sourceIndex}]", $"m_Materials.Array.data[{targetSubMeshIndex}]"));
+            }
+            context.RecordMoveProperties(orphanMesh.SourceRenderer, mappings.ToArray());
+        }
+
+        public static (int[][], List<(MeshTopology, Material?)>) CreateSubMeshesMergeShuffling(MeshInfo2[] meshInfos, BuildContext context)
+        {
+            var doNotMerges = new HashSet<Material>();
+            // do not merge materials that are animated
+            foreach (var meshInfo in meshInfos)
+            {
+                var renderer = meshInfo.SourceRenderer;
+                var animationComponent = context.GetAnimationComponent(renderer);
+                // since all submesh have exactly one material (see FilterMergeMeshes), we can use submesh index for material slot index
+                for (var index = 0; index < meshInfo.SubMeshes.Count; index++)
+                {
+                    var objectNode = animationComponent.GetObjectNode($"m_Materials.Array.data[{index}]");
+                    if (objectNode.ComponentNodes.Any())
+                    {
+                        doNotMerges.Add(meshInfo.SubMeshes[index].SharedMaterial!);
+                    }
+                }
+            }
+            return MergeSkinnedMeshProcessor.GenerateSubMeshMapping(meshInfos, doNotMerges);
+        }
+
+        // must preserve first material to be the first material
+        public static (int[][], List<(MeshTopology, Material?)>) CreateSubMeshesMergePreserveOrder(MeshInfo2[] meshInfos, BuildContext context)
+        {
+            // merge consecutive submeshes with same material to one for simpler logic
+            // note: both start and end are inclusive
+            var reducedMeshInfos =
+                new LinkedList<((MeshTopology topology, Material? material) info, (int start, int end) actualIndices, bool isAnimated)>
+                    [meshInfos.Length];
+
+            for (var meshI = 0; meshI < meshInfos.Length; meshI++)
+            {
+                var meshInfo = meshInfos[meshI];
+                var reducedMeshInfo =
+                    new LinkedList<((MeshTopology topology, Material? material) info, (int start, int end) actualIndices, bool isAnimated
+                        )>();
+                var animationComponent = context.GetAnimationComponent(meshInfo.SourceRenderer);
+
+                if (meshInfo.SubMeshes.Count > 0)
+                {
+                    reducedMeshInfo.AddLast(((meshInfo.SubMeshes[0].Topology, meshInfo.SubMeshes[0].SharedMaterial), (0, 0), 
+                        isAnimated: animationComponent.GetObjectNode($"m_Materials.Array.data[0]").ComponentNodes.Any()));
+
+                    for (var subMeshI = 1; subMeshI < meshInfo.SubMeshes.Count; subMeshI++)
+                    {
+                        var info = (meshInfo.SubMeshes[subMeshI].Topology, meshInfo.SubMeshes[subMeshI].SharedMaterial);
+                        var isAnimatedCurrent = animationComponent.GetObjectNode($"m_Materials.Array.data[{subMeshI}]").ComponentNodes.Any();
+                        var last = reducedMeshInfo.Last.Value;
+                        if (last.info.Equals(info) && !last.isAnimated && !isAnimatedCurrent)
+                        {
+                            last.actualIndices.end = subMeshI;
+                            reducedMeshInfo.Last.Value = last;
+                        }
+                        else
+                        {
+                            reducedMeshInfo.AddLast((info, (subMeshI, subMeshI), isAnimated: isAnimatedCurrent));
+                        }
+                    }
+                }
+
+                reducedMeshInfos[meshI] = reducedMeshInfo;
+            }
+
+            var subMeshIndexMap = new int[reducedMeshInfos.Length][];
+            for (var i = 0; i < meshInfos.Length; i++)
+                subMeshIndexMap[i] = new int[meshInfos[i].SubMeshes.Count];
+
+            var materials = new List<(MeshTopology topology, Material? material)>();
+
+
+            while (reducedMeshInfos.Any(x => x.First != null))
+            {
+                var meshIndex = GetNextAddingMeshIndex();
+
+                var meshInfo = reducedMeshInfos[meshIndex];
+                var currentNode = meshInfo.First;
+
+                var destMaterialIndex = materials.Count;
+                materials.Add(currentNode.Value.info);
+
+                for (var index = 0; index < reducedMeshInfos.Length; index++)
+                {
+                    var reducedMeshInfo = reducedMeshInfos[index];
+                    if (reducedMeshInfo.First != null && reducedMeshInfo.First.Value.info == currentNode.Value.info)
+                    {
+                        var actualIndex = reducedMeshInfo.First.Value.actualIndices;
+                        for (var subMeshI = actualIndex.start; subMeshI <= actualIndex.end; subMeshI++)
+                            subMeshIndexMap[index][subMeshI] = destMaterialIndex;
+
+                        reducedMeshInfo.RemoveFirst();
+                    }
+                }
+            }
+
+            return (subMeshIndexMap, materials);
+
+            int GetNextAddingMeshIndex()
+            {
+                // first, try to find the first material that is not used by other (non-first)
+                for (var meshIndex = 0; meshIndex < reducedMeshInfos.Length; meshIndex++)
+                {
+                    var meshInfo = reducedMeshInfos[meshIndex];
+                    var currentNode = meshInfo.First;
+                    if (currentNode == null) continue;
+
+                    if (!UsedByRest(currentNode.Value.info))
+                    {
+                        return meshIndex;
+                    }
+                }
+
+                // then, find most-used material
+                var mostUsedMaterial = reducedMeshInfos
+                    .Select((value, meshIndex) => (value, meshIndex))
+                    .Where(x => x.value.First != null)
+                    .GroupBy(x => x.value.First.Value.info)
+                    .OrderByDescending(x => x.Count())
+                    .First()
+                    .First()
+                    .meshIndex;
+
+                return mostUsedMaterial;
+            }
+
+            bool UsedByRest((MeshTopology topology, Material? material) subMesh)
+            {
+                foreach (var meshInfo in reducedMeshInfos)
+                {
+                    var currentNode = meshInfo.First;
+                    if (currentNode == null) continue;
+
+                    if (currentNode.Value.info == subMesh)
+                        currentNode = currentNode.Next; // skip same material at first
+
+                    if (currentNode == null) continue;
+
+                    // returns true if the material is used by other subMesh
+                    while (currentNode != null)
+                    {
+                        if (currentNode.Value.info == subMesh)
+                            return true;
+                        currentNode = currentNode.Next;
+                    }
+                }
+
+                return false;
+            }
+        }
+
+        private static bool HasUnsupportedComponents(GameObject gameObject)
+        {
+            return !gameObject.GetComponents<Component>().All(component =>
+                component is Transform
+                || component is SkinnedMeshRenderer
+                || component is AvatarTagComponent
+                || component is Animator);
+        }
+    }
+}

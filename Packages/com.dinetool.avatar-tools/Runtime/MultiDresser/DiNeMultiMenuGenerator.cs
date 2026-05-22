@@ -7,7 +7,10 @@ using System.Collections.Generic;
 
 public static class DiNeMultiMenuGenerator
 {
-    public static void TryCreateExpressionMenu(DiNeMultiDresser context)
+    public static void TryCreateExpressionMenu(
+        DiNeMultiDresser context,
+        string generatedRootFolder = "Assets/Di Ne/MultiDresser",
+        bool mergeIntoExistingMenu = false)
     {
         var descriptor = context.rootTransform?.GetComponent<VRCAvatarDescriptor>();
         if (descriptor == null) return;
@@ -20,16 +23,37 @@ public static class DiNeMultiMenuGenerator
             return;
         }
 
-        string folder = "Assets/Di Ne/MultiDresser/Menus";
+        string folder = $"{generatedRootFolder}/Menus";
         if (!System.IO.Directory.Exists(folder))
         {
             System.IO.Directory.CreateDirectory(folder);
             AssetDatabase.Refresh();
         }
 
-        Texture2D defaultIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/MultiDresser/DNDresser.png");
+        Texture2D defaultIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/MultiDresser/DNDresser.png");
+        string rootBtnName = "Multi Dresser";
+        string multiMenuPath = $"{folder}/MultiDresser_Main.asset";
+        var exist = mainMenu.controls.Find(c => c.name == rootBtnName);
 
-        VRCExpressionsMenu multiMenu = ScriptableObject.CreateInstance<VRCExpressionsMenu>();
+        VRCExpressionsMenu multiMenu = null;
+        if ((mergeIntoExistingMenu || exist != null) && exist?.subMenu != null)
+        {
+            multiMenu = exist.subMenu;
+        }
+        else
+        {
+            multiMenu = AssetDatabase.LoadAssetAtPath<VRCExpressionsMenu>(multiMenuPath);
+            if (multiMenu == null)
+            {
+                multiMenu = ScriptableObject.CreateInstance<VRCExpressionsMenu>();
+                AssetDatabase.CreateAsset(multiMenu, multiMenuPath);
+            }
+            else
+            {
+                multiMenu.controls.Clear();
+            }
+        }
+
         bool isAnyLayerAdded = false;
 
         foreach (var layer in context.layers)
@@ -40,7 +64,17 @@ public static class DiNeMultiMenuGenerator
             // ✅ 경로 변경: DiNe/MultiDresser/LayerName
             string paramName = $"DiNe/MultiDresser/{safeLayerName}";
 
-            VRCExpressionsMenu layerMenu = ScriptableObject.CreateInstance<VRCExpressionsMenu>();
+            string layerMenuPath = $"{folder}/{safeLayerName}_Menu.asset";
+            var layerMenu = AssetDatabase.LoadAssetAtPath<VRCExpressionsMenu>(layerMenuPath);
+            if (layerMenu == null)
+            {
+                layerMenu = ScriptableObject.CreateInstance<VRCExpressionsMenu>();
+                AssetDatabase.CreateAsset(layerMenu, layerMenuPath);
+            }
+            else
+            {
+                layerMenu.controls.Clear();
+            }
 
             int addedButtonCount = 0;
             for (int i = 1; i < layer.targets.Count; i++)
@@ -63,26 +97,29 @@ public static class DiNeMultiMenuGenerator
 
             if (addedButtonCount == 0) continue;
 
-            string layerMenuPath = $"{folder}/{safeLayerName}_Menu.asset";
-            AssetDatabase.CreateAsset(layerMenu, layerMenuPath);
             EditorUtility.SetDirty(layerMenu);
 
-            multiMenu.controls.Add(new VRCExpressionsMenu.Control
+            var existingLayerControl = multiMenu.controls.Find(c => c.name == safeLayerName);
+            if (existingLayerControl != null)
             {
-                name = safeLayerName,
-                type = VRCExpressionsMenu.Control.ControlType.SubMenu,
-                subMenu = layerMenu,
-                icon = layer.layerIcon != null ? layer.layerIcon : defaultIcon
-            });
+                existingLayerControl.type = VRCExpressionsMenu.Control.ControlType.SubMenu;
+                existingLayerControl.subMenu = layerMenu;
+                existingLayerControl.icon = layer.layerIcon != null ? layer.layerIcon : defaultIcon;
+            }
+            else
+            {
+                multiMenu.controls.Add(new VRCExpressionsMenu.Control
+                {
+                    name = safeLayerName,
+                    type = VRCExpressionsMenu.Control.ControlType.SubMenu,
+                    subMenu = layerMenu,
+                    icon = layer.layerIcon != null ? layer.layerIcon : defaultIcon
+                });
+            }
             isAnyLayerAdded = true;
         }
 
-        string multiMenuPath = $"{folder}/MultiDresser_Main.asset";
-        AssetDatabase.CreateAsset(multiMenu, multiMenuPath);
         EditorUtility.SetDirty(multiMenu);
-
-        string rootBtnName = "Multi Dresser";
-        var exist = mainMenu.controls.Find(c => c.name == rootBtnName);
         
         if (!isAnyLayerAdded)
         {

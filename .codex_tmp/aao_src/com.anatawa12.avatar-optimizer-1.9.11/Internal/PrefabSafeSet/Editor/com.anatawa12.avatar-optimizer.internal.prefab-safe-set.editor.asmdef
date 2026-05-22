@@ -1,0 +1,21 @@
+{
+    "name": "com.anatawa12.avatar-optimizer.internal.prefab-safe-set.editor",
+    "rootNamespace": "Anatawa12.AvatarOptimizer.PrefabSafeSet",
+    "references": [
+        "com.anatawa12.avatar-optimizer.development.analyzers",
+        "com.anatawa12.avatar-optimizer.internal.localization.editor",
+        "com.anatawa12.avatar-optimizer.internal.localization.runtime",
+        "com.anatawa12.avatar-optimizer.internal.prefab-safe-set"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

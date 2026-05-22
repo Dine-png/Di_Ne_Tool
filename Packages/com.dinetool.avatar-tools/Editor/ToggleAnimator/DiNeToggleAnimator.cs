@@ -76,7 +76,7 @@ public class DiNeToggleAnimator : EditorWindow
     private Texture2D _sidebarLogoTex; 
 
     // ─── Menu ───────────────────────────────────────────────────
-    [MenuItem("DiNe/Toggle Animator", false, 5)]
+    // Temporarily disabled from the DiNe menu.
     public static void ShowWindow()
     {
         var win = GetWindow<DiNeToggleAnimator>();
@@ -85,9 +85,9 @@ public class DiNeToggleAnimator : EditorWindow
 
     void OnEnable()
     {
-        _titleFont = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
-        _iconTex        = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
-        _sidebarLogoTex = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
+        _titleFont = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
+        _iconTex        = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe_Icon.png");
+        _sidebarLogoTex = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
         titleContent = new GUIContent("Toggle Animator", _iconTex);
 
         Selection.selectionChanged += OnSelectionChange;

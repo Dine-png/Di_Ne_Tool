@@ -7,15 +7,13 @@ using System.Collections.Generic;
 
 public static class DiNeMultiIconGenerator
 {
+    private const string SavePath = "Assets/Di Ne/MultiDresser/Icons";
+    private const int CaptureSize = 2048;
+    private const int OutputSize = 128;
+
     public static void GenerateIcons(DiNeMultiDresser context)
     {
-        // 저장 경로: MultiDresser용 경로 유지
-        string savePath = "Assets/Di Ne/MultiDresser/Icons";
-        if (!Directory.Exists(savePath))
-        {
-            Directory.CreateDirectory(savePath);
-            AssetDatabase.Refresh();
-        }
+        EnsureSavePath();
 
         // MultiDresser 구조에 맞게 레이어 순회
         foreach (var layer in context.layers)
@@ -32,27 +30,69 @@ public static class DiNeMultiIconGenerator
                 
                 // 이미 아이콘이 있으면 건너뛰기 (필요시 이 조건은 첫번째 스크립트의 isSimpleTab 로직처럼 수정 가능)
                 if (layer.icons[i] != null) continue;
-
-                List<GameObject> linkedList = null;
-                if (layer.linkedObjects.Count > i && layer.linkedObjects[i] != null)
-                {
-                    linkedList = layer.linkedObjects[i].objects;
-                }
-
-                // 첫 번째 스크립트와 동일한 로직으로 아이콘 생성
-                Texture2D icon = GenerateSingleIcon(go, linkedList);
-                layer.icons[i] = icon;
+                RegenerateIcon(layer, i);
             }
         }
 
         AssetDatabase.SaveAssets();
-        AssetDatabase.Refresh();
         Debug.Log("✅ 모든 아이콘 생성 완료! (DiNeIconGenerator 로직 적용됨)");
+    }
+
+    public static void RegenerateIcon(DiNeMultiDresser.DresserLayer layer, int buttonIdx)
+    {
+        if (layer == null || buttonIdx < 0) return;
+
+        while (layer.icons.Count <= buttonIdx)
+            layer.icons.Add(null);
+
+        layer.icons[buttonIdx] = null;
+
+        if (buttonIdx == 0 || layer.targets == null || buttonIdx >= layer.targets.Count)
+            return;
+
+        var target = layer.targets[buttonIdx];
+        if (target == null)
+            return;
+
+        var existingIcon = LoadExistingIcon(target.name);
+        if (existingIcon != null)
+        {
+            layer.icons[buttonIdx] = existingIcon;
+            return;
+        }
+
+        List<GameObject> linkedList = null;
+        if (layer.linkedObjects.Count > buttonIdx && layer.linkedObjects[buttonIdx] != null)
+            linkedList = layer.linkedObjects[buttonIdx].objects;
+
+        layer.icons[buttonIdx] = GenerateSingleIcon(target, linkedList);
+    }
+
+    public static void ReleaseIconReference(ref Texture2D icon)
+    {
+        icon = null;
+    }
+
+    public static void ReleaseIcons(DiNeMultiDresser context)
+    {
+        if (context == null || context.layers == null) return;
+
+        foreach (var layer in context.layers)
+        {
+            if (layer?.icons == null) continue;
+
+            for (int i = 0; i < layer.icons.Count; i++)
+            {
+                layer.icons[i] = null;
+            }
+        }
     }
 
     // 로직을 첫 번째 스크립트(DiNeIconGenerator)와 완전히 동일하게 교체
     private static Texture2D GenerateSingleIcon(GameObject target, List<GameObject> linked = null)
     {
+        EnsureSavePath();
+
         var cloned = new GameObject("IconRoot");
         var clone = GameObject.Instantiate(target);
         clone.transform.SetParent(cloned.transform);
@@ -85,7 +125,6 @@ public static class DiNeMultiIconGenerator
         var cameraObject = new GameObject();
         var camera = cameraObject.AddComponent<Camera>();
         camera.clearFlags = CameraClearFlags.Nothing;
-        // 첫 번째 스크립트 값 (0.00001f) 적용
         camera.nearClipPlane = 0.00001f; 
         camera.cullingMask = 1 << targetLayer;
 
@@ -118,30 +157,33 @@ public static class DiNeMultiIconGenerator
 
         camera.transform.position = center + cloned.transform.position + Vector3.forward * minDistance;
 
-        var captureWidth = 2048;
-        var captureHeight = 2048;
+        var captureWidth = CaptureSize;
+        var captureHeight = CaptureSize;
 
-        var rt = new RenderTexture(captureWidth, captureHeight, 0);
+        var rt = RenderTexture.GetTemporary(captureWidth, captureHeight, 16, RenderTextureFormat.ARGB32);
         camera.targetTexture = rt;
         camera.Render();
+        var prevActive = RenderTexture.active;
         RenderTexture.active = camera.targetTexture;
-        var image = new Texture2D(camera.targetTexture.width, camera.targetTexture.height, TextureFormat.ARGB32, false);
-        image.ReadPixels(new Rect(0, 0, camera.targetTexture.width, camera.targetTexture.height), 0, 0);
+        var image = new Texture2D(captureWidth, captureHeight, TextureFormat.ARGB32, false);
+        image.ReadPixels(new Rect(0, 0, captureWidth, captureHeight), 0, 0);
         image.alphaIsTransparency = true;
         image.Apply();
         camera.targetTexture = null;
-        RenderTexture.active = null;
+        RenderTexture.active = prevActive;
 
-        GameObject.DestroyImmediate(rt);
+        RenderTexture.ReleaseTemporary(rt);
         GameObject.DestroyImmediate(camera.gameObject);
         GameObject.DestroyImmediate(cloned.gameObject);
 
         int minX = captureWidth, maxX = 0, minY = captureHeight, maxY = 0;
-        for (int x = 0; x < captureWidth; x++)
+        var pixels = image.GetPixels32();
+        for (int y = 0; y < captureHeight; y++)
         {
-            for (int y = 0; y < captureHeight; y++)
+            int rowOffset = y * captureWidth;
+            for (int x = 0; x < captureWidth; x++)
             {
-                var pixel = image.GetPixel(x, y);
+                var pixel = pixels[rowOffset + x];
                 if (pixel.a != 0)
                 {
                     if (minX > x) minX = x;
@@ -150,6 +192,12 @@ public static class DiNeMultiIconGenerator
                     if (maxY < y) maxY = y;
                 }
             }
+        }
+
+        if (maxX <= minX || maxY <= minY)
+        {
+            GameObject.DestroyImmediate(image);
+            return null;
         }
 
         var size = Mathf.Max(maxX - minX, maxY - minY);
@@ -162,24 +210,68 @@ public static class DiNeMultiIconGenerator
         clippedIcon.SetPixels(size / 2 - croppedSizeX / 2, size / 2 - croppedSizeY / 2, croppedSizeX, croppedSizeY, croppedPixels);
         clippedIcon.Apply();
 
-        var resizedIcon = ResizeTexture(clippedIcon, 256, 256);
+        var resizedIcon = ResizeTexture(clippedIcon, OutputSize, OutputSize);
+        GameObject.DestroyImmediate(image);
+        GameObject.DestroyImmediate(clippedIcon);
 
         var bytes = resizedIcon.EncodeToPNG();
-        // 저장 경로는 MultiDresser 폴더로 지정하되, GUID 생성 방식은 첫 번째 스크립트 따름
-        var path = $"Assets/Di Ne/MultiDresser/Icons/{GUID.Generate()}.png";
+        var path = GetIconAssetPath(target.name);
         
         Directory.CreateDirectory(Path.GetDirectoryName(path));
         File.WriteAllBytes(path, bytes);
-        AssetDatabase.Refresh();
+        AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
         
         var importer = AssetImporter.GetAtPath(path) as TextureImporter;
         if (importer != null)
         {
             importer.alphaIsTransparency = true;
+            importer.mipmapEnabled = false;
+            importer.npotScale = TextureImporterNPOTScale.None;
+            importer.textureCompression = TextureImporterCompression.Uncompressed;
             importer.SaveAndReimport();
         }
 
+        GameObject.DestroyImmediate(resizedIcon);
         return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+    }
+
+    private static Texture2D LoadExistingIcon(string iconName)
+    {
+        var path = GetIconAssetPath(iconName);
+        var icon = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+        if (icon == null)
+            return null;
+
+        AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+        return icon;
+    }
+
+    private static string GetIconAssetPath(string iconName)
+    {
+        return $"{SavePath}/{GetSafeFileName(iconName)}.png";
+    }
+
+    private static string GetSafeFileName(string iconName)
+    {
+        if (string.IsNullOrWhiteSpace(iconName))
+            return "Icon";
+
+        foreach (var invalidChar in Path.GetInvalidFileNameChars())
+        {
+            iconName = iconName.Replace(invalidChar, '_');
+        }
+
+        iconName = iconName.Trim();
+        return string.IsNullOrEmpty(iconName) ? "Icon" : iconName;
+    }
+
+    private static void EnsureSavePath()
+    {
+        if (AssetDatabase.IsValidFolder(SavePath))
+            return;
+
+        Directory.CreateDirectory(SavePath);
+        AssetDatabase.Refresh();
     }
 
     private static void ChangeLayerRecursively(GameObject gameObject, int layer)

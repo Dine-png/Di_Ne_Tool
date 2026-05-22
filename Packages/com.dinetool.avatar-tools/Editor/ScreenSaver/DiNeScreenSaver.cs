@@ -164,7 +164,6 @@ namespace DiNeScreenSaver
             w.position = new Rect(w.position.x, w.position.y, 420, 620);
         }
 
-        [MenuItem("GameObject/Di Ne/IconMaker", false, 0)]
         public static void GenerateIconFromHierarchy(MenuCommand menuCommand)
         {
             GameObject target = menuCommand.context as GameObject;
@@ -187,9 +186,9 @@ namespace DiNeScreenSaver
         void OnEnable()
         {
             LoadSettings();
-            _windowIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe.png");
-            _tabIcon    = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.dine.tool/Assets/DiNe_Icon.png");
-            _titleFont  = AssetDatabase.LoadAssetAtPath<Font>("Packages/com.dine.tool/DungGeunMo.ttf");
+            _windowIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
+            _tabIcon    = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe_Icon.png");
+            _titleFont  = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
             titleContent = new GUIContent("Screen", _tabIcon);
         }
 

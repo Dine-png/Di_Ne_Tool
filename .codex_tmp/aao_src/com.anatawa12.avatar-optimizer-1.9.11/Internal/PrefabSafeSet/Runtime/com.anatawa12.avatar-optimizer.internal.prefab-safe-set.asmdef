@@ -1,0 +1,24 @@
+{
+    "name": "com.anatawa12.avatar-optimizer.internal.prefab-safe-set",
+    "rootNamespace": "Anatawa12.AvatarOptimizer.PrefabSafeSet",
+    "references": [
+        "com.anatawa12.avatar-optimizer.development.analyzers"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "VRC.Dynamics.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.vrchat.avatars",
+            "expression": "",
+            "define": "AAO_VRCSDK3_AVATARS"
+        }
+    ],
+    "noEngineReferences": false
+}
