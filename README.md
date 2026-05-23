@@ -231,7 +231,7 @@ Supports 60+ texture formats with accurate BPP data based on GPU memory layout.
 
 ## 📝 Version History
 
-**v1.4.0**
+**v1.4.1**
 - Package Patcher: Added NEW folder badges for folders imported through the patcher
 - Package Patcher: NEW badges appear in both Project grid/list views and clear when opened or selected
 - Package Patcher: NEW detection is limited to package imports, so normal asset edits are not marked

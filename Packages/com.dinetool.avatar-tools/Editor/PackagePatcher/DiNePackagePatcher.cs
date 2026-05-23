@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.IO.Compression;
 using System.Text;
-using System.Reflection;
 
 [InitializeOnLoad]
 public class DiNePackagePatcher : EditorWindow
@@ -41,15 +40,9 @@ public class DiNePackagePatcher : EditorWindow
     // 리로드 직후 자동 재실행한다.
     private const string SESSION_TARGET = "DiNePatcher_PendingTarget";
     private const string SESSION_ROOTS  = "DiNePatcher_PendingRoots";
-    private const string SESSION_IMPORTING_FOR_NEW_BADGE = "DiNePatcher_ImportingForNewBadge";
-    private const string PREF_NEW_FOLDER_MARKERS = "DiNePatcher_NewFolderMarkers";
-
     static DiNePackagePatcher()
     {
         EditorApplication.delayCall += TryOrganizeAfterReload;
-        EditorApplication.projectWindowItemOnGUI += OnProjectWindowItemGUI;
-        Selection.selectionChanged += ClearNewMarkersForSelection;
-        EditorApplication.update += ClearNewMarkersForViewedProjectFolder;
     }
 
     private static void SavePendingOrganization(string target, IEnumerable<string> roots)
@@ -62,16 +55,6 @@ public class DiNePackagePatcher : EditorWindow
     {
         SessionState.EraseString(SESSION_TARGET);
         SessionState.EraseString(SESSION_ROOTS);
-    }
-
-    private static void SetNewBadgeImportScope(bool active)
-    {
-        SessionState.SetBool(SESSION_IMPORTING_FOR_NEW_BADGE, active);
-    }
-
-    private static bool IsNewBadgeImportScopeActive()
-    {
-        return SessionState.GetBool(SESSION_IMPORTING_FOR_NEW_BADGE, false);
     }
 
     private static void TryOrganizeAfterReload()
@@ -89,11 +72,6 @@ public class DiNePackagePatcher : EditorWindow
     private static void StaticMoveNewFolders(string targetFolderName, List<string> roots)
     {
         string targetPath = "Assets/" + targetFolderName;
-        var newFolderPaths = roots
-            .Where(root => !root.Equals(targetPath, StringComparison.OrdinalIgnoreCase))
-            .Select(root => NormalizeAssetPath(targetPath + "/" + Path.GetFileName(root)))
-            .Where(path => !string.IsNullOrEmpty(path))
-            .ToList();
         foreach (var root in roots)
         {
             if (root.Equals(targetPath, StringComparison.OrdinalIgnoreCase)) continue;
@@ -112,8 +90,6 @@ public class DiNePackagePatcher : EditorWindow
             else
                 Debug.Log($"[DiNe] 폴더 이동 완료: {root} → {dest}");
         }
-        MarkNewFolders(newFolderPaths);
-        SetNewBadgeImportScope(false);
         if (HasOpenInstances<DiNePackagePatcher>())
         {
             var win = GetWindow<DiNePackagePatcher>(false, null, false);
@@ -136,7 +112,6 @@ public class DiNePackagePatcher : EditorWindow
     private Texture2D tabIcon;
     private Font      titleFont;
 
-    private string[]        preImportFolders;
     private HashSet<string> predictedRootFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     private int    totalPackagesToImport      = 0;
     private int    currentlyProcessedPackages = 0;
@@ -153,18 +128,6 @@ public class DiNePackagePatcher : EditorWindow
     private static readonly Color ColDone   = new Color(0.40f, 0.85f, 0.55f);
     private static readonly Color ColFail   = new Color(0.90f, 0.40f, 0.40f);
     private static readonly Color ColSub    = new Color(0.60f, 0.60f, 0.60f);
-    private static readonly Color ColNewBadgeFill = new Color(0.08f, 0.16f, 0.15f, 0.95f);
-    private static readonly Color ColNewBadgeText = new Color(0.30f, 0.82f, 0.76f, 1f);
-
-    private static HashSet<string> newFolderMarkers;
-    private static GUIStyle newBadgeLabelStyle;
-    private static string lastProjectBrowserFolder = "";
-
-    private static readonly GUIContent NewBadgeContent = new GUIContent("NEW");
-    private static readonly string[] NewBadgeIgnoredExtensions =
-    {
-        ".cs", ".asmdef", ".asmref", ".rsp", ".dll", ".pdb", ".mdb", ".meta"
-    };
 
     [MenuItem("DiNe/EX/Package Patcher", false, 100)]
     public static void ShowWindow()
@@ -173,22 +136,6 @@ public class DiNePackagePatcher : EditorWindow
         window.titleContent = new GUIContent("Package Patcher");
         window.minSize = new Vector2(400, 640);
         window.Show();
-    }
-
-    internal static void RegisterImportedAssets(IEnumerable<string> importedPaths)
-    {
-        if (!IsNewBadgeImportScopeActive()) return;
-
-        var displayPaths = new List<string>();
-        foreach (string rawPath in importedPaths)
-        {
-            string path = NormalizeAssetPath(rawPath);
-            if (string.IsNullOrEmpty(path) || IsNewBadgeIgnored(path)) continue;
-
-            displayPaths.Add(FindFolderToMark(path));
-        }
-
-        MarkNewFolders(GetTopLevelPaths(displayPaths));
     }
 
     void OnEnable()
@@ -538,14 +485,12 @@ public class DiNePackagePatcher : EditorWindow
         foreach (var p in foundPackages) { p.IsDone = false; p.IsFailed = false; }
 
         isImporting   = true;
-        SetNewBadgeImportScope(true);
         statusMessage = UI_TEXT[9];
         // 이전 임포트 임시 파일만 정리 (캐시 폴더는 유지 - ProcessFile에서 미리 추출한 파일 보존)
         try { if (Directory.Exists(tempExtractPath)) Directory.Delete(tempExtractPath, true); } catch { }
         importQueue.Clear();
 
         if (!Directory.Exists(tempExtractPath)) Directory.CreateDirectory(tempExtractPath);
-        preImportFolders = GetAllAssetFolders();
         predictedRootFolders.Clear();
 
         pendingTargetFolderName = GetSafeFolderName(targetFolderName);
@@ -635,7 +580,6 @@ public class DiNePackagePatcher : EditorWindow
         if (totalPackagesToImport == 0)
         {
             isImporting   = false;
-            SetNewBadgeImportScope(false);
             statusMessage = UI_TEXT[19];
             return;
         }
@@ -704,7 +648,6 @@ public class DiNePackagePatcher : EditorWindow
                     MoveNewFolders();
                     CleanTempFolder();
                     isImporting   = false;
-                    SetNewBadgeImportScope(false);
                     statusMessage = UI_TEXT[11];
                     Repaint();
                 };
@@ -722,12 +665,6 @@ public class DiNePackagePatcher : EditorWindow
             Debug.LogWarning("[DiNe] MoveNewFolders: 이동 대상 없음 — 패키지 파싱 실패 또는 pathname 엔트리 없음");
 
         string targetPath = "Assets/" + pendingTargetFolderName;
-        var newFolderPaths = predictedRootFolders
-            .Where(root => !root.Equals(targetPath, StringComparison.OrdinalIgnoreCase))
-            .Select(root => NormalizeAssetPath(targetPath + "/" + Path.GetFileName(root)))
-            .Where(path => !string.IsNullOrEmpty(path))
-            .ToList();
-
         foreach (var root in predictedRootFolders)
         {
             if (root.Equals(targetPath, StringComparison.OrdinalIgnoreCase)) continue;
@@ -755,287 +692,6 @@ public class DiNePackagePatcher : EditorWindow
                 Debug.LogWarning($"[DiNe] 폴더 이동 실패: {root} → {dest}\n{err}");
             else
                 Debug.Log($"[DiNe] 폴더 이동 완료: {root} → {dest}");
-        }
-        newFolderPaths.AddRange(GetFoldersCreatedDuringImport());
-        MarkNewFolders(newFolderPaths);
-    }
-
-    private IEnumerable<string> GetFoldersCreatedDuringImport()
-    {
-        var before = new HashSet<string>(
-            (preImportFolders ?? Array.Empty<string>()).Select(NormalizeAssetPath),
-            StringComparer.OrdinalIgnoreCase);
-
-        return GetAllAssetFolders()
-            .Select(NormalizeAssetPath)
-            .Where(path => !string.IsNullOrEmpty(path) && !before.Contains(path));
-    }
-
-    private static string[] GetAllAssetFolders()
-    {
-        var result = new List<string>();
-        var queue = new Queue<string>();
-        queue.Enqueue("Assets");
-
-        while (queue.Count > 0)
-        {
-            string parent = queue.Dequeue();
-            foreach (string child in AssetDatabase.GetSubFolders(parent))
-            {
-                result.Add(child);
-                queue.Enqueue(child);
-            }
-        }
-
-        return result.ToArray();
-    }
-
-    private static void MarkNewFolders(IEnumerable<string> paths)
-    {
-        var markers = LoadNewFolderMarkers();
-        bool changed = false;
-        foreach (string path in paths)
-        {
-            string normalized = NormalizeAssetPath(path);
-            string guid = AssetDatabase.AssetPathToGUID(normalized);
-            if (!string.IsNullOrEmpty(guid))
-                changed |= markers.Add(guid);
-        }
-
-        if (!changed) return;
-
-        SaveNewFolderMarkers();
-        EditorApplication.RepaintProjectWindow();
-    }
-
-    private static void SaveNewFolderMarkers()
-    {
-        var markers = LoadNewFolderMarkers();
-        if (markers.Count == 0)
-            EditorPrefs.DeleteKey(PREF_NEW_FOLDER_MARKERS);
-        else
-            EditorPrefs.SetString(PREF_NEW_FOLDER_MARKERS, string.Join("\n", markers));
-    }
-
-    private static HashSet<string> LoadNewFolderMarkers()
-    {
-        if (newFolderMarkers != null) return newFolderMarkers;
-
-        newFolderMarkers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        string raw = EditorPrefs.GetString(PREF_NEW_FOLDER_MARKERS, "");
-        foreach (string value in raw.Split('\n'))
-        {
-            string normalized = NormalizeAssetPath(value);
-            if (string.IsNullOrEmpty(normalized)) continue;
-
-            string guid = normalized.Contains("/") ? AssetDatabase.AssetPathToGUID(normalized) : normalized;
-            if (!string.IsNullOrEmpty(guid))
-                newFolderMarkers.Add(guid);
-        }
-        return newFolderMarkers;
-    }
-
-    private static string NormalizeAssetPath(string path)
-    {
-        return string.IsNullOrWhiteSpace(path) ? "" : path.Trim().Replace('\\', '/').TrimEnd('/');
-    }
-
-    private static void OnProjectWindowItemGUI(string guid, Rect selectionRect)
-    {
-        string path = NormalizeAssetPath(AssetDatabase.GUIDToAssetPath(guid));
-        if (string.IsNullOrEmpty(path) || !LoadNewFolderMarkers().Contains(guid)) return;
-
-        DrawNewFolderBadge(guid, selectionRect);
-    }
-
-    private static void ClearNewMarkersForSelection()
-    {
-        var markers = LoadNewFolderMarkers();
-        if (markers.Count == 0) return;
-
-        bool changed = false;
-        foreach (UnityEngine.Object obj in Selection.objects)
-        {
-            if (obj == null) continue;
-
-            string path = NormalizeAssetPath(AssetDatabase.GetAssetPath(obj));
-            if (string.IsNullOrEmpty(path)) continue;
-
-            string guid = AssetDatabase.AssetPathToGUID(path);
-            if (!string.IsNullOrEmpty(guid))
-                changed |= markers.Remove(guid);
-
-            string topFolder = GetFirstAssetsFolder(path);
-            string topGuid = AssetDatabase.AssetPathToGUID(topFolder);
-            if (!string.IsNullOrEmpty(topGuid))
-                changed |= markers.Remove(topGuid);
-        }
-
-        if (!changed) return;
-
-        SaveNewFolderMarkers();
-        EditorApplication.RepaintProjectWindow();
-    }
-
-    private static void ClearNewMarkersForViewedProjectFolder()
-    {
-        string folder = GetCurrentProjectBrowserFolder();
-        if (string.IsNullOrEmpty(folder) || folder == lastProjectBrowserFolder) return;
-
-        lastProjectBrowserFolder = folder;
-        ClearNewMarkerForPath(folder);
-    }
-
-    private static void ClearNewMarkerForPath(string path)
-    {
-        var markers = LoadNewFolderMarkers();
-        if (markers.Count == 0) return;
-
-        path = NormalizeAssetPath(path);
-        string guid = AssetDatabase.AssetPathToGUID(path);
-        if (string.IsNullOrEmpty(guid) || !markers.Remove(guid)) return;
-
-        SaveNewFolderMarkers();
-        EditorApplication.RepaintProjectWindow();
-    }
-
-    private static string GetCurrentProjectBrowserFolder()
-    {
-        try
-        {
-            Type projectBrowserType = typeof(Editor).Assembly.GetType("UnityEditor.ProjectBrowser");
-            if (projectBrowserType == null) return "";
-
-            EditorWindow projectWindow = Resources.FindObjectsOfTypeAll(projectBrowserType)
-                .OfType<EditorWindow>()
-                .FirstOrDefault(window => window != null && window.hasFocus);
-            if (projectWindow == null) return "";
-
-            FieldInfo folderField = projectBrowserType.GetField("m_SearchFilter", BindingFlags.Instance | BindingFlags.NonPublic);
-            object searchFilter = folderField?.GetValue(projectWindow);
-            if (searchFilter == null) return "";
-
-            FieldInfo foldersField = searchFilter.GetType().GetField("m_Folders", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            var folders = foldersField?.GetValue(searchFilter) as string[];
-            return folders != null && folders.Length > 0 ? NormalizeAssetPath(folders[0]) : "";
-        }
-        catch
-        {
-            return "";
-        }
-    }
-
-    private static void DrawNewFolderBadge(string guid, Rect selectionRect)
-    {
-        const float badgeWidth = 42f;
-        const float badgeHeight = 15f;
-
-        bool iconMode = selectionRect.height > 20f;
-        Rect badgeRect;
-
-        if (iconMode)
-        {
-            badgeRect = new Rect(selectionRect.xMax - badgeWidth - 8f, selectionRect.y + 1f, badgeWidth, badgeHeight);
-        }
-        else
-        {
-            string path = AssetDatabase.GUIDToAssetPath(guid);
-            string label = Path.GetFileNameWithoutExtension(path);
-            float nameWidth = EditorStyles.label.CalcSize(new GUIContent(label)).x;
-            float x = selectionRect.x + selectionRect.height + 2f + nameWidth + 10f;
-            float maxX = selectionRect.xMax - badgeWidth - 4f;
-            if (x > maxX) x = maxX;
-            badgeRect = new Rect(x, selectionRect.y + 1f, badgeWidth, badgeHeight);
-        }
-
-        EditorGUI.DrawRect(badgeRect, ColNewBadgeFill);
-        DrawBorder(badgeRect, ColNewBadgeText, 1f);
-
-        Rect dotRect = new Rect(badgeRect.x + 5f, badgeRect.y + 5f, 5f, 5f);
-        EditorGUI.DrawRect(dotRect, ColNewBadgeText);
-
-        GUI.Label(new Rect(badgeRect.x + 10f, badgeRect.y, badgeRect.width - 10f, badgeRect.height), NewBadgeContent, GetNewBadgeLabelStyle());
-    }
-
-    private static GUIStyle GetNewBadgeLabelStyle()
-    {
-        if (newBadgeLabelStyle != null) return newBadgeLabelStyle;
-
-        newBadgeLabelStyle = new GUIStyle(EditorStyles.miniLabel)
-        {
-            alignment = TextAnchor.MiddleCenter,
-            fontSize = 8,
-            fontStyle = FontStyle.Bold,
-            padding = new RectOffset(0, 0, 0, 1)
-        };
-        newBadgeLabelStyle.normal.textColor = ColNewBadgeText;
-        return newBadgeLabelStyle;
-    }
-
-    private static bool IsNewBadgeIgnored(string path)
-    {
-        if (AssetDatabase.IsValidFolder(path)) return false;
-
-        string ext = Path.GetExtension(path);
-        return !string.IsNullOrEmpty(ext) &&
-            NewBadgeIgnoredExtensions.Any(ignored => ignored.Equals(ext, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static string FindFolderToMark(string path)
-    {
-        string rootFolder = GetFirstAssetsFolder(path);
-        if (!string.IsNullOrEmpty(rootFolder) && AssetDatabase.IsValidFolder(rootFolder))
-            return rootFolder;
-
-        if (AssetDatabase.IsValidFolder(path)) return path;
-
-        string parent = NormalizeAssetPath(Path.GetDirectoryName(path));
-        while (!string.IsNullOrEmpty(parent))
-        {
-            if (AssetDatabase.IsValidFolder(parent))
-                return parent;
-
-            parent = NormalizeAssetPath(Path.GetDirectoryName(parent));
-        }
-
-        return path;
-    }
-
-    private static string GetFirstAssetsFolder(string path)
-    {
-        path = NormalizeAssetPath(path);
-        const string assetsPrefix = "Assets/";
-        if (!path.StartsWith(assetsPrefix, StringComparison.OrdinalIgnoreCase))
-            return "";
-
-        string rest = path.Substring(assetsPrefix.Length);
-        int slash = rest.IndexOf('/');
-        string firstFolder = slash >= 0 ? rest.Substring(0, slash) : rest;
-        return string.IsNullOrEmpty(firstFolder) ? "" : assetsPrefix + firstFolder;
-    }
-
-    private static IEnumerable<string> GetTopLevelPaths(IEnumerable<string> paths)
-    {
-        var pathSet = new HashSet<string>(
-            paths.Select(NormalizeAssetPath).Where(path => !string.IsNullOrEmpty(path)),
-            StringComparer.OrdinalIgnoreCase);
-
-        foreach (string path in pathSet)
-        {
-            bool hasMarkedAncestor = false;
-            string parent = NormalizeAssetPath(Path.GetDirectoryName(path));
-            while (!string.IsNullOrEmpty(parent))
-            {
-                if (pathSet.Contains(parent))
-                {
-                    hasMarkedAncestor = true;
-                    break;
-                }
-                parent = NormalizeAssetPath(Path.GetDirectoryName(parent));
-            }
-
-            if (!hasMarkedAncestor)
-                yield return path;
         }
     }
 
@@ -1241,19 +897,5 @@ public class DiNePackagePatcher : EditorWindow
         }
         EditorGUILayout.EndHorizontal();
         return newSelected;
-    }
-}
-
-internal class DiNePackagePatcherNewAssetPostprocessor : AssetPostprocessor
-{
-    private static void OnPostprocessAllAssets(
-        string[] importedAssets,
-        string[] deletedAssets,
-        string[] movedAssets,
-        string[] movedFromAssetPaths)
-    {
-        if (importedAssets == null || importedAssets.Length == 0) return;
-
-        DiNePackagePatcher.RegisterImportedAssets(importedAssets);
     }
 }
