@@ -223,45 +223,133 @@ public class DiNeMultiDresser : MonoBehaviour
         return false;
     }
 
-    public void TryAutoAssignFXController()
+    // 빌드 시 임시 데이터가 저장되는 폴더. 이 경로의 에셋이 아바타/드레서에 남아있으면
+    // 이전 빌드의 복원이 실패한 것이므로 경고 대상이다.
+    private const string TempAssetFolderHint = "/MultiDresser/__Temp";
+
+    /// <summary>이 드레서가 속한 아바타의 VRCAvatarDescriptor를 찾는다.</summary>
+    public VRCAvatarDescriptor GetAvatarDescriptor()
     {
         var descriptor = GetComponentInParent<VRCAvatarDescriptor>();
         if (descriptor == null) descriptor = GetComponentInChildren<VRCAvatarDescriptor>();
+        return descriptor;
+    }
 
-        if (descriptor != null)
+    /// <summary>아바타 디스크립터의 FX 레이어에 실제로 할당된 컨트롤러를 반환한다(없으면 null).</summary>
+    public static RuntimeAnimatorController GetAvatarFxController(VRCAvatarDescriptor descriptor)
+    {
+        if (descriptor == null) return null;
+
+        if (descriptor.baseAnimationLayers != null)
         {
-            rootTransform = descriptor.transform;
-
-            // FX Controller 자동 할당
-            if (descriptor.baseAnimationLayers != null)
-            {
-                foreach (var layer in descriptor.baseAnimationLayers)
-                {
-                    if (layer.type == VRCAvatarDescriptor.AnimLayerType.FX)
-                    {
-                        if (layer.animatorController != null)
-                            animatorController = (AnimatorController)layer.animatorController;
-                        break;
-                    }
-                }
-            }
-            if (animatorController == null && descriptor.specialAnimationLayers != null)
-            {
-                foreach (var layer in descriptor.specialAnimationLayers)
-                {
-                    if (layer.type == VRCAvatarDescriptor.AnimLayerType.FX)
-                    {
-                        if (layer.animatorController != null)
-                            animatorController = (AnimatorController)layer.animatorController;
-                        break;
-                    }
-                }
-            }
-
-            // Expression Menu 자동 할당
-            if (expressionsMenu == null && descriptor.expressionsMenu != null)
-                expressionsMenu = descriptor.expressionsMenu;
+            foreach (var layer in descriptor.baseAnimationLayers)
+                if (layer.type == VRCAvatarDescriptor.AnimLayerType.FX)
+                    return layer.animatorController;
         }
+        if (descriptor.specialAnimationLayers != null)
+        {
+            foreach (var layer in descriptor.specialAnimationLayers)
+                if (layer.type == VRCAvatarDescriptor.AnimLayerType.FX)
+                    return layer.animatorController;
+        }
+        return null;
+    }
+
+    // 비어있는 슬롯만 보충하는 기존 동작(빌드/리셋 내부에서 사용).
+    public void TryAutoAssignFXController()
+    {
+        var descriptor = GetAvatarDescriptor();
+        if (descriptor == null) return;
+
+        rootTransform = descriptor.transform;
+
+        if (animatorController == null)
+        {
+            var fx = GetAvatarFxController(descriptor) as AnimatorController;
+            if (fx != null) animatorController = fx;
+        }
+
+        if (expressionsMenu == null && descriptor.expressionsMenu != null)
+            expressionsMenu = descriptor.expressionsMenu;
+    }
+
+    /// <summary>
+    /// 새로고침(↺) 버튼용: 루트/FX/메뉴를 아바타의 현재 값으로 강제로 다시 가져오고,
+    /// 누락된 Expression 파라미터를 보충한다. stale/다른 아바타의 FX·메뉴를 덮어쓴다.
+    /// </summary>
+    public void ReassignFromAvatar()
+    {
+        var descriptor = GetAvatarDescriptor();
+        if (descriptor == null)
+        {
+            Debug.LogWarning("[DiNe] Multi Dresser: 아바타(VRCAvatarDescriptor)를 찾지 못해 재배정을 건너뜁니다.");
+            return;
+        }
+
+        rootTransform = descriptor.transform;
+
+        var fx = GetAvatarFxController(descriptor) as AnimatorController;
+        if (fx != null) animatorController = fx;   // 강제 재배정
+
+        if (descriptor.expressionsMenu != null)
+            expressionsMenu = descriptor.expressionsMenu;   // 강제 재배정
+
+        // 파라미터(아바타 Expression Parameters)에 누락분 보충
+        TryAddExpressionParameters();
+
+        EditorUtility.SetDirty(this);
+    }
+
+    /// <summary>
+    /// 현재 할당된 FX/메뉴가 아바타 내부의 것과 일치하는지 검사한다.
+    /// 불일치하면 false와 사용자용 메시지를 반환한다. (인스펙터에서 수시로 호출)
+    /// </summary>
+    public bool ValidateAssignment(out string message)
+    {
+        message = null;
+
+        var descriptor = GetAvatarDescriptor();
+        if (descriptor == null)
+        {
+            message = "아바타(VRCAvatarDescriptor)를 찾을 수 없습니다. 멀티 드레서가 아바타 하위에 있는지 확인하세요.";
+            return false;
+        }
+
+        var avatarFx = GetAvatarFxController(descriptor) as AnimatorController;
+        if (avatarFx == null)
+        {
+            message = "아바타의 FX 레이어에 Animator Controller가 비어 있습니다. 아바타에 FX 컨트롤러를 먼저 설정하세요.";
+            return false;
+        }
+
+        if (animatorController == null)
+        {
+            message = "할당된 FX Controller가 없습니다. 새로고침(↺) 버튼을 눌러 아바타의 FX를 다시 가져오세요.";
+            return false;
+        }
+
+        if (animatorController != avatarFx)
+        {
+            message = "할당된 FX Controller가 아바타 내부의 FX와 다릅니다.\n이대로 업로드하면 잘못된 FX를 덮어쓸 수 있으니, 새로고침(↺) 버튼을 눌러 재배정하세요.";
+            return false;
+        }
+
+        // 이전 빌드의 임시 FX가 복원되지 않고 남아있는 경우
+        string fxPath = AssetDatabase.GetAssetPath(animatorController);
+        if (!string.IsNullOrEmpty(fxPath) && fxPath.Replace('\\', '/').Contains(TempAssetFolderHint))
+        {
+            message = "임시 빌드용 FX가 아바타에 남아 있습니다(복원 실패).\n원본 FX로 교체한 뒤 새로고침(↺) 버튼을 눌러 재배정하세요.";
+            return false;
+        }
+
+        if (descriptor.expressionsMenu != null && expressionsMenu != null &&
+            expressionsMenu != descriptor.expressionsMenu)
+        {
+            message = "할당된 Expression Menu가 아바타 내부의 메뉴와 다릅니다.\n새로고침(↺) 버튼을 눌러 재배정하세요.";
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>

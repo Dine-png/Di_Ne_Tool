@@ -247,6 +247,16 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         if (descriptor == null || dressers == null || dressers.Count == 0)
             return;
 
+        // 같은 디스크립터에 임시 세션이 이미 적용돼 있으면(OnBuildRequested에서 스왑 후
+        // OnBuildPreprocess가 같은 씬 오브젝트로 다시 호출되는 경우) 중복 적용하지 않는다.
+        // 그렇지 않으면 이미 교체된 '임시 FX/메뉴/파라미터'를 원본으로 잘못 캡처하고
+        // 기존 세션(진짜 원본)을 덮어써, 복원 시 원래 데이터가 영구히 사라진다.
+        if (ActiveSessions.TryGetValue(descriptor.GetInstanceID(), out var existing) && existing != null)
+        {
+            Debug.Log($"[DiNe] Multi Dresser: '{descriptor.name}'에 임시 세션이 이미 활성화돼 있어 중복 적용을 건너뜁니다.");
+            return;
+        }
+
         var session = CreateTemporarySession(descriptor, dressers);
         if (session == null)
             return;
@@ -278,6 +288,15 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             OriginalMenu = descriptor.expressionsMenu,
             OriginalParameters = descriptor.expressionParameters
         };
+
+        // 캡처한 '원본'이 임시 폴더의 에셋이면 이전 빌드의 복원이 실패해 남은 잔여물이다.
+        // 이대로 복원하면 삭제될 임시 에셋을 가리키게 되므로 명확히 경고한다.
+        if (IsTempAsset(session.OriginalFxController) || IsTempAsset(session.OriginalMenu) || IsTempAsset(session.OriginalParameters))
+        {
+            Debug.LogWarning(
+                $"[DiNe] Multi Dresser: '{descriptor.name}'의 현재 FX/메뉴/파라미터가 임시 빌드 에셋을 가리키고 있습니다. " +
+                "이전 빌드의 복원이 실패한 상태일 수 있습니다. 멀티 드레서 인스펙터의 새로고침(↺) 버튼으로 원본을 다시 지정한 뒤 업로드하세요.");
+        }
 
         var sourceFxController = session.OriginalFxController as AnimatorController;
         var sourceMenu = descriptor.expressionsMenu != null
@@ -754,6 +773,18 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             return null;
 
         return AssetDatabase.LoadAssetAtPath<T>(path);
+    }
+
+    private static bool IsTempAsset(UnityEngine.Object asset)
+    {
+        if (asset == null)
+            return false;
+
+        string path = AssetDatabase.GetAssetPath(asset);
+        if (string.IsNullOrEmpty(path))
+            return false;
+
+        return path.Replace('\\', '/').StartsWith(TempRootFolder);
     }
 
     private static T LoadSceneObject<T>(string globalObjectId) where T : UnityEngine.Object

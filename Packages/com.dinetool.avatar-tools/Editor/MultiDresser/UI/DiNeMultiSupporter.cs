@@ -230,15 +230,35 @@ public class DiNeMultiSupporter : Editor
         
         if (GUILayout.Button(new GUIContent("↺", lang["refreshTooltip"]), GUILayout.Width(30), GUILayout.Height(20)))
         {
-            gen.TryAutoAssignFXController(); 
-            serializedObject.Update();   
+            Undo.RecordObject(gen, "Refresh Multi Dresser Bindings");
+            gen.ReassignFromAvatar();   // 루트/FX/메뉴/파라미터 전부 아바타 기준으로 재배정
+            serializedObject.Update();
+            GUI.FocusControl(null);
         }
         EditorGUILayout.EndHorizontal();
 
         if (after != before) {
             root.objectReferenceValue = after;
             serializedObject.ApplyModifiedProperties();
-            gen.TryAutoAssignFXController();
+            gen.ReassignFromAvatar();
+            serializedObject.Update();
+        }
+
+        // ── 할당된 FX/메뉴가 아바타 내부의 것과 일치하는지 수시 검증 ──
+        if (!gen.ValidateAssignment(out string validationMessage))
+        {
+            EditorGUILayout.Space(2);
+            EditorGUILayout.HelpBox(validationMessage, MessageType.Error);
+            GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+            if (GUILayout.Button("아바타 기준으로 FX/메뉴 재배정 (↺)", GUILayout.Height(24)))
+            {
+                Undo.RecordObject(gen, "Refresh Multi Dresser Bindings");
+                gen.ReassignFromAvatar();
+                serializedObject.Update();
+                GUI.FocusControl(null);
+            }
+            GUI.backgroundColor = Color.white;
+            EditorGUILayout.Space(2);
         }
 
         EditorGUILayout.BeginHorizontal();
@@ -866,13 +886,31 @@ public class DiNeMultiSupporter : Editor
 
     private void ClearPreview()
     {
-        foreach (var action in previewRestoreActions) action?.Invoke();
+        // 한 복원 액션이 예외를 던져도 나머지(특히 쉐이프키 복원)가 끊기지 않도록 개별 보호
+        foreach (var action in previewRestoreActions)
+        {
+            try { action?.Invoke(); }
+            catch (System.Exception) { /* stale 참조 등 — 무시하고 계속 복원 */ }
+        }
         previewRestoreActions.Clear();
         previewBaseMaterials.Clear();
         previewLayerIndex  = -1;
         previewButtonIndex = -1;
         SessionState.EraseString(SkSessionKey);
         SessionState.EraseString(GoSessionKey);
+
+        // SetBlendShapeWeight로 되돌린 값이 화면에 반영되도록 강제 재-bake.
+        // (선택 해제로 OnDisable이 호출될 땐 인스펙터가 더 이상 안 그려져
+        //  자동 리페인트가 일어나지 않으므로 메쉬가 변형된 채 고정되는 문제 방지)
+        ForcePreviewRepaint();
+    }
+
+    // SkinnedMeshRenderer는 SceneView가 다시 그려질 때 현재 blendShape 값으로 재-bake된다.
+    // 미리보기 복원 직후 명시적으로 리페인트를 걸어 변형이 화면에 남지 않게 한다.
+    private static void ForcePreviewRepaint()
+    {
+        SceneView.RepaintAll();
+        UnityEditorInternal.InternalEditorUtility.RepaintAllViews();
     }
 
     private void RestoreOrphanedObjectPreview()
@@ -894,6 +932,7 @@ public class DiNeMultiSupporter : Editor
         }
 
         SessionState.EraseString(GoSessionKey);
+        ForcePreviewRepaint();
     }
 
     private void RestoreOrphanedShapeKeyPreview()
@@ -917,6 +956,7 @@ public class DiNeMultiSupporter : Editor
         }
 
         SessionState.EraseString(SkSessionKey);
+        ForcePreviewRepaint();
     }
 
     // 원상태 저장 없이 현재 데이터를 다시 아바타에 적용 (미리보기 중 실시간 갱신용)
