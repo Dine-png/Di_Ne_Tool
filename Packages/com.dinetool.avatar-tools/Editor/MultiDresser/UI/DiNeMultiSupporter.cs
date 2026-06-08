@@ -102,17 +102,7 @@ public class DiNeMultiSupporter : Editor
                 { "cleanupDialogCancel", "취소 (No)" },
                 { "particle",   "파티클 오브젝트" },
                 { "matSwap",    "마테리얼 교체" },
-                { "addMatSwap", "+ 추가" },
-                { "presetSection",  "💾 프리셋" },
-                { "presetCurrent",  "현재 프리셋" },
-                { "presetName",     "이름" },
-                { "presetSave",     "저장" },
-                { "presetSaveAs",   "다른 이름으로 저장" },
-                { "presetLoad",     "불러오기" },
-                { "presetLoaded",   "프리셋을 불러왔습니다." },
-                { "presetSaved",    "프리셋이 저장됐습니다." },
-                { "presetNone",     "없음 (저장하면 자동 생성)" },
-                { "presetNameEmpty","이름을 입력해주세요." }
+                { "addMatSwap", "+ 추가" }
             }
         },
         {
@@ -148,17 +138,7 @@ public class DiNeMultiSupporter : Editor
                 { "cleanupDialogCancel", "Cancel (No)" },
                 { "particle",   "Particle Object" },
                 { "matSwap",    "Material Swap" },
-                { "addMatSwap", "+ Add" },
-                { "presetSection",  "💾 Preset" },
-                { "presetCurrent",  "Current Preset" },
-                { "presetName",     "Name" },
-                { "presetSave",     "Save" },
-                { "presetSaveAs",   "Save As..." },
-                { "presetLoad",     "Load" },
-                { "presetLoaded",   "Preset loaded." },
-                { "presetSaved",    "Preset saved." },
-                { "presetNone",     "None (auto-created on save)" },
-                { "presetNameEmpty","Please enter a name." }
+                { "addMatSwap", "+ Add" }
             }
         },
         {
@@ -194,17 +174,7 @@ public class DiNeMultiSupporter : Editor
                 { "cleanupDialogCancel", "キャンセル (No)" },
                 { "particle",   "パーティクル" },
                 { "matSwap",    "マテリアル交換" },
-                { "addMatSwap", "+ 追加" },
-                { "presetSection",  "💾 プリセット" },
-                { "presetCurrent",  "現在のプリセット" },
-                { "presetName",     "名前" },
-                { "presetSave",     "保存" },
-                { "presetSaveAs",   "別名で保存" },
-                { "presetLoad",     "読込" },
-                { "presetLoaded",   "プリセットを読み込みました。" },
-                { "presetSaved",    "プリセットを保存しました。" },
-                { "presetNone",     "なし (保存時に自動作成)" },
-                { "presetNameEmpty","名前を入力してください。" }
+                { "addMatSwap", "+ 追加" }
             }
         }
     };
@@ -215,7 +185,6 @@ public class DiNeMultiSupporter : Editor
     private void OnDisable()
     {
         ClearPreview();
-        // 인스펙터 비활성화 시 프로필 자동 저장 (도메인 리로드·플레이모드 진입 전 최신값 보존)
     }
 
     private void OnEnable()
@@ -296,8 +265,7 @@ public class DiNeMultiSupporter : Editor
 
         if (layers.arraySize == 0)
         {
-            // 빈 레이어면 프로필 복구 먼저 시도 (플레이 모드 후 유실 케이스 포함)
-                // 프로필도 없으면 기본 레이어 생성
+            // 레이어가 비어있으면 기본 레이어 생성 (새 컴포넌트는 항상 빈 상태에서 시작)
             layers.InsertArrayElementAtIndex(0);
             layers.GetArrayElementAtIndex(0).FindPropertyRelative("layerName").stringValue = "Main";
             serializedObject.ApplyModifiedProperties();
@@ -1298,85 +1266,5 @@ public class DiNeMultiSupporter : Editor
         return newSelected;
     }
 
-#if false
-    private void DrawPresetUI(DiNeMultiDresser gen, Dictionary<string, string> lang)
-    {
-        SerializedProperty savedProfileProp = serializedObject.FindProperty("savedProfile");
-
-        EditorGUILayout.BeginVertical("GroupBox");
-        EditorGUILayout.LabelField(lang["presetSection"], EditorStyles.boldLabel);
-
-        // ── 현재 프리셋 ObjectField ──
-        EditorGUILayout.BeginHorizontal();
-        GUILayout.Label(lang["presetCurrent"], GUILayout.Width(90));
-        EditorGUI.BeginChangeCheck();
-        EditorGUILayout.PropertyField(savedProfileProp, GUIContent.none);
-        if (EditorGUI.EndChangeCheck())
-        {
-            serializedObject.ApplyModifiedProperties();
-            // 다른 프리셋이 드래그됐을 때 즉시 불러오기
-            if (savedProfileProp.objectReferenceValue != null)
-            {
-                gen.TryRestoreFromProfile();
-                serializedObject.Update();
-                EditorUtility.DisplayDialog("DiNe", lang["presetLoaded"], "OK");
-            }
-        }
-
-        // 불러오기 버튼 (현재 프리셋이 있을 때)
-        if (savedProfileProp.objectReferenceValue != null)
-        {
-            GUI.backgroundColor = new Color(0.5f, 0.8f, 1f);
-            if (GUILayout.Button(lang["presetLoad"], GUILayout.Width(60)))
-            {
-                gen.TryRestoreFromProfile();
-                serializedObject.Update();
-                EditorUtility.DisplayDialog("DiNe", lang["presetLoaded"], "OK");
-            }
-            GUI.backgroundColor = Color.white;
-        }
-        EditorGUILayout.EndHorizontal();
-
-        // ── 저장 행 ──
-        EditorGUILayout.BeginHorizontal();
-        GUILayout.Label(lang["presetName"], GUILayout.Width(90));
-        pendingProfileName = EditorGUILayout.TextField(pendingProfileName);
-
-        // 현재 프리셋이 있으면 "저장 (덮어쓰기)" 버튼
-        if (savedProfileProp.objectReferenceValue != null)
-        {
-            GUI.backgroundColor = new Color(0.6f, 0.9f, 0.6f);
-            if (GUILayout.Button(lang["presetSave"], GUILayout.Width(50)))
-            {
-                gen.SaveProfile();
-                serializedObject.Update();
-                EditorUtility.DisplayDialog("DiNe", lang["presetSaved"], "OK");
-            }
-            GUI.backgroundColor = Color.white;
-        }
-
-        // "다른 이름으로 저장" 버튼
-        GUI.backgroundColor = new Color(0.9f, 0.75f, 0.4f);
-        if (GUILayout.Button(lang["presetSaveAs"], GUILayout.Width(savedProfileProp.objectReferenceValue != null ? 120 : 80)))
-        {
-            string trimmed = pendingProfileName.Trim();
-            if (string.IsNullOrEmpty(trimmed))
-            {
-                EditorUtility.DisplayDialog("DiNe", lang["presetNameEmpty"], "OK");
-            }
-            else
-            {
-                gen.SaveProfileAs(trimmed);
-                serializedObject.Update();
-                pendingProfileName = "";
-                EditorUtility.DisplayDialog("DiNe", lang["presetSaved"], "OK");
-            }
-        }
-        GUI.backgroundColor = Color.white;
-        EditorGUILayout.EndHorizontal();
-
-        EditorGUILayout.EndVertical();
-    }
-#endif
 }
 #endif

@@ -10,5 +10,12 @@
     "defineConstraints": [
         "DINE_HAS_NDMF"
     ],
+    "versionDefines": [
+        {
+            "name": "nadena.dev.ndmf",
+            "expression": "[1.8.0,2.0.0)",
+            "define": "DINE_HAS_NDMF"
+        }
+    ],
     "autoReferenced": true
 }

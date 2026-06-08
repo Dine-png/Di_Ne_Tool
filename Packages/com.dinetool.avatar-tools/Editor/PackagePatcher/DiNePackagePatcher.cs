@@ -71,25 +71,11 @@ public class DiNePackagePatcher : EditorWindow
 
     private static void StaticMoveNewFolders(string targetFolderName, List<string> roots)
     {
-        string targetPath = "Assets/" + targetFolderName;
         foreach (var root in roots)
-        {
-            if (root.Equals(targetPath, StringComparison.OrdinalIgnoreCase)) continue;
-            if (!AssetDatabase.IsValidFolder(root))
-            {
-                Debug.LogWarning($"[DiNe] 폴더 없음: {root}");
-                continue;
-            }
-            string dest = targetPath + "/" + Path.GetFileName(root);
-            if (AssetDatabase.IsValidFolder(dest)) { Debug.Log($"[DiNe] 이미 정리됨: {dest}"); continue; }
-            if (!AssetDatabase.IsValidFolder(targetPath))
-                AssetDatabase.CreateFolder("Assets", targetFolderName);
-            string err = AssetDatabase.MoveAsset(root, dest);
-            if (!string.IsNullOrEmpty(err))
-                Debug.LogWarning($"[DiNe] 폴더 이동 실패: {root} → {dest}\n{err}");
-            else
-                Debug.Log($"[DiNe] 폴더 이동 완료: {root} → {dest}");
-        }
+            OrganizeRootFolder(root, targetFolderName);
+
+        BadgeOrganizedFolders(roots, targetFolderName);
+
         if (HasOpenInstances<DiNePackagePatcher>())
         {
             var win = GetWindow<DiNePackagePatcher>(false, null, false);
@@ -664,35 +650,110 @@ public class DiNePackagePatcher : EditorWindow
         if (predictedRootFolders.Count == 0)
             Debug.LogWarning("[DiNe] MoveNewFolders: 이동 대상 없음 — 패키지 파싱 실패 또는 pathname 엔트리 없음");
 
-        string targetPath = "Assets/" + pendingTargetFolderName;
         foreach (var root in predictedRootFolders)
+            OrganizeRootFolder(root, pendingTargetFolderName);
+
+        BadgeOrganizedFolders(predictedRootFolders, pendingTargetFolderName);
+    }
+
+    /// <summary>
+    /// 정리(이동/병합)가 끝난 뒤, 최종 폴더(Assets/targetFolderName/&lt;rootName&gt;)에
+    /// NEW 뱃지를 단다. 이동은 guid 가 보존되지만 병합 시 원본이 삭제되므로
+    /// 최종 위치를 명시적으로 등록해 "넣은 패키지가 안 뜨는" 문제를 막는다.
+    /// </summary>
+    private static void BadgeOrganizedFolders(IEnumerable<string> roots, string targetFolderName)
+    {
+        string targetPath = "Assets/" + targetFolderName;
+        var finals = new List<string>();
+        foreach (var root in roots)
         {
-            if (root.Equals(targetPath, StringComparison.OrdinalIgnoreCase)) continue;
-
-            if (!AssetDatabase.IsValidFolder(root))
-            {
-                Debug.LogWarning($"[DiNe] '{root}' 폴더 없음 (임포트 후에도 미생성) → 스킵");
-                continue;
-            }
-
             string dest = targetPath + "/" + Path.GetFileName(root);
-
-            // 목적지에 이미 같은 이름 폴더가 있으면 스킵 (이미 정리된 상태)
-            if (AssetDatabase.IsValidFolder(dest))
-            {
-                Debug.Log($"[DiNe] '{dest}' 이미 존재 → 스킵");
-                continue;
-            }
-
-            if (!AssetDatabase.IsValidFolder(targetPath))
-                AssetDatabase.CreateFolder("Assets", pendingTargetFolderName);
-
-            string err = AssetDatabase.MoveAsset(root, dest);
-            if (!string.IsNullOrEmpty(err))
-                Debug.LogWarning($"[DiNe] 폴더 이동 실패: {root} → {dest}\n{err}");
-            else
-                Debug.Log($"[DiNe] 폴더 이동 완료: {root} → {dest}");
+            if (AssetDatabase.IsValidFolder(dest)) finals.Add(dest);
         }
+        if (finals.Count > 0) DiNeNewAssetBadge.MarkFolders(finals);
+    }
+
+    /// <summary>
+    /// 임포트된 루트 폴더(root)를 정리 폴더(Assets/targetFolderName) 안으로 옮긴다.
+    /// 목적지에 같은 이름의 폴더가 이미 있으면 이동 대신 내용을 병합한다(재귀).
+    /// </summary>
+    private static void OrganizeRootFolder(string root, string targetFolderName)
+    {
+        string targetPath = "Assets/" + targetFolderName;
+        if (root.Equals(targetPath, StringComparison.OrdinalIgnoreCase)) return;
+
+        if (!AssetDatabase.IsValidFolder(root))
+        {
+            Debug.LogWarning($"[DiNe] '{root}' 폴더 없음 (임포트 후에도 미생성) → 스킵");
+            return;
+        }
+
+        if (!AssetDatabase.IsValidFolder(targetPath))
+            AssetDatabase.CreateFolder("Assets", targetFolderName);
+
+        string dest = targetPath + "/" + Path.GetFileName(root);
+
+        // 목적지에 같은 이름 폴더가 이미 있으면 → 내용 병합 (재귀)
+        if (AssetDatabase.IsValidFolder(dest))
+        {
+            Debug.Log($"[DiNe] '{dest}' 이미 존재 → 내용 병합");
+            MergeFolderInto(root, dest);
+            return;
+        }
+
+        string err = AssetDatabase.MoveAsset(root, dest);
+        if (!string.IsNullOrEmpty(err))
+            Debug.LogWarning($"[DiNe] 폴더 이동 실패: {root} → {dest}\n{err}");
+        else
+            Debug.Log($"[DiNe] 폴더 이동 완료: {root} → {dest}");
+    }
+
+    /// <summary>
+    /// source 폴더의 내용을 (이미 존재하는) dest 폴더 안으로 합친다.
+    /// - 같은 이름의 하위 폴더가 dest에도 있으면 재귀적으로 병합
+    /// - 충돌하지 않는 폴더/파일은 그대로 이동
+    /// - 같은 이름의 파일이 있으면 기존 것을 지우고 덮어쓴다
+    /// 병합이 끝나면 비워진 source 폴더를 삭제한다.
+    /// </summary>
+    private static void MergeFolderInto(string source, string dest)
+    {
+        // 하위 폴더 처리
+        foreach (var sub in AssetDatabase.GetSubFolders(source))
+        {
+            string childDest = dest + "/" + Path.GetFileName(sub);
+            if (AssetDatabase.IsValidFolder(childDest))
+                MergeFolderInto(sub, childDest);           // 같은 이름 폴더 → 재귀 병합
+            else
+                SafeMoveAsset(sub, childDest);             // 새 폴더 → 통째로 이동
+        }
+
+        // 직속 파일 처리 (.meta 는 AssetDatabase 가 자동 처리하므로 스킵)
+        foreach (var file in Directory.GetFiles(source))
+        {
+            string assetSrc = file.Replace('\\', '/');
+            if (assetSrc.EndsWith(".meta", StringComparison.OrdinalIgnoreCase)) continue;
+            string fileDest = dest + "/" + Path.GetFileName(assetSrc);
+            SafeMoveAsset(assetSrc, fileDest);
+        }
+
+        // 비워진 source 폴더 삭제
+        AssetDatabase.DeleteAsset(source);
+    }
+
+    /// <summary>
+    /// src 에셋을 dest 로 이동. dest 에 같은 이름의 에셋(파일)이 있으면 지우고 덮어쓴다.
+    /// </summary>
+    private static void SafeMoveAsset(string src, string dest)
+    {
+        if (AssetDatabase.IsValidFolder(dest)
+            || AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(dest) != null)
+        {
+            AssetDatabase.DeleteAsset(dest);
+        }
+
+        string err = AssetDatabase.MoveAsset(src, dest);
+        if (!string.IsNullOrEmpty(err))
+            Debug.LogWarning($"[DiNe] 병합 이동 실패: {src} → {dest}\n{err}");
     }
 
     /// <summary>

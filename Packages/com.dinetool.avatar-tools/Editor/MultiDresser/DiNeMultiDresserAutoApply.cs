@@ -805,7 +805,6 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             Debug.Log($"[DiNe] Generating temporary Multi Dresser data: {dresser.name}");
             DiNeMultiIconGenerator.GenerateIcons(dresser);
             dresser.Generate(
-                true,
                 generatedRootFolder,
                 clearExistingGeneratedData,
                 !clearExistingGeneratedData);

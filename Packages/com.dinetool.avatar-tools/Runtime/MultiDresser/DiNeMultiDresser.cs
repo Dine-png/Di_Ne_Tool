@@ -101,18 +101,12 @@ public class DiNeMultiDresser : MonoBehaviour
         return BuildMaterialSwap(baseMaterials, FindMaterialSwapEntry(layerData, 0, renderer));
     }
 
-    private void OnEnable()
-    {
-        // 도메인 리로드(코드 업데이트) 후 layers가 비어있으면 프로필에서 자동 복구
-    }
-
     private void Reset()
     {
         TryAutoAssignFXController();
     }
 
     public void Generate(
-        bool saveProfile = true,
         string generatedRootFolder = "Assets/Di Ne/MultiDresser",
         bool clearExistingGeneratedData = true,
         bool mergeIntoExistingMenu = false)
@@ -129,7 +123,7 @@ public class DiNeMultiDresser : MonoBehaviour
         TryCreateAnimationLayers(generatedRootFolder);         // 내부에서 AssetDatabase.Refresh() 호출됨
         DiNeMultiMenuGenerator.TryCreateExpressionMenu(this, generatedRootFolder);
 
-        // 3. 프로필 저장 — Refresh() 이후에 실행해야 씬 오브젝트 참조가 재임포트로 null이 되는 것을 방지
+        // 3. Refresh() 이후에 다시 실행해야 씬 오브젝트 참조가 재임포트로 null이 되는 것을 방지
         TryAddExpressionParameters();
         DiNeMultiMenuGenerator.TryCreateExpressionMenu(this, generatedRootFolder, mergeIntoExistingMenu);
 
@@ -270,13 +264,8 @@ public class DiNeMultiDresser : MonoBehaviour
         }
     }
 
-    // ──────────────────────────────────────────────
-    //  아바타 고유 식별
-    // ──────────────────────────────────────────────
-
     /// <summary>
-    /// FX Controller 에셋의 GUID를 반환. 아바타별로 고유한 값.
-    /// 이름을 바꿔도 GUID는 변하지 않으므로 안정적인 식별자.
+    /// 파일명으로 안전한 문자열로 변환 (경로에 쓸 수 없는 문자 치환).
     /// </summary>
     private string GetSafeName(string name)
     {
@@ -330,290 +319,6 @@ public class DiNeMultiDresser : MonoBehaviour
         }
     }
 
-#if false
-
-    // ──────────────────────────────────────────────
-    //  프로필 저장
-    // ──────────────────────────────────────────────
-
-    {
-        string folder = "Assets/Di Ne/MultiDresser/Profiles";
-        if (!Directory.Exists(folder)) Directory.CreateDirectory(folder);
-
-        string avatarGUID = GetAvatarGUID();
-        string rawName = rootTransform != null ? rootTransform.name : gameObject.name;
-        string safeName = GetSafeName(rawName);
-
-        // 기존 프로필이 없으면, GUID로 기존 프로필 먼저 검색
-        if (savedProfile == null && !string.IsNullOrEmpty(avatarGUID))
-        {
-            savedProfile = FindProfileByGUID(avatarGUID);
-        }
-
-        if (savedProfile == null)
-        {
-            savedProfile = ScriptableObject.CreateInstance<DiNeProfile>();
-            string path = $"{folder}/Profile_{safeName}.asset";
-            // 동일 이름 파일 있으면 덮어쓰지 않고 고유 경로 생성
-            path = AssetDatabase.GenerateUniqueAssetPath(path);
-            AssetDatabase.CreateAsset(savedProfile, path);
-        }
-
-        // 아바타 식별 정보 저장
-        savedProfile.avatarControllerGUID = avatarGUID ?? "";
-        savedProfile.avatarName = safeName;
-
-        // 레이어 데이터 저장
-        savedProfile.savedLayers.Clear();
-        foreach (var layer in layers)
-        {
-            var saved = new DiNeProfile.SavedLayer
-            {
-                layerName = layer.layerName,
-                layerIcon = layer.layerIcon,
-                targets = new List<GameObject>(layer.targets),
-                labels = new List<string>(layer.labels),
-                icons = new List<Texture2D>(layer.icons),
-                linkedObjects = new List<LinkedGroup>(layer.linkedObjects),
-                perButtonShapeKeyStates = new List<ShapeKeyMeshList>(layer.perButtonShapeKeyStates),
-                perButtonMaterialSwaps  = new List<MaterialSwapList>(layer.perButtonMaterialSwaps),
-                particleObject          = layer.particleObject
-            };
-            savedProfile.savedLayers.Add(saved);
-        }
-        savedProfile.shapeKeyTargets = new List<GameObject>(shapeKeyTargets);
-
-        EditorUtility.SetDirty(savedProfile);
-        AssetDatabase.SaveAssets();
-        Debug.Log($"💾 [DiNe] 프리셋 저장 완료: {AssetDatabase.GetAssetPath(savedProfile)}");
-    }
-
-    /// <summary>
-    /// 새 이름으로 프리셋 파일을 새로 만들어 저장. 기존 savedProfile은 교체됨.
-    /// </summary>
-    public void SaveProfileAs(string profileName)
-    {
-        string folder = "Assets/Di Ne/MultiDresser/Profiles";
-        if (!Directory.Exists(folder)) Directory.CreateDirectory(folder);
-
-        string safeName = string.Join("_", profileName.Split(Path.GetInvalidFileNameChars()));
-        string path = AssetDatabase.GenerateUniqueAssetPath($"{folder}/{safeName}.asset");
-
-        var newProfile = ScriptableObject.CreateInstance<DiNeProfile>();
-        AssetDatabase.CreateAsset(newProfile, path);
-        savedProfile = newProfile;          // 현재 컴포넌트에 새 프리셋 연결
-        EditorUtility.SetDirty(this);
-
-        SaveProfile();                       // 내용 채워서 저장
-    }
-
-    // ──────────────────────────────────────────────
-    //  프로필 복원
-    // ──────────────────────────────────────────────
-
-    public void TryRestoreFromProfile()
-    {
-        // 1순위: 이미 연결된 프로필이 있으면 그대로 사용
-        if (savedProfile != null)
-        {
-            RestoreInternal(savedProfile);
-            return;
-        }
-
-        // 2순위: FX Controller GUID로 검색
-        string avatarGUID = GetAvatarGUID();
-        if (!string.IsNullOrEmpty(avatarGUID))
-        {
-            var match = FindProfileByGUID(avatarGUID);
-            if (match != null)
-            {
-                savedProfile = match;
-                Debug.Log($"♻ [DiNe] GUID 기반 설정 복구 완료! ({match.name})");
-                RestoreInternal(match);
-                return;
-            }
-        }
-
-        // 3순위: 아바타 이름으로 fallback 검색
-        DiNeProfile nameMatch = FindProfileByName();
-        if (nameMatch != null)
-        {
-            savedProfile = nameMatch;
-            // GUID가 있으면 프로필에 업데이트 (다음부터는 GUID로 매칭됨)
-            if (!string.IsNullOrEmpty(avatarGUID))
-            {
-                nameMatch.avatarControllerGUID = avatarGUID;
-                EditorUtility.SetDirty(nameMatch);
-                AssetDatabase.SaveAssets();
-            }
-            Debug.Log($"♻ [DiNe] 이름 기반 설정 복구 완료! ({nameMatch.name})");
-            RestoreInternal(nameMatch);
-        }
-    }
-
-    /// <summary>
-    /// GUID로 프로필 검색 (가장 정확한 매칭)
-    /// </summary>
-    private DiNeProfile FindProfileByGUID(string guid)
-    {
-        if (string.IsNullOrEmpty(guid)) return null;
-
-        string folder = "Assets/Di Ne/MultiDresser/Profiles";
-        if (!Directory.Exists(folder)) return null;
-
-        string[] assetGuids = AssetDatabase.FindAssets("t:DiNeProfile", new[] { folder });
-        foreach (string ag in assetGuids)
-        {
-            string path = AssetDatabase.GUIDToAssetPath(ag);
-            DiNeProfile p = AssetDatabase.LoadAssetAtPath<DiNeProfile>(path);
-            if (p != null && p.avatarControllerGUID == guid)
-                return p;
-        }
-        return null;
-    }
-
-    /// <summary>
-    /// 아바타 이름으로 프로필 검색 (fallback)
-    /// </summary>
-    private DiNeProfile FindProfileByName()
-    {
-        string folder = "Assets/Di Ne/MultiDresser/Profiles";
-        if (!Directory.Exists(folder)) return null;
-
-        string[] guids = AssetDatabase.FindAssets("t:DiNeProfile", new[] { folder });
-        List<DiNeProfile> candidates = new List<DiNeProfile>();
-
-        foreach (string guid in guids)
-        {
-            string path = AssetDatabase.GUIDToAssetPath(guid);
-            DiNeProfile p = AssetDatabase.LoadAssetAtPath<DiNeProfile>(path);
-            if (p != null) candidates.Add(p);
-        }
-
-        // rootTransform 이름으로 매칭
-        if (rootTransform != null)
-        {
-            string safeName = GetSafeName(rootTransform.name);
-            var match = candidates.FirstOrDefault(p => p.avatarName == safeName);
-            if (match != null) return match;
-
-            // avatarName 필드가 비어있는 기존 프로필은 파일명으로 매칭 (하위호환)
-            match = candidates
-                .Where(p => string.IsNullOrEmpty(p.avatarName) && p.name.Contains(safeName))
-                .OrderByDescending(p => p.name)
-                .FirstOrDefault();
-            if (match != null) return match;
-        }
-
-        // gameObject 이름으로 최후 시도
-        string safeObjName = GetSafeName(gameObject.name);
-        var objMatch = candidates.FirstOrDefault(p => p.avatarName == safeObjName);
-        if (objMatch != null) return objMatch;
-
-        objMatch = candidates
-            .Where(p => string.IsNullOrEmpty(p.avatarName) && p.name.Contains(safeObjName))
-            .OrderByDescending(p => p.name)
-            .FirstOrDefault();
-        return objMatch;
-    }
-
-    /// <summary>
-    /// ShapeKeyMeshList 리스트를 깊은 복사 (버튼 간 쉐이프키 값 공유 방지)
-    /// </summary>
-    private static List<ShapeKeyMeshList> DeepCopyShapeKeyMeshLists(List<ShapeKeyMeshList> source)
-    {
-        var result = new List<ShapeKeyMeshList>(source.Count);
-        foreach (var sml in source)
-        {
-            var newSml = new ShapeKeyMeshList();
-            foreach (var sl in sml.meshShapeKeys)
-                newSml.meshShapeKeys.Add(new ShapeKeyList { shapeKeys = new List<ShapeKeyState>(sl.shapeKeys) });
-            result.Add(newSml);
-        }
-        return result;
-    }
-
-    private static int RemoveMissingTargetEntries(DresserLayer layer)
-    {
-        if (layer == null || layer.targets == null)
-            return 0;
-
-        int removedCount = 0;
-        for (int i = layer.targets.Count - 1; i >= 1; i--)
-        {
-            if (layer.targets[i] != null)
-                continue;
-
-            layer.RemoveAt(i);
-            removedCount++;
-        }
-
-        return removedCount;
-    }
-
-    /// <summary>
-    /// 프로필 데이터를 실제 레이어에 복원. Null 참조 정리 포함.
-    /// </summary>
-    private void RestoreInternal(DiNeProfile profile)
-    {
-        if (profile == null) return;
-
-        layers.Clear();
-        foreach (var saved in profile.savedLayers)
-        {
-            var layer = new DresserLayer
-            {
-                layerName = saved.layerName,
-                layerIcon = saved.layerIcon,
-                targets = new List<GameObject>(saved.targets),
-                labels = new List<string>(saved.labels),
-                icons = new List<Texture2D>(saved.icons),
-                linkedObjects = new List<LinkedGroup>(saved.linkedObjects),
-                perButtonShapeKeyStates = DeepCopyShapeKeyMeshLists(saved.perButtonShapeKeyStates),
-                perButtonMaterialSwaps  = new List<MaterialSwapList>(saved.perButtonMaterialSwaps),
-                particleObject          = saved.particleObject
-            };
-
-            // Null 참조 검증: 삭제된 오브젝트가 있으면 경고
-            int nullCount = layer.targets.Count(t => t == null);
-            // 인덱스 0 (기본 상태)는 null일 수 있으므로 제외
-            int realNulls = 0;
-            for (int i = 1; i < layer.targets.Count; i++)
-            {
-                if (layer.targets[i] == null) realNulls++;
-            }
-            if (realNulls > 0)
-            {
-                Debug.LogWarning($"⚠ [DiNe] 레이어 '{layer.layerName}'에서 {realNulls}개의 오브젝트 참조가 유실되었습니다. Inspector에서 다시 지정해주세요.");
-            }
-
-            // LinkedObjects 내부 null 정리
-            foreach (var linked in layer.linkedObjects)
-            {
-                if (linked?.objects != null)
-                    linked.objects.RemoveAll(o => o == null);
-            }
-
-            // icons 리스트 크기 맞추기
-            while (layer.icons.Count < layer.targets.Count) layer.icons.Add(null);
-
-            layers.Add(layer);
-        }
-
-        // shapeKeyTargets에서 null 제거 (인덱스 유지가 중요하므로 null 유지하되 경고)
-        shapeKeyTargets = new List<GameObject>(profile.shapeKeyTargets);
-        int nullMeshes = shapeKeyTargets.Count(t => t == null);
-        if (nullMeshes > 0 && shapeKeyTargets.Count > 0)
-        {
-            Debug.LogWarning($"⚠ [DiNe] 셰이프키 타겟 중 {nullMeshes}개의 메시 참조가 유실되었습니다.");
-        }
-    }
-
-    // ──────────────────────────────────────────────
-    //  VRC 파라미터 생성
-    // ──────────────────────────────────────────────
-
-#endif
 
     public void TryAddExpressionParameters()
     {

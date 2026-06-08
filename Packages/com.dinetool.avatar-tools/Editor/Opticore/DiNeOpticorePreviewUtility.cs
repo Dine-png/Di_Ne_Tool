@@ -1,5 +1,4 @@
 using System;
-using System;
 using System.Collections.Generic;
 using System.Collections;
 using System.Reflection;
@@ -301,6 +300,13 @@ public static class DiNeOpticorePreviewUtility
         var state = DiNeOpticoreTraceAndOptimizeState.Create(opticore);
         var protectedTransforms = BuildProtectedTransformSet(targetRoot, state.PreserveAvatarBehavior);
         var animatedTransforms = BuildAnimatedTransformSet(targetRoot);
+        // "Hard" = animated by anything OTHER than a blendShape weight (toggles, enable, transform,
+        // material swaps). Used by the experimental merge so that renderers whose only animation is
+        // blendShape weights can still be merged (their curves are redirected via objectMapping).
+        var hardAnimatedTransforms = BuildHardAnimatedTransformSet(targetRoot);
+        // Snapshots every object's animation path up front; rewrites affected animations at the end
+        // (see Apply call below) so merges/moves keep animations working.
+        var objectMapping = new DiNeOpticoreObjectMapping(targetRoot);
         var meshMutations = new MeshMutationContext();
         var materialMutations = new MaterialMutationContext();
         var blendShapeAnimationMap = BuildBlendShapeAnimationMap(targetRoot);
@@ -361,7 +367,9 @@ public static class DiNeOpticorePreviewUtility
                 targetRoot,
                 meshMutations,
                 protectedTransforms,
-                animatedTransforms,
+                state.ExperimentalMode ? hardAnimatedTransforms : animatedTransforms,
+                objectMapping,
+                state.ExperimentalMode,
                 out mergedSkinnedMeshGroups,
                 out mergedSkinnedMeshRenderers);
 
@@ -432,6 +440,9 @@ public static class DiNeOpticorePreviewUtility
             appliedChanges.Add("Experimental mode allowed more aggressive empty-object cleanup on the temporary optimized avatar.");
 
         AppendPendingModule(state.OptimizeAnimator, "Animator optimization is excluded from the current port scope.", pendingModules);
+
+        // Rewrite animations to follow every move/merge recorded above. No-op when nothing changed.
+        objectMapping.Apply(targetRoot);
     }
 
     private sealed class MeshMutationContext
@@ -1246,6 +1257,8 @@ public static class DiNeOpticorePreviewUtility
         MeshMutationContext meshMutations,
         HashSet<Transform> protectedTransforms,
         HashSet<Transform> animatedTransforms,
+        DiNeOpticoreObjectMapping objectMapping,
+        bool allowBlendShapeMerge,
         out int mergedGroups,
         out int mergedRenderers)
     {
@@ -1262,7 +1275,7 @@ public static class DiNeOpticorePreviewUtility
                 continue;
 
             Mesh mesh = meshMutations.GetMutableMesh(renderer);
-            if (!TryBuildSkinnedMeshMergeSignature(renderer, mesh, root.transform, animatedTransforms, out string signature))
+            if (!TryBuildSkinnedMeshMergeSignature(renderer, mesh, root.transform, animatedTransforms, allowBlendShapeMerge, out string signature))
                 continue;
 
             if (!groupedRenderers.TryGetValue(signature, out List<SkinnedMeshRenderer> group))
@@ -1279,7 +1292,7 @@ public static class DiNeOpticorePreviewUtility
             if (group.Count < 2)
                 continue;
 
-            if (!TryMergeSkinnedMeshGroup(group, meshMutations, protectedTransforms))
+            if (!TryMergeSkinnedMeshGroup(group, meshMutations, protectedTransforms, objectMapping))
                 continue;
 
             mergedGroups++;
@@ -1292,6 +1305,7 @@ public static class DiNeOpticorePreviewUtility
         Mesh mesh,
         Transform avatarRoot,
         HashSet<Transform> animatedTransforms,
+        bool allowBlendShapeMerge,
         out string signature)
     {
         signature = null;
@@ -1305,7 +1319,12 @@ public static class DiNeOpticorePreviewUtility
         if (renderer.GetComponent<Cloth>() != null)
             return false;
 
-        if (mesh.vertexCount == 0 || mesh.subMeshCount == 0 || mesh.blendShapeCount != 0)
+        if (mesh.vertexCount == 0 || mesh.subMeshCount == 0)
+            return false;
+
+        // BlendShape-bearing meshes are only merged in experimental mode (their shapes are carried
+        // over with vertex-range-scoped deltas and animations are redirected via objectMapping).
+        if (!allowBlendShapeMerge && mesh.blendShapeCount != 0)
             return false;
 
         if (renderer.rootBone == null || renderer.bones == null || renderer.bones.Length == 0)
@@ -1333,24 +1352,15 @@ public static class DiNeOpticorePreviewUtility
                 return false;
         }
 
-        Vector3 localPosition = RoundVector3(renderer.transform.localPosition);
-        Quaternion localRotation = RoundQuaternion(renderer.transform.localRotation);
-        Vector3 localScale = RoundVector3(renderer.transform.localScale);
-
-        var builder = new StringBuilder(512);
-        builder.Append(renderer.transform.parent.GetInstanceID()).Append('|');
-        builder.Append(renderer.gameObject.activeSelf ? '1' : '0').Append('|');
+        // NOTE: Bones, bind poses, parent and local transform are intentionally NOT part of the
+        // grouping key. Skinned-mesh vertices are driven entirely by their bones + bind poses, so
+        // renderers that share the same skeleton (root bone) can be merged even when their bone
+        // sub-sets differ. The actual bone union (and a bind-pose consistency check) happens later
+        // in TryMergeSkinnedMeshGroup. We group only by traits that must match for a single merged
+        // renderer to behave identically: visibility, root bone, and rendering settings.
+        var builder = new StringBuilder(256);
+        builder.Append(renderer.gameObject.activeInHierarchy ? '1' : '0').Append('|');
         builder.Append(renderer.rootBone.GetInstanceID()).Append('|');
-        builder.Append(localPosition.x.ToString("F5")).Append('|');
-        builder.Append(localPosition.y.ToString("F5")).Append('|');
-        builder.Append(localPosition.z.ToString("F5")).Append('|');
-        builder.Append(localRotation.x.ToString("F5")).Append('|');
-        builder.Append(localRotation.y.ToString("F5")).Append('|');
-        builder.Append(localRotation.z.ToString("F5")).Append('|');
-        builder.Append(localRotation.w.ToString("F5")).Append('|');
-        builder.Append(localScale.x.ToString("F5")).Append('|');
-        builder.Append(localScale.y.ToString("F5")).Append('|');
-        builder.Append(localScale.z.ToString("F5")).Append('|');
         builder.Append((int)renderer.shadowCastingMode).Append('|');
         builder.Append(renderer.receiveShadows ? '1' : '0').Append('|');
         builder.Append((int)renderer.lightProbeUsage).Append('|');
@@ -1361,12 +1371,6 @@ public static class DiNeOpticorePreviewUtility
         builder.Append(renderer.allowOcclusionWhenDynamic ? '1' : '0').Append('|');
         builder.Append(renderer.probeAnchor != null ? renderer.probeAnchor.GetInstanceID() : 0).Append('|');
         builder.Append(renderer.lightProbeProxyVolumeOverride != null ? renderer.lightProbeProxyVolumeOverride.GetInstanceID() : 0).Append('|');
-
-        for (int i = 0; i < renderer.bones.Length; i++)
-            builder.Append(renderer.bones[i].GetInstanceID()).Append(',');
-
-        builder.Append('|');
-        AppendBindposeSignature(builder, mesh.bindposes);
         signature = builder.ToString();
         return true;
     }
@@ -1374,7 +1378,8 @@ public static class DiNeOpticorePreviewUtility
     private static bool TryMergeSkinnedMeshGroup(
         List<SkinnedMeshRenderer> group,
         MeshMutationContext meshMutations,
-        HashSet<Transform> protectedTransforms)
+        HashSet<Transform> protectedTransforms,
+        DiNeOpticoreObjectMapping objectMapping)
     {
         if (group == null || group.Count < 2 || meshMutations == null)
             return false;
@@ -1384,9 +1389,45 @@ public static class DiNeOpticorePreviewUtility
         if (targetRenderer == null || targetMesh == null)
             return false;
 
-        Transform[] targetBones = targetRenderer.bones;
-        Matrix4x4[] targetBindposes = targetMesh.bindposes;
-        if (targetBones == null || targetBindposes == null || targetBones.Length == 0)
+        // Build the union of all bones used across the group. Renderers may use different bone
+        // sub-sets of the same skeleton; we remap each mesh's bone-weight indices into this union.
+        var unionBones = new List<Transform>();
+        var unionBindposes = new List<Matrix4x4>();
+        var boneToUnionIndex = new Dictionary<Transform, int>();
+
+        foreach (SkinnedMeshRenderer unionRenderer in group)
+        {
+            Mesh unionMesh = meshMutations.GetMutableMesh(unionRenderer);
+            if (unionRenderer == null || unionMesh == null)
+                return false;
+
+            Transform[] unionRendererBones = unionRenderer.bones;
+            Matrix4x4[] unionRendererBindposes = unionMesh.bindposes;
+            if (unionRendererBones == null || unionRendererBindposes == null ||
+                unionRendererBones.Length == 0 || unionRendererBindposes.Length != unionRendererBones.Length)
+                return false;
+
+            for (int i = 0; i < unionRendererBones.Length; i++)
+            {
+                Transform bone = unionRendererBones[i];
+                if (bone == null)
+                    return false;
+
+                if (!boneToUnionIndex.TryGetValue(bone, out int unionIndex))
+                {
+                    boneToUnionIndex.Add(bone, unionBones.Count);
+                    unionBones.Add(bone);
+                    unionBindposes.Add(unionRendererBindposes[i]);
+                }
+                else if (!AreMatricesApproximatelyEqual(unionBindposes[unionIndex], unionRendererBindposes[i]))
+                {
+                    // Same bone but a different bind pose => meshes live in different spaces. Not safe to merge.
+                    return false;
+                }
+            }
+        }
+
+        if (unionBones.Count == 0)
             return false;
 
         int totalVertexCount = 0;
@@ -1402,12 +1443,6 @@ public static class DiNeOpticorePreviewUtility
             SkinnedMeshRenderer renderer = group[rendererIndex];
             Mesh mesh = meshMutations.GetMutableMesh(renderer);
             if (renderer == null || mesh == null)
-                return false;
-
-            if (!AreTransformArraysEqual(targetBones, renderer.bones))
-                return false;
-
-            if (!AreBindposesEqual(targetBindposes, mesh.bindposes))
                 return false;
 
             BoneWeight[] boneWeights = mesh.boneWeights;
@@ -1450,6 +1485,7 @@ public static class DiNeOpticorePreviewUtility
         }
 
         var subMeshEntries = new List<MutableSubMesh>(totalSubMeshCount);
+        var blendShapeSources = new List<(SkinnedMeshRenderer Renderer, Mesh Mesh, int Offset, int Count)>();
         int vertexOffset = 0;
 
         foreach (SkinnedMeshRenderer renderer in group)
@@ -1460,8 +1496,24 @@ public static class DiNeOpticorePreviewUtility
             if (meshVertices == null || meshVertices.Length != mesh.vertexCount)
                 return false;
 
+            // Remap this mesh's bone indices into the shared union bone list.
+            Transform[] meshBones = renderer.bones;
+            int[] boneRemap = new int[meshBones.Length];
+            for (int i = 0; i < meshBones.Length; i++)
+                boneRemap[i] = boneToUnionIndex[meshBones[i]];
+
             Array.Copy(meshVertices, 0, vertices, vertexOffset, mesh.vertexCount);
-            Array.Copy(mesh.boneWeights, 0, boneWeightsCombined, vertexOffset, mesh.vertexCount);
+
+            BoneWeight[] sourceWeights = mesh.boneWeights;
+            for (int i = 0; i < mesh.vertexCount; i++)
+            {
+                BoneWeight bw = sourceWeights[i];
+                bw.boneIndex0 = boneRemap[bw.boneIndex0];
+                bw.boneIndex1 = boneRemap[bw.boneIndex1];
+                bw.boneIndex2 = boneRemap[bw.boneIndex2];
+                bw.boneIndex3 = boneRemap[bw.boneIndex3];
+                boneWeightsCombined[vertexOffset + i] = bw;
+            }
 
             if (hasNormals)
                 Array.Copy(mesh.normals, 0, normals, vertexOffset, mesh.vertexCount);
@@ -1480,6 +1532,9 @@ public static class DiNeOpticorePreviewUtility
                 if (uvChannels[channel] != null)
                     AppendUvChannel(mesh, channel, uvChannels[channel]);
             }
+
+            // Remember this mesh's vertex range so we can carry its blendShapes after the merged mesh exists.
+            blendShapeSources.Add((renderer, mesh, vertexOffset, mesh.vertexCount));
 
             for (int subMeshIndex = 0; subMeshIndex < mesh.subMeshCount; subMeshIndex++)
             {
@@ -1500,12 +1555,26 @@ public static class DiNeOpticorePreviewUtility
         if (subMeshEntries.Count == 0)
             return false;
 
+        // Consolidate sub-meshes that share the same material + topology so the merged renderer
+        // ends up with one slot per unique material (fewer draw calls), instead of one per source.
+        var consolidatedSubMeshes = new List<MutableSubMesh>(subMeshEntries.Count);
+        foreach (MutableSubMesh entry in subMeshEntries)
+        {
+            MutableSubMesh existing = consolidatedSubMeshes.Find(
+                candidate => candidate.Topology == entry.Topology && candidate.Material == entry.Material);
+            if (existing != null)
+                existing.Indices.AddRange(entry.Indices);
+            else
+                consolidatedSubMeshes.Add(entry);
+        }
+        subMeshEntries = consolidatedSubMeshes;
+
         var mergedMesh = new Mesh
         {
             name = targetMesh.name + " [Opticore Merged]",
             indexFormat = totalVertexCount > 65535 ? IndexFormat.UInt32 : targetMesh.indexFormat,
             vertices = vertices,
-            bindposes = targetBindposes,
+            bindposes = unionBindposes.ToArray(),
             boneWeights = boneWeightsCombined,
         };
 
@@ -1536,18 +1605,95 @@ public static class DiNeOpticorePreviewUtility
 
         mergedMesh.RecalculateBounds();
 
+        // Carry every source mesh's blendShapes into the merged mesh. Each shape only affects the
+        // vertex range that came from its source mesh; colliding names are renamed and the rename is
+        // reported to objectMapping so animations follow them. No-op when no source has blendShapes.
+        var usedShapeNames = new HashSet<string>(StringComparer.Ordinal);
+        var blendShapeWeights = new List<(string Name, float Weight)>();
+        var blendShapeRenameBySource = new Dictionary<SkinnedMeshRenderer, Dictionary<string, string>>();
+
+        foreach (var source in blendShapeSources)
+        {
+            Mesh sourceMesh = source.Mesh;
+            SkinnedMeshRenderer sourceRenderer = source.Renderer;
+            if (sourceMesh == null || sourceRenderer == null || sourceMesh.blendShapeCount == 0)
+                continue;
+
+            Dictionary<string, string> rename = null;
+            for (int s = 0; s < sourceMesh.blendShapeCount; s++)
+            {
+                string originalName = sourceMesh.GetBlendShapeName(s);
+                string mergedName = originalName;
+                int suffix = 1;
+                while (!usedShapeNames.Add(mergedName))
+                {
+                    suffix++;
+                    mergedName = originalName + " (" + suffix + ")";
+                }
+
+                if (mergedName != originalName)
+                {
+                    rename ??= new Dictionary<string, string>(StringComparer.Ordinal);
+                    rename[originalName] = mergedName;
+                }
+
+                int frames = sourceMesh.GetBlendShapeFrameCount(s);
+                for (int f = 0; f < frames; f++)
+                {
+                    float frameWeight = sourceMesh.GetBlendShapeFrameWeight(s, f);
+                    var srcDV = new Vector3[source.Count];
+                    var srcDN = new Vector3[source.Count];
+                    var srcDT = new Vector3[source.Count];
+                    sourceMesh.GetBlendShapeFrameVertices(s, f, srcDV, srcDN, srcDT);
+
+                    var dv = new Vector3[totalVertexCount];
+                    var dn = new Vector3[totalVertexCount];
+                    var dt = new Vector3[totalVertexCount];
+                    Array.Copy(srcDV, 0, dv, source.Offset, source.Count);
+                    Array.Copy(srcDN, 0, dn, source.Offset, source.Count);
+                    Array.Copy(srcDT, 0, dt, source.Offset, source.Count);
+
+                    mergedMesh.AddBlendShapeFrame(mergedName, frameWeight, dv, dn, dt);
+                }
+
+                blendShapeWeights.Add((mergedName, sourceRenderer.GetBlendShapeWeight(s)));
+            }
+
+            if (rename != null)
+                blendShapeRenameBySource[sourceRenderer] = rename;
+        }
+
         Material[] mergedMaterials = new Material[subMeshEntries.Count];
         for (int i = 0; i < subMeshEntries.Count; i++)
             mergedMaterials[i] = subMeshEntries[i].Material;
 
         targetRenderer.sharedMaterials = mergedMaterials;
-        targetRenderer.bones = targetBones;
+        targetRenderer.bones = unionBones.ToArray();
         targetRenderer.rootBone = group[0].rootBone;
         targetRenderer.localBounds = mergedMesh.bounds;
         meshMutations.ReplaceMutableMesh(targetRenderer, mergedMesh);
 
+        // Restore blendShape weights on the merged renderer (indices changed, so match by name).
+        foreach (var (name, weight) in blendShapeWeights)
+        {
+            int index = mergedMesh.GetBlendShapeIndex(name);
+            if (index >= 0)
+                targetRenderer.SetBlendShapeWeight(index, weight);
+        }
+
         for (int i = 1; i < group.Count; i++)
-            RemoveMergedRendererSource(group[i], protectedTransforms);
+        {
+            SkinnedMeshRenderer source = group[i];
+            // Redirect any animation that targeted the merged-away renderer to the surviving one,
+            // applying the blendShape renames we made to avoid name collisions.
+            if (objectMapping != null && source != null)
+            {
+                blendShapeRenameBySource.TryGetValue(source, out Dictionary<string, string> rename);
+                objectMapping.RecordMerge(source.transform, targetRenderer.transform, rename);
+            }
+
+            RemoveMergedRendererSource(source, protectedTransforms);
+        }
 
         return true;
     }
@@ -1713,6 +1859,75 @@ public static class DiNeOpticorePreviewUtility
         var animatedTransforms = new HashSet<Transform>();
         AddAnimatedTransforms(root, animatedTransforms);
         return animatedTransforms;
+    }
+
+    private static HashSet<Transform> BuildHardAnimatedTransformSet(GameObject root)
+    {
+        var set = new HashSet<Transform>();
+        AddHardAnimatedTransforms(root, set);
+        return set;
+    }
+
+    // Like AddAnimatedTransforms, but ignores blendShape-weight float curves. The remaining bindings
+    // (toggles, enable, transform, material swaps) are the ones that make a renderer unsafe to merge.
+    private static void AddHardAnimatedTransforms(GameObject root, HashSet<Transform> set)
+    {
+        foreach (var animator in root.GetComponentsInChildren<Animator>(true))
+        {
+            if (animator == null)
+                continue;
+
+            RuntimeAnimatorController controller = animator.runtimeAnimatorController;
+            if (controller == null)
+                continue;
+
+            foreach (AnimationClip clip in controller.animationClips)
+            {
+                if (clip == null)
+                    continue;
+
+                foreach (EditorCurveBinding binding in AnimationUtility.GetCurveBindings(clip))
+                {
+                    if (IsBlendShapeBinding(binding))
+                        continue;
+                    AddBoundTransform(animator.transform, binding.path, set);
+                }
+
+                foreach (EditorCurveBinding binding in AnimationUtility.GetObjectReferenceCurveBindings(clip))
+                    AddBoundTransform(animator.transform, binding.path, set);
+            }
+        }
+
+        foreach (var animation in root.GetComponentsInChildren<Animation>(true))
+        {
+            if (animation == null)
+                continue;
+
+            foreach (AnimationState state in animation)
+            {
+                AnimationClip clip = state?.clip;
+                if (clip == null)
+                    continue;
+
+                foreach (EditorCurveBinding binding in AnimationUtility.GetCurveBindings(clip))
+                {
+                    if (IsBlendShapeBinding(binding))
+                        continue;
+                    AddBoundTransform(animation.transform, binding.path, set);
+                }
+
+                foreach (EditorCurveBinding binding in AnimationUtility.GetObjectReferenceCurveBindings(clip))
+                    AddBoundTransform(animation.transform, binding.path, set);
+            }
+        }
+    }
+
+    private static bool IsBlendShapeBinding(EditorCurveBinding binding)
+    {
+        return binding.type != null
+            && typeof(SkinnedMeshRenderer).IsAssignableFrom(binding.type)
+            && !string.IsNullOrEmpty(binding.propertyName)
+            && binding.propertyName.StartsWith("blendShape.", System.StringComparison.Ordinal);
     }
 
     private static Dictionary<int, Dictionary<string, BlendShapeAnimationInfo>> BuildBlendShapeAnimationMap(GameObject root)

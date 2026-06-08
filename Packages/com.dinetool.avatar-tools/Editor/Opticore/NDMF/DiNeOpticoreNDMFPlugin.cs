@@ -74,6 +74,33 @@ namespace DiNeTool.Opticore.Ndmf
         }
     }
 
+    internal sealed class DiNeRemoveMeshPass : Pass<DiNeRemoveMeshPass>
+    {
+        public static readonly DiNeRemoveMeshPass Instance = new DiNeRemoveMeshPass();
+
+        public override string DisplayName => "Opticore: Remove Mesh In Box";
+
+        protected override void Execute(BuildContext context)
+        {
+            foreach (var component in context.AvatarRootObject.GetComponentsInChildren<global::DiNeRemoveMeshInBox>(true))
+            {
+                if (component == null)
+                    continue;
+
+                try
+                {
+                    global::DiNeRemoveMeshUtility.Apply(component);
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogError($"[DiNe] Remove Mesh In Box failed on '{component.name}': {e.Message}\n{e.StackTrace}");
+                }
+
+                Object.DestroyImmediate(component);
+            }
+        }
+    }
+
     [RunsOnAllPlatforms]
     internal sealed class DiNeOpticoreNDMFPlugin : Plugin<DiNeOpticoreNDMFPlugin>
     {
@@ -83,8 +110,10 @@ namespace DiNeTool.Opticore.Ndmf
 
         protected override void Configure()
         {
+            // Remove-mesh runs before the Opticore apply pass so hidden polygons are gone before any merge.
             InPhase(BuildPhase.Optimizing)
                 .Run(DiNeOpticoreLoadPass.Instance)
+                .Then.Run(DiNeRemoveMeshPass.Instance)
                 .Then.Run(DiNeOpticoreApplyPass.Instance);
         }
     }
