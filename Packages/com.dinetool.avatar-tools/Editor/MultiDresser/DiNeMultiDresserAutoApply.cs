@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEditor.Animations;
 using VRC.SDK3.Avatars.Components;
@@ -371,12 +372,18 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         if (session == null)
             return;
 
+        // 디스크립터가 살아있으면 원본 FX/메뉴/파라미터로 되돌리고, 파괴됐으면(null)
+        // 더 이상 참조가 없으므로 임시 폴더를 안전하게 지울 수 있다.
+        bool safeToDelete = session.Descriptor == null;
+
         if (session.Descriptor != null)
         {
             SetDescriptorFxController(session.Descriptor, session.OriginalFxController);
             session.Descriptor.expressionsMenu = session.OriginalMenu;
             session.Descriptor.expressionParameters = session.OriginalParameters;
             EditorUtility.SetDirty(session.Descriptor);
+            MarkSceneDirty(session.Descriptor);
+            safeToDelete = true;
         }
 
         foreach (var binding in session.Dressers)
@@ -384,7 +391,10 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             RestoreDresserBinding(binding);
         }
 
-        DeleteTemporaryFolder(session.TempFolderPath);
+        // 복원에 성공했을 때만 임시 폴더를 삭제한다. 복원 못 한 채로 삭제하면
+        // 아바타가 가리키던 임시 에셋이 사라져 FX/메뉴/파라미터가 missing이 된다.
+        if (safeToDelete)
+            DeleteTemporaryFolder(session.TempFolderPath);
     }
 
     private static void RestorePersistedSession(PersistedSession session)
@@ -393,12 +403,15 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             return;
 
         var descriptor = LoadSceneObject<VRCAvatarDescriptor>(session.descriptorId);
+        bool descriptorRestored = false;
         if (descriptor != null)
         {
             SetDescriptorFxController(descriptor, LoadAssetByPath<RuntimeAnimatorController>(session.originalFxControllerPath));
             descriptor.expressionsMenu = LoadAssetByPath<VRCExpressionsMenu>(session.originalMenuPath);
             descriptor.expressionParameters = LoadAssetByPath<VRCExpressionParameters>(session.originalParametersPath);
             EditorUtility.SetDirty(descriptor);
+            MarkSceneDirty(descriptor);
+            descriptorRestored = true;
         }
 
         if (session.dressers != null)
@@ -415,7 +428,11 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             }
         }
 
-        DeleteTemporaryFolder(session.tempFolderPath);
+        // 디스크립터를 찾지 못했다면 그 씬이 닫혀있는 것이다. 이때 임시 폴더를 지우면
+        // 나중에 그 씬을 열었을 때 아바타 참조가 missing이 되므로, 복원에 성공한
+        // 경우에만 임시 폴더를 삭제한다.
+        if (descriptorRestored)
+            DeleteTemporaryFolder(session.tempFolderPath);
     }
 
     private static void RestoreDresserBinding(DresserBinding binding)
@@ -558,15 +575,31 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
 
     private static AnimatorController CloneOrCreateAnimatorController(AnimatorController source, string folder)
     {
+        string tempName = GetTempAssetName(source, "FX");
         if (source != null)
         {
-            var clone = CloneAsset<AnimatorController>(source, folder, "FX_Temp");
+            var clone = CloneAsset<AnimatorController>(source, folder, tempName);
             if (clone != null)
                 return clone;
         }
 
-        string path = AssetDatabase.GenerateUniqueAssetPath($"{folder}/FX_Temp.controller");
+        string path = AssetDatabase.GenerateUniqueAssetPath($"{folder}/{tempName}.controller");
         return AnimatorController.CreateAnimatorControllerAtPath(path);
+    }
+
+    // 더미(임시) 에셋의 이름을 '원본 파일명_DiNe' 형태로 만든다.
+    // 원본이 없으면 fallback(FX/ExpressionsMenu/ExpressionParameters)_DiNe 을 쓴다.
+    private static string GetTempAssetName(UnityEngine.Object source, string fallback)
+    {
+        string baseName = fallback;
+        if (source != null)
+        {
+            string sourcePath = AssetDatabase.GetAssetPath(source);
+            if (!string.IsNullOrEmpty(sourcePath))
+                baseName = Path.GetFileNameWithoutExtension(sourcePath);
+        }
+
+        return $"{baseName}_DiNe";
     }
 
     private static void SanitizeAnimatorController(AnimatorController controller)
@@ -723,31 +756,33 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
 
     private static VRCExpressionsMenu CloneOrCreateExpressionsMenu(VRCExpressionsMenu source, string folder)
     {
+        string tempName = GetTempAssetName(source, "ExpressionsMenu");
         if (source != null)
         {
-            var clone = CloneAsset<VRCExpressionsMenu>(source, folder, "ExpressionsMenu_Temp");
+            var clone = CloneAsset<VRCExpressionsMenu>(source, folder, tempName);
             if (clone != null)
                 return clone;
         }
 
         var menu = ScriptableObject.CreateInstance<VRCExpressionsMenu>();
-        string path = AssetDatabase.GenerateUniqueAssetPath($"{folder}/ExpressionsMenu_Temp.asset");
+        string path = AssetDatabase.GenerateUniqueAssetPath($"{folder}/{tempName}.asset");
         AssetDatabase.CreateAsset(menu, path);
         return menu;
     }
 
     private static VRCExpressionParameters CloneOrCreateExpressionParameters(VRCExpressionParameters source, string folder)
     {
+        string tempName = GetTempAssetName(source, "ExpressionParameters");
         if (source != null)
         {
-            var clone = CloneAsset<VRCExpressionParameters>(source, folder, "ExpressionParameters_Temp");
+            var clone = CloneAsset<VRCExpressionParameters>(source, folder, tempName);
             if (clone != null)
                 return clone;
         }
 
         var parameters = ScriptableObject.CreateInstance<VRCExpressionParameters>();
         parameters.parameters = Array.Empty<VRCExpressionParameters.Parameter>();
-        string path = AssetDatabase.GenerateUniqueAssetPath($"{folder}/ExpressionParameters_Temp.asset");
+        string path = AssetDatabase.GenerateUniqueAssetPath($"{folder}/{tempName}.asset");
         AssetDatabase.CreateAsset(parameters, path);
         return parameters;
     }
@@ -804,6 +839,18 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             return string.Empty;
 
         return GlobalObjectId.GetGlobalObjectIdSlow(target).ToString();
+    }
+
+    // 복원으로 바뀐 씬 오브젝트의 참조가 디스크에 남도록 해당 씬을 dirty 표시한다.
+    // 이렇게 해야 도메인 리로드/씬 재로드 후에도 원본 FX/메뉴/파라미터 할당이 유지된다.
+    private static void MarkSceneDirty(UnityEngine.Object sceneObject)
+    {
+        if (sceneObject is Component component && component != null)
+        {
+            var scene = component.gameObject.scene;
+            if (scene.IsValid())
+                EditorSceneManager.MarkSceneDirty(scene);
+        }
     }
 
     private static void DeleteTemporaryFolder(string folderPath)

@@ -10,6 +10,7 @@ public class DiNeMaterialTool : EditorWindow
     // ══════════════════════════════════════════════════════════════════════════
     private enum ToolMode { PresetApply, Diet, VRAMOptimize }
     private enum Lang { English, Korean, Japanese }
+    private enum ShaderFamily { Unsupported, LilToon, Poiyomi }
 
     private ToolMode _mode = ToolMode.PresetApply;
     private Lang _lang = Lang.Korean;
@@ -58,10 +59,10 @@ public class DiNeMaterialTool : EditorWindow
         // ── Diet ──
         /* 33 */ new[] { "Select Sections",          "섹션 선택",                  "セクション選択"                    },
         /* 34 */ new[] { "Apply Diet",               "다이어트 적용",               "ダイエット適用"                    },
-        /* 35 */ new[] { "LilToon: {0} found / Affected: {1}", "LilToon 마테리얼: {0}개 / 대상: {1}개", "LilToon: {0}個 / 対象: {1}個" },
-        /* 36 */ new[] { "No LilToon materials found.", "LilToon 마테리얼을 찾을 수 없습니다.", "LilToonマテリアルが見つかりません。" },
+        /* 35 */ new[] { "lilToon/Poiyomi: {0} found / Affected: {1}", "lilToon/Poiyomi 마테리얼: {0}개 / 대상: {1}개", "lilToon/Poiyomi: {0}個 / 対象: {1}個" },
+        /* 36 */ new[] { "No lilToon/Poiyomi materials found.", "lilToon/Poiyomi 마테리얼을 찾을 수 없습니다.", "lilToon/Poiyomiマテリアルが見つかりません。" },
         /* 37 */ new[] { "Textures to remove:",      "제거할 텍스쳐:",              "削除するテクスチャ:"               },
-        /* 38 */ new[] { "Scan complete — {0} LilToon material(s), {1} affected", "스캔 완료 — LilToon {0}개, 대상 {1}개", "スキャン完了 — LilToon {0}個, 対象 {1}個" },
+        /* 38 */ new[] { "Scan complete — {0} lilToon/Poiyomi material(s), {1} affected", "스캔 완료 — lilToon/Poiyomi {0}개, 대상 {1}개", "スキャン完了 — lilToon/Poiyomi {0}個, 対象 {1}個" },
         /* 39 */ new[] { "No textures to remove.", "제거할 텍스쳐가 없습니다.", "削除するテクスチャがありません。" },
         /* 40 */ new[] { "[Preview] {1} texture(s) in {0} material(s) would be removed.", "[미리보기] {0}개 마테리얼에서 총 {1}개 텍스쳐가 제거될 예정입니다.", "[プレビュー] {0}個のマテリアルから計 {1}個のテクスチャが削除される予定です。" },
         /* 41 */ new[] { "Apply Diet",               "다이어트 적용",               "ダイエット適用"                    },
@@ -130,40 +131,79 @@ public class DiNeMaterialTool : EditorWindow
     // ══════════════════════════════════════════════════════════════════════════
     private struct SectionDef
     {
-        public string[] Names;    // [EN, KO, JP]
-        public string[] TexProps; // texture property names
-        public string   Toggle;   // float toggle prop to zero when DisableFeature=true (null = none)
-        public string   Keyword;  // explicit shader keyword override (null = computed from Toggle)
-        public SectionDef(string[] n, string[] t, string tog = null, string kw = null) { Names = n; TexProps = t; Toggle = tog; Keyword = kw; }
+        public string[] Names;       // [EN, KO, JP]
+        public string[] LilTex;      // lilToon texture property names
+        public string[] PoiTex;      // Poiyomi texture property names
+        public string[] LilToggles;  // lilToon float toggles to zero (empty = remove textures only)
+        public string[] PoiToggles;  // Poiyomi float toggles to zero
+        public string   LilKeyword;  // explicit lilToon keyword override for the first toggle (null = computed)
+        public bool     IsOutline;   // special outline handling (shader-variant swap for lilToon)
+
+        public SectionDef(string[] n, string[] lilTex, string[] poiTex,
+                          string[] lilTog = null, string[] poiTog = null,
+                          string lilKw = null, bool outline = false)
+        {
+            Names = n; LilTex = lilTex; PoiTex = poiTex;
+            LilToggles = lilTog ?? System.Array.Empty<string>();
+            PoiToggles = poiTog ?? System.Array.Empty<string>();
+            LilKeyword = lilKw; IsOutline = outline;
+        }
+
+        public string[] TexFor(ShaderFamily f)     => (f == ShaderFamily.Poiyomi ? PoiTex : LilTex) ?? System.Array.Empty<string>();
+        public string[] TogglesFor(ShaderFamily f) => f == ShaderFamily.Poiyomi ? PoiToggles : LilToggles;
+        // UI helpers (family-agnostic global section list)
+        public int  UiTexCount   => Mathf.Max(LilTex?.Length ?? 0, PoiTex?.Length ?? 0);
+        public bool HasAnyToggle => IsOutline || LilToggles.Length > 0 || PoiToggles.Length > 0;
     }
 
+    // Per-section property tables. Each section carries both lilToon and Poiyomi names;
+    // detection/removal picks the set matching the material's shader family at runtime.
     private static readonly SectionDef[] SECTIONS = new[]
     {
         new SectionDef(new[]{"Shadow / AO",    "쉐도우 / AO",    "シャドウ / AO"},
             // _ShadowBorderMask = lilToon inspector의 "AO Map" 슬롯 (lilToon AO Map은 Shadow Border Mask에 저장됨)
-            new[]{"_ShadowStrengthMask","_ShadowBorderMask","_ShadowColorTex","_Shadow2ndColorTex","_Shadow3rdColorTex"}),
+            new[]{"_ShadowStrengthMask","_ShadowBorderMask","_ShadowColorTex","_Shadow2ndColorTex","_Shadow3rdColorTex"},
+            new[]{"_ShadowColorTex","_Shadow2ndColorTex","_Shadow3rdColorTex","_ShadowBorderMask","_ShadeMap","_ShadingShadeMap"}),
+            // Shadow/AO is core shading — remove textures only, never auto-disable.
         new SectionDef(new[]{"Shadow Mask",    "쉐도우 마스크",  "シャドウマスク"},
-            new[]{"_ShadowBlurMask"}),
+            new[]{"_ShadowBlurMask"},
+            System.Array.Empty<string>()),
         new SectionDef(new[]{"Outline",      "아웃라인",      "アウトライン"},
             new[]{"_OutlineTex","_OutlineWidthMask","_OutlineVectorTex"},
-            "_UseOutline"),   // lilToon unified: _UseOutline=0 / Outline variant: _OutlineWidth=0
+            new[]{"_OutlineTexture","_OutlineMask"},
+            new[]{"_UseOutline"}, new[]{"_EnableOutlines"}, null, outline: true),
         new SectionDef(new[]{"Normal Map",   "노멀 맵",       "ノーマルマップ"},
             new[]{"_BumpMap","_Bump2ndMap","_DetailNormalMap"},
-            "_UseBump", "_NORMALMAP"),  // Unity standard normal map keyword
+            new[]{"_BumpMap","_DetailNormalMap"},
+            new[]{"_UseBumpMap","_UseBump2ndMap"}, new[]{"_DetailEnabled"}, "_NORMALMAP"),
         new SectionDef(new[]{"MatCap",       "맷캡",          "マットキャップ"},
-            new[]{"_MatCapTex","_MatCapBlendMask","_MatCap2ndTex","_MatCap2ndBlendMask"}, "_UseMatCap"),
+            new[]{"_MatCapTex","_MatCapBlendMask","_MatCap2ndTex","_MatCap2ndBlendMask"},
+            new[]{"_Matcap","_MatcapMask","_Matcap2","_Matcap2Mask","_Matcap3","_Matcap3Mask","_Matcap4","_Matcap4Mask"},
+            new[]{"_UseMatCap","_UseMatCap2nd"}, new[]{"_MatcapEnable","_Matcap2Enable","_Matcap3Enable","_Matcap4Enable"}),
         new SectionDef(new[]{"Rim Light",    "림라이트",      "リムライト"},
-            new[]{"_RimColorTex","_RimShadeMask"}, "_UseRim"),
+            new[]{"_RimColorTex","_RimShadeMask"},
+            new[]{"_RimTex","_RimColorTex","_RimMask","_RimLightMask","_Rim2Tex","_Rim2ColorTex","_Rim2Mask","_Rim2LightMask"},
+            new[]{"_UseRim"}, new[]{"_EnableRimLighting","_EnableRim2Lighting"}),
         new SectionDef(new[]{"Emission",     "에미션",        "エミッション"},
-            new[]{"_EmissionMap","_EmissionBlendMask","_EmissionGradTex","_Emission2ndMap","_Emission2ndBlendMask","_Emission2ndGradTex"}, "_UseEmission"),
+            new[]{"_EmissionMap","_EmissionBlendMask","_EmissionGradTex","_Emission2ndMap","_Emission2ndBlendMask","_Emission2ndGradTex"},
+            new[]{"_EmissionMap","_EmissionMask","_EmissionMap1","_EmissionMask1","_EmissionMap2","_EmissionMask2","_EmissionMap3","_EmissionMask3"},
+            new[]{"_UseEmission","_UseEmission2nd"}, new[]{"_EnableEmission","_EnableEmission1","_EnableEmission2","_EnableEmission3"}),
         new SectionDef(new[]{"Glitter",      "글리터",        "グリッター"},
-            new[]{"_GlitterColorTex","_GlitterShapeTex"}, "_UseGlitter"),
+            new[]{"_GlitterColorTex","_GlitterShapeTex"},
+            new[]{"_GlitterColorMap","_GlitterMask","_GlitterTexture"},
+            new[]{"_UseGlitter"}, new[]{"_GlitterEnable"}),
         new SectionDef(new[]{"Backlight",    "백라이트",      "バックライト"},
-            new[]{"_BacklightColorTex"}, "_UseBacklight"),
+            new[]{"_BacklightColorTex"},
+            new[]{"_BacklightColorTex"},
+            new[]{"_UseBacklight"}, new[]{"_BacklightEnabled"}),
         new SectionDef(new[]{"Parallax",     "시차",          "パララックス"},
-            new[]{"_ParallaxMap"}, "_UseParallax"),
+            new[]{"_ParallaxMap"},
+            new[]{"_ParallaxInternalMap","_ParallaxInternalMapMask"},
+            new[]{"_UseParallax"}, System.Array.Empty<string>()),
         new SectionDef(new[]{"Dissolve",     "디졸브",        "ディゾルブ"},
-            new[]{"_DissolveMask","_DissolveNoiseMask"}, "_UseDissolve"),
+            new[]{"_DissolveMask","_DissolveNoiseMask"},
+            new[]{"_DissolveMask","_DissolveNoiseTexture","_DissolveDetailNoise","_DissolveEdgeGradient","_DissolveToTexture"},
+            new[]{"_UseDissolve"}, new[]{"_EnableDissolve"}),
     };
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -751,9 +791,9 @@ public class DiNeMaterialTool : EditorWindow
             GUILayout.Label(sec.Names[L], _dietEnabled[i] ? labelStyle : subStyle, GUILayout.ExpandWidth(true));
 
             // Prop count hint
-            GUILayout.Label($"({sec.TexProps.Length})", subStyle, GUILayout.Width(28));
+            GUILayout.Label($"({sec.UiTexCount})", subStyle, GUILayout.Width(28));
             // Toggle prop indicator
-            if (sec.Toggle != null)
+            if (sec.HasAnyToggle)
                 GUILayout.Label("⚡", new GUIStyle(EditorStyles.miniLabel)
                     { normal = { textColor = new Color(0.85f, 0.55f, 0.55f) } }, GUILayout.Width(18));
             else
@@ -807,42 +847,52 @@ public class DiNeMaterialTool : EditorWindow
     // 해당 섹션의 기능이 켜져 있는지 판단
     private bool IsSectionFeatureOn(Material mat, int si)
     {
+        var fam = GetFamily(mat);
+        if (fam == ShaderFamily.Unsupported) return false;
         var sec = SECTIONS[si];
-        string tog = sec.Toggle;
-        if (tog == null) return false;
 
-        // 아웃라인: unified(_UseOutline=1) 또는 Outline 변형 쉐이더 판단
-        if (tog == "_UseOutline")
+        if (sec.IsOutline) return IsOutlineFeatureOn(mat, fam);
+
+        string[] toggles = sec.TogglesFor(fam);
+        // 토글이 정의되지 않은 섹션(쉐도우/AO 등)은 텍스쳐 제거 전용 → 끌 기능 없음
+        if (toggles.Length == 0) return false;
+
+        bool anyTogglePresent = false;
+        foreach (string tog in toggles)
         {
-            bool isOutlineVariant = IsOutlineVariantShader(mat.shader);
-            if (isOutlineVariant)
-            {
-                // 변형 쉐이더 자체가 "Outline"을 포함 → 쉐이더가 남아있으면 켜진 것
-                // (Diet 적용 시 쉐이더가 비아웃라인으로 교체되므로, 교체 후에는 여기 안 들어옴)
-                if (mat.HasProperty("_UseOutline"))
-                    return mat.GetFloat("_UseOutline") > 0.5f;
-                if (mat.HasProperty("_OutlineWidth"))
-                    return mat.GetFloat("_OutlineWidth") > 0.0001f;
-                return true;
-            }
-            // Unified 쉐이더: _UseOutline 토글 기준
-            if (mat.HasProperty("_UseOutline"))
-                return mat.GetFloat("_UseOutline") > 0.5f;
-            return false;
+            if (!mat.HasProperty(tog)) continue;
+            anyTogglePresent = true;
+            if (mat.GetFloat(tog) > 0.5f) return true;
+        }
+        if (anyTogglePresent) return false;
+
+        // 토글 프로퍼티가 머티리얼에 없는 경우: 섹션 텍스쳐가 하나라도 할당돼 있으면 켜진 것으로 간주
+        foreach (string prop in sec.TexFor(fam))
+            if (mat.HasProperty(prop) && mat.GetTexture(prop) != null) return true;
+        return false;
+    }
+
+    // 아웃라인 기능 ON 판단 (lilToon은 변형 쉐이더, Poiyomi는 _EnableOutlines 토글 기반)
+    private bool IsOutlineFeatureOn(Material mat, ShaderFamily fam)
+    {
+        if (fam == ShaderFamily.Poiyomi)
+        {
+            if (mat.HasProperty("_EnableOutlines"))
+                return mat.GetFloat("_EnableOutlines") > 0.5f;
+            // 잠금(최적화)된 변형 쉐이더는 이름에 "Outline"을 포함
+            return IsOutlineVariantShader(mat.shader);
         }
 
-        // 메인 토글 체크
-        if (mat.HasProperty(tog) && mat.GetFloat(tog) > 0.5f) return true;
-
-        // 2nd 변형 토글 체크 (_UseMatCap → _UseMatCap2nd 등)
-        string tog2 = tog + "2nd";
-        if (mat.HasProperty(tog2) && mat.GetFloat(tog2) > 0.5f) return true;
-
-        // 토글이 없는 경우(_UseBump 등): 섹션 텍스쳐가 하나라도 할당돼 있으면 켜진 것으로 간주
-        if (!mat.HasProperty(tog))
-            foreach (string prop in sec.TexProps)
-                if (mat.HasProperty(prop) && mat.GetTexture(prop) != null) return true;
-
+        // lilToon: Outline 변형 쉐이더가 할당돼 있으면 아웃라인 패스가 활성 상태.
+        // lilToon은 변형 쉐이더에서도 _UseOutline을 0으로 두는 경우가 많으므로 그 값만 믿지 않는다.
+        if (IsOutlineVariantShader(mat.shader))
+        {
+            if (mat.HasProperty("_UseOutline") && mat.GetFloat("_UseOutline") > 0.5f) return true;
+            if (mat.HasProperty("_OutlineWidth")) return mat.GetFloat("_OutlineWidth") > 0.0001f;
+            return true;
+        }
+        // Unified 쉐이더: _UseOutline 토글 기준
+        if (mat.HasProperty("_UseOutline")) return mat.GetFloat("_UseOutline") > 0.5f;
         return false;
     }
 
@@ -1145,7 +1195,7 @@ public class DiNeMaterialTool : EditorWindow
             foreach (var mat in r.sharedMaterials)
             {
                 if (mat == null || !seen.Add(mat.GetInstanceID())) continue;
-                if (!IsLilToon(mat)) continue;
+                if (!IsSupported(mat)) continue;
                 var info = new MaterialInfo
                 {
                     Material   = mat,
@@ -1174,12 +1224,13 @@ public class DiNeMaterialTool : EditorWindow
 
     private void CollectDietProperties(Material mat, MaterialInfo info)
     {
+        var fam = GetFamily(mat);
         for (int si = 0; si < SECTIONS.Length; si++)
         {
             if (!_dietEnabled[si]) continue;
             var sec = SECTIONS[si];
             var res = new DietSectionResult { SectionIndex = si };
-            foreach (string prop in sec.TexProps)
+            foreach (string prop in sec.TexFor(fam))
             {
                 if (!mat.HasProperty(prop)) continue;
                 var tex = mat.GetTexture(prop);
@@ -1230,53 +1281,32 @@ public class DiNeMaterialTool : EditorWindow
             // 기능 끄기
             if (disableFeatures)
             {
+                var fam = GetFamily(info.Material);
                 for (int si = 0; si < SECTIONS.Length; si++)
                 {
                     if (!_dietEnabled[si]) continue;
                     if (!IsSectionFeatureOn(info.Material, si)) continue;
 
-                    string tog = SECTIONS[si].Toggle;
-                    // ApplyDiet 함수 안의 if (disableFeatures) 내부
-                    if (tog == "_UseOutline")
+                    var sec = SECTIONS[si];
+                    if (sec.IsOutline)
                     {
-                        bool isVariant = IsOutlineVariantShader(info.Material.shader);
-                        if (isVariant)
-                        {
-                            // 변형 쉐이더: 쉐이더 이름에서 " Outline" 제거 → 비아웃라인 쉐이더로 교체
-                            Shader baseShader = FindBaseOutlineShader(info.Material.shader);
-                            if (baseShader != null)
-                            {
-                                info.Material.shader = baseShader;
-                            }
-                            else
-                            {
-                                // 대응 쉐이더를 찾지 못한 경우 fallback: 두께 0
-                                if (info.Material.HasProperty("_OutlineWidth"))
-                                    info.Material.SetFloat("_OutlineWidth", 0f);
-                            }
-                        }
-                        if (isVariant || info.Material.HasProperty("_UseOutline") || info.Material.HasProperty("_OutlineWidth") || info.Material.HasProperty("_OutlineEnable"))
-                        {
-                            DisableOutlineFeature(info.Material);
-                        }
+                        DisableOutline(info.Material, fam);
+                        continue;
                     }
-                    else if (tog != null)
+
+                    string[] toggles = sec.TogglesFor(fam);
+                    for (int ti = 0; ti < toggles.Length; ti++)
                     {
-                        var sec2 = SECTIONS[si];
-                        // 메인 토글
-                        if (info.Material.HasProperty(tog))
+                        string tog = toggles[ti];
+                        if (!info.Material.HasProperty(tog)) continue;
+                        info.Material.SetFloat(tog, 0f);
+                        // lilToon: 토글에서 파생된 키워드도 비활성화 (Poiyomi는 잠금 시 자동 재계산)
+                        if (fam == ShaderFamily.LilToon)
                         {
-                            info.Material.SetFloat(tog, 0f);
-                            string kw = sec2.Keyword ?? tog.Replace("_Use", "").ToUpper();
+                            string kw = (ti == 0 && sec.LilKeyword != null)
+                                ? sec.LilKeyword
+                                : tog.Replace("_Use", "").ToUpper();
                             if (info.Material.IsKeywordEnabled(kw)) info.Material.DisableKeyword(kw);
-                        }
-                        // 2nd 변형 토글 (_UseMatCap2nd, _UseBump2nd 등)
-                        string tog2 = tog + "2nd";
-                        if (info.Material.HasProperty(tog2))
-                        {
-                            info.Material.SetFloat(tog2, 0f);
-                            string kw2 = tog2.Replace("_Use", "").ToUpper();
-                            if (info.Material.IsKeywordEnabled(kw2)) info.Material.DisableKeyword(kw2);
                         }
                     }
                 }
@@ -1824,6 +1854,18 @@ public class DiNeMaterialTool : EditorWindow
         return sn.Contains("liltoon") || sn.Contains("lil_toon");
     }
 
+    // 다이어트/VRAM 대상이 되는 쉐이더 계열 판정 (lilToon / Poiyomi Toon)
+    private static ShaderFamily GetFamily(Material mat)
+    {
+        if (mat == null || mat.shader == null) return ShaderFamily.Unsupported;
+        string sn = mat.shader.name.ToLower();
+        if (sn.Contains("liltoon") || sn.Contains("lil_toon")) return ShaderFamily.LilToon;
+        if (sn.Contains("poiyomi")) return ShaderFamily.Poiyomi;
+        return ShaderFamily.Unsupported;
+    }
+
+    private static bool IsSupported(Material mat) => GetFamily(mat) != ShaderFamily.Unsupported;
+
     private static bool IsOutlineVariantShader(Shader shader)
     {
         return shader != null && shader.name.Contains("Outline");
@@ -1885,6 +1927,32 @@ public class DiNeMaterialTool : EditorWindow
 
         mat.DisableKeyword("_OUTLINE");
         mat.DisableKeyword("OUTLINE");
+    }
+
+    // 아웃라인 기능 비활성화 (계열별 처리)
+    private static void DisableOutline(Material mat, ShaderFamily fam)
+    {
+        if (mat == null) return;
+
+        if (fam == ShaderFamily.Poiyomi)
+        {
+            if (mat.HasProperty("_EnableOutlines")) mat.SetFloat("_EnableOutlines", 0f);
+            if (mat.HasProperty("_LineWidth"))      mat.SetFloat("_LineWidth", 0f);
+            if (mat.HasProperty("_OutlineWidth"))   mat.SetFloat("_OutlineWidth", 0f);
+            mat.DisableKeyword("POI_OUTLINE");
+            return;
+        }
+
+        // lilToon: Outline 변형 쉐이더면 비아웃라인 쉐이더로 교체 후 토글/키워드 정리
+        if (IsOutlineVariantShader(mat.shader))
+        {
+            Shader baseShader = FindBaseOutlineShader(mat.shader);
+            if (baseShader != null)
+                mat.shader = baseShader;
+            else if (mat.HasProperty("_OutlineWidth"))
+                mat.SetFloat("_OutlineWidth", 0f); // 대응 쉐이더를 못 찾으면 두께 0 fallback
+        }
+        DisableOutlineFeature(mat);
     }
 
     private void SetStatus(string msg, bool warn) { _status = msg; _statusWarn = warn; }
