@@ -50,7 +50,10 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         { "EyeHeightAsMeters", AnimatorControllerParameterType.Float },
         { "EyeHeightAsPercent", AnimatorControllerParameterType.Float },
     };
-    private static bool builderEventsHooked;
+    // 현재 후킹된 SDK 빌더 인스턴스. 단순 bool 가드가 아니라 인스턴스를 추적한다.
+    // SDK 패널을 닫았다 다시 열면 빌더가 새로 생성되는데, bool 가드는 한 번 true가 되면
+    // 새 빌더를 다시 후킹하지 못해 2번째 이후 업로드에서 종료 콜백이 오지 않는다(복원 누락).
+    private static IVRCSdkAvatarBuilderApi hookedBuilder;
 
     // 빌드/업로드 진행 여부. 플레이 모드 진입 시 발생하는 도메인 리로드에도 살아남도록
     // SessionState에 저장한다. 빌드 중에는 플레이 모드 종료가 더미를 지우지 못하게 막는다.
@@ -187,17 +190,54 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
 
     private static void EnsureBuilderHooks()
     {
-        if (builderEventsHooked)
-            return;
-
         if (!VRCSdkControlPanel.TryGetBuilder<IVRCSdkAvatarBuilderApi>(out var builder) || builder == null)
             return;
+
+        // 이미 같은 빌더 인스턴스에 후킹돼 있으면 중복 후킹 방지.
+        if (ReferenceEquals(builder, hookedBuilder))
+            return;
+
+        // 빌더가 새로 생성됐다면(패널 재오픈 등) 죽었을 수 있는 이전 빌더의 후킹을 정리한 뒤
+        // 현재 빌더에 다시 후킹한다. 이렇게 해야 매 업로드마다 종료 콜백이 확실히 도착해
+        // 임시(__Temp) 에셋이 원본으로 복원된다.
+        if (hookedBuilder != null)
+        {
+            try
+            {
+                hookedBuilder.OnSdkBuildFinish -= OnBuildEnded;
+                hookedBuilder.OnSdkBuildError -= OnBuildEnded;
+                hookedBuilder.OnSdkUploadFinish -= OnBuildEnded;
+                hookedBuilder.OnSdkUploadError -= OnBuildEnded;
+            }
+            catch
+            {
+                // 이전 빌더가 이미 파괴된 경우 등은 무시한다.
+            }
+        }
 
         builder.OnSdkBuildFinish += OnBuildEnded;
         builder.OnSdkBuildError += OnBuildEnded;
         builder.OnSdkUploadFinish += OnBuildEnded;
         builder.OnSdkUploadError += OnBuildEnded;
-        builderEventsHooked = true;
+        hookedBuilder = builder;
+    }
+
+    // 인스펙터의 재배정(↺) 버튼 등에서 호출한다. 빌더 종료 콜백이 누락되어 임시(__Temp)
+    // 에셋이 아바타에 그대로 남은 경우, 영속 세션에 저장된 '진짜 원본'으로 강제 복원한다.
+    // 복원할 세션이 없으면 아무 일도 하지 않으므로 항상 호출해도 안전하다.
+    public static void ForceRestoreNow(string reason)
+    {
+        // 빌드가 비정상 종료되어 플래그가 묶여 있으면(이 상태가 복원을 막는다) 해제한다.
+        BuildInProgress = false;
+
+        try
+        {
+            RestoreAllSessions(reason);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[DiNe] Multi Dresser 수동 복원 중 예외: {e.Message}\n{e.StackTrace}");
+        }
     }
 
     private static void OnBuildEnded(object sender, string _)

@@ -231,6 +231,9 @@ public class DiNeMultiSupporter : Editor
         if (GUILayout.Button(new GUIContent("↺", lang["refreshTooltip"]), GUILayout.Width(30), GUILayout.Height(20)))
         {
             Undo.RecordObject(gen, "Refresh Multi Dresser Bindings");
+            // 임시(__Temp) 에셋이 아바타에 남아있으면 먼저 원본으로 복원한 뒤 재배정한다.
+            // (복원 없이 재배정하면 디스크립터의 임시 값을 그대로 다시 가져와 복구가 안 된다)
+            DiNeMultiDresserAutoApply.ForceRestoreNow("멀티 드레서 재배정 버튼");
             gen.ReassignFromAvatar();   // 루트/FX/메뉴/파라미터 전부 아바타 기준으로 재배정
             serializedObject.Update();
             GUI.FocusControl(null);
@@ -253,6 +256,8 @@ public class DiNeMultiSupporter : Editor
             if (GUILayout.Button("아바타 기준으로 FX/메뉴 재배정 (↺)", GUILayout.Height(24)))
             {
                 Undo.RecordObject(gen, "Refresh Multi Dresser Bindings");
+                // 임시(__Temp) 에셋이 남아있으면 먼저 원본으로 복원한 뒤 재배정한다.
+                DiNeMultiDresserAutoApply.ForceRestoreNow("멀티 드레서 재배정 버튼");
                 gen.ReassignFromAvatar();
                 serializedObject.Update();
                 GUI.FocusControl(null);
