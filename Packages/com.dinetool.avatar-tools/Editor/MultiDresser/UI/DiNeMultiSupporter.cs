@@ -278,7 +278,19 @@ public class DiNeMultiSupporter : Editor
         
         EditorGUILayout.Space(5);
         EditorGUILayout.LabelField(lang["shapeKeyTargets"], EditorStyles.boldLabel);
-        DrawGlobalShapeKeyTargets(shapeKeyTargets, lang);
+        if (DrawGlobalShapeKeyTargets(shapeKeyTargets, lang))
+        {
+            serializedObject.ApplyModifiedProperties();
+
+            foreach (var layer in gen.layers)
+                SyncShapeKeyData(gen, layer);
+
+            EditorUtility.SetDirty(gen);
+            serializedObject.Update();
+
+            if (previewLayerIndex >= 0 && previewLayerIndex < gen.layers.Count)
+                RefreshPreview(gen, gen.layers[previewLayerIndex]);
+        }
         EditorGUILayout.EndVertical();
 
         EditorGUILayout.Space(6);
@@ -1055,16 +1067,24 @@ public class DiNeMultiSupporter : Editor
         }
     }
 
-    private void DrawGlobalShapeKeyTargets(SerializedProperty shapeKeyTargets, Dictionary<string, string> lang)
+    private bool DrawGlobalShapeKeyTargets(SerializedProperty shapeKeyTargets, Dictionary<string, string> lang)
     {
+        bool changed = false;
+
         for (int i = 0; i < shapeKeyTargets.arraySize; i++)
         {
             EditorGUILayout.BeginHorizontal();
             SerializedProperty prop = shapeKeyTargets.GetArrayElementAtIndex(i);
+
+            EditorGUI.BeginChangeCheck();
             prop.objectReferenceValue = EditorGUILayout.ObjectField(prop.objectReferenceValue, typeof(GameObject), true);
+            if (EditorGUI.EndChangeCheck())
+                changed = true;
+
             if (GUILayout.Button("-", GUILayout.Width(25)))
             {
                 shapeKeyTargets.DeleteArrayElementAtIndex(i);
+                changed = true;
                 break;
             }
             EditorGUILayout.EndHorizontal();
@@ -1085,9 +1105,12 @@ public class DiNeMultiSupporter : Editor
                     int idx = shapeKeyTargets.arraySize;
                     shapeKeyTargets.InsertArrayElementAtIndex(idx);
                     shapeKeyTargets.GetArrayElementAtIndex(idx).objectReferenceValue = o;
+                    changed = true;
                  }
             }
         });
+
+        return changed;
     }
 
     private void SyncShapeKeyData(DiNeMultiDresser gen, DiNeMultiDresser.DresserLayer layerData)
@@ -1100,21 +1123,38 @@ public class DiNeMultiSupporter : Editor
             while (buttonState.meshShapeKeys.Count < gen.shapeKeyTargets.Count)
                 buttonState.meshShapeKeys.Add(new DiNeMultiDresser.ShapeKeyList());
 
+            while (buttonState.meshShapeKeys.Count > gen.shapeKeyTargets.Count)
+                buttonState.meshShapeKeys.RemoveAt(buttonState.meshShapeKeys.Count - 1);
+
             for (int m = 0; m < gen.shapeKeyTargets.Count; m++)
             {
+                var savedList = buttonState.meshShapeKeys[m].shapeKeys;
                 var meshObj = gen.shapeKeyTargets[m];
-                if (meshObj == null) continue;
+                if (meshObj == null)
+                {
+                    savedList.Clear();
+                    continue;
+                }
                 
                 var skinned = meshObj.GetComponent<SkinnedMeshRenderer>();
-                if (skinned == null || skinned.sharedMesh == null) continue;
+                if (skinned == null || skinned.sharedMesh == null)
+                {
+                    savedList.Clear();
+                    continue;
+                }
 
-                var savedList = buttonState.meshShapeKeys[m].shapeKeys;
+                var realNames = new HashSet<string>();
+
                 for(int s=0; s<skinned.sharedMesh.blendShapeCount; s++) 
                 {
                     string realName = skinned.sharedMesh.GetBlendShapeName(s);
+                    realNames.Add(realName);
+
                     if (!savedList.Exists(x => x.name == realName))
                         savedList.Add(new DiNeMultiDresser.ShapeKeyState { name = realName, value = 0 });
                 }
+
+                savedList.RemoveAll(x => !realNames.Contains(x.name));
             }
         }
     }
