@@ -399,9 +399,9 @@ namespace DiNeTool.AssetCleaner
             }
 
             // ExpandHeight: 툴바와 삭제바 사이의 남은 세로 공간을 트리 스크롤이 모두 차지
-            // (창이 작아도 최소 높이를 충분히 줘서 리스트가 답답하지 않게)
+            // 창이 작을 때 삭제 버튼이 화면 아래로 밀리지 않도록 최소 높이는 낮게 둔다.
             _treeScroll = EditorGUILayout.BeginScrollView(_treeScroll, "box",
-                GUILayout.ExpandHeight(true), GUILayout.MinHeight(360));
+                GUILayout.ExpandHeight(true), GUILayout.MinHeight(260));
             foreach (var folder in _root.Folders.Values) DrawFolder(folder, 0);
             foreach (var file in _root.Files) DrawFile(file, 0);
             EditorGUILayout.EndScrollView();
