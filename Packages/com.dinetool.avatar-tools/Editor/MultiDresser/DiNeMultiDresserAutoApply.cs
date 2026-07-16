@@ -268,7 +268,12 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             .Where(dresser => dresser != null && dresser.gameObject.activeInHierarchy)
             .ToArray();
 
-        if (dressers.Length == 0)
+        var smartToggles = UnityEngine.Object.FindObjectsOfType<DiNeSmartToggle>(true)
+            .Where(toggle => toggle != null && toggle.enabled &&
+                toggle.gameObject.scene.IsValid() && !EditorUtility.IsPersistent(toggle))
+            .ToArray();
+
+        if (dressers.Length == 0 && smartToggles.Length == 0)
             return;
 
         var groups = new Dictionary<VRCAvatarDescriptor, List<DiNeMultiDresser>>();
@@ -292,9 +297,34 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             groupedDressers.Add(dresser);
         }
 
-        foreach (var pair in groups)
+        var toggleGroups = new Dictionary<VRCAvatarDescriptor, List<DiNeSmartToggle>>();
+        foreach (var smartToggle in smartToggles)
         {
-            ApplyTemporarySession(pair.Key, pair.Value);
+            var descriptor = smartToggle.GetComponentInParent<VRCAvatarDescriptor>();
+            if (descriptor == null)
+            {
+                Debug.LogWarning($"[DiNe] Skipping Smart Toggle '{smartToggle.name}' because no VRCAvatarDescriptor was found.");
+                continue;
+            }
+
+            if (!toggleGroups.TryGetValue(descriptor, out var groupedToggles))
+            {
+                groupedToggles = new List<DiNeSmartToggle>();
+                toggleGroups.Add(descriptor, groupedToggles);
+            }
+            groupedToggles.Add(smartToggle);
+        }
+
+        var descriptors = new HashSet<VRCAvatarDescriptor>(groups.Keys);
+        descriptors.UnionWith(toggleGroups.Keys);
+        foreach (var descriptor in descriptors)
+        {
+            groups.TryGetValue(descriptor, out var groupedDressers);
+            toggleGroups.TryGetValue(descriptor, out var groupedToggles);
+            ApplyTemporarySession(
+                descriptor,
+                groupedDressers ?? new List<DiNeMultiDresser>(),
+                groupedToggles ?? new List<DiNeSmartToggle>());
         }
     }
 
@@ -311,22 +341,29 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         var dressers = avatarGameObject.GetComponentsInChildren<DiNeMultiDresser>(true)
             .Where(dresser => dresser != null && dresser.enabled)
             .ToList();
-        if (dressers.Count == 0)
+        var smartToggles = avatarGameObject.GetComponentsInChildren<DiNeSmartToggle>(true)
+            .Where(toggle => toggle != null && toggle.enabled)
+            .ToList();
+        if (dressers.Count == 0 && smartToggles.Count == 0)
             return;
 
-        Debug.Log($"[DiNe] Applying Multi Dresser to build avatar '{avatarGameObject.name}' with {dressers.Count} dresser(s).");
+        Debug.Log($"[DiNe] Applying avatar tools to '{avatarGameObject.name}': {dressers.Count} dresser(s), {smartToggles.Count} smart toggle(s).");
 
         foreach (var dresser in dressers)
         {
             dresser.TryAutoAssignFXController();
         }
 
-        ApplyTemporarySession(descriptor, dressers);
+        ApplyTemporarySession(descriptor, dressers, smartToggles);
     }
 
-    private static void ApplyTemporarySession(VRCAvatarDescriptor descriptor, List<DiNeMultiDresser> dressers)
+    private static void ApplyTemporarySession(
+        VRCAvatarDescriptor descriptor,
+        List<DiNeMultiDresser> dressers,
+        List<DiNeSmartToggle> smartToggles)
     {
-        if (descriptor == null || dressers == null || dressers.Count == 0)
+        if (descriptor == null || dressers == null || smartToggles == null ||
+            (dressers.Count == 0 && smartToggles.Count == 0))
             return;
 
         // 플레이 모드 진입 등으로 도메인이 리로드되면 in-memory ActiveSessions가 비워진다.
@@ -365,6 +402,17 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             var binding = session.Dressers[i];
             bool clearExistingGeneratedData = i == 0;
             GenerateDresser(binding.Dresser, session.TempFolderPath, clearExistingGeneratedData);
+        }
+
+        if (smartToggles.Count > 0)
+        {
+            DiNeSmartToggleGenerator.ApplyToTemporaryAvatar(
+                descriptor,
+                session.TempAnimatorController,
+                session.TempExpressionsMenu,
+                session.TempExpressionParameters,
+                smartToggles,
+                session.TempFolderPath + "/SmartToggle");
         }
     }
 

@@ -72,7 +72,22 @@ namespace DiNeScreenSaver
             /* 26 */ new[] { "Top",    "위",     "上"  },
             /* 27 */ new[] { "Bottom", "아래",   "下"  },
             /* 28 */ new[] { "Reset View", "뷰 초기화", "ビュー初期化" },
-            /* 29 */ new[] { "Create Copy", "복사본 생성", "コピーを生成" }
+            /* 29 */ new[] { "Create Copy", "복사본 생성", "コピーを生成" },
+            /* 30 */ new[] { "Visibility Effects", "가시성 효과", "視認性エフェクト" },
+            /* 31 */ new[] { "Outline", "외곽선", "アウトライン" },
+            /* 32 */ new[] { "Outline Color", "외곽선 색상", "アウトライン色" },
+            /* 33 */ new[] { "Thickness", "두께", "太さ" },
+            /* 34 */ new[] { "Forbidden Overlay", "금지 아이콘 오버레이", "禁止アイコンオーバーレイ" },
+            /* 35 */ new[] { "Overlay Size", "금지 아이콘 크기", "禁止アイコンサイズ" },
+            /* 36 */ new[] { "Opacity", "불투명도", "不透明度" },
+            /* 37 */ new[] { "The existing icon will be overwritten.", "기존 아이콘 파일을 덮어씁니다.", "既存のアイコンを上書きします。" },
+            /* 38 */ new[] { "Overwrite Icon", "기존 아이콘 덮어쓰기", "既存アイコンを上書き" },
+            /* 39 */ new[] { "Send Behind Object", "오브젝트 뒤로 보내기", "オブジェクトの背面へ" },
+            /* 40 */ new[] { "Bring In Front", "오브젝트 앞으로 가져오기", "オブジェクトの前面へ" },
+            /* 41 */ new[] { "Position", "배치", "配置" },
+            /* 42 */ new[] { "Front", "앞", "前" },
+            /* 43 */ new[] { "Behind", "뒤", "後" },
+            /* 44 */ new[] { "Size", "크기", "サイズ" }
         };
         private static readonly string[][] BG_TEXT =
         {
@@ -111,19 +126,35 @@ namespace DiNeScreenSaver
         // ══════════════════════════════════════════════════════════════════════
         private GameObject _iconTarget;
         private GameObject _prevIconTarget;
-        private int        _iconSizeIdx = 3; // default 256
-        private static readonly int[] ICON_SIZES = { 32, 64, 128, 256, 512 };
-        private static readonly string[] ICON_SIZE_LABELS = { "32", "64", "128", "256", "512" };
+        private bool       _iconOutlineEnabled = true;
+        private Color      _iconOutlineColor = new Color(0.03f, 0.03f, 0.03f, 1f);
+        private int        _iconOutlineSize = 4;
+        private bool       _iconForbiddenOverlay;
+        private float      _iconForbiddenOpacity = 1f;
+        private float      _iconForbiddenScale = 0.85f;
+        private bool       _iconForbiddenBehindObject = true;
+        private readonly List<GameObject> _iconLinkedObjects = new List<GameObject>();
+        private string     _iconOverwriteAssetPath;
+        private DiNeMultiDresser _iconDresser;
+        private int        _iconDresserLayerIndex = -1;
+        private int        _iconDresserButtonIndex = -1;
+        private DiNeSmartToggle _iconSmartToggle;
 
         // Preview
         private Texture2D _previewTex;
         private bool      _previewDirty;
+        private Vector2   _iconScroll;
+        private GameObject _previewRootCache;
+        private GameObject _previewCameraObjectCache;
+        private Camera _previewCameraCache;
+        private RenderTexture _previewRenderTextureCache;
+        private Bounds _previewBoundsCache;
+        private int _previewCaptureLayer;
         private Vector2   _previewEuler = new Vector2(0f, 180f);  // pitch, yaw
         private Vector2   _previewPan   = Vector2.zero;            // pan offset
         private float     _zoomFactor   = 1f;
         private Rect      _previewRect;
         private const int PREVIEW_RENDER_SIZE = 256;
-        private const int CAPTURE_LAYER       = 21;
 
         // 줌 프리셋
         private static readonly float[]  ZOOM_PRESETS       = { 0.5f, 0.75f, 1f, 1.5f, 2f, 3f };
@@ -156,12 +187,108 @@ namespace DiNeScreenSaver
         // ══════════════════════════════════════════════════════════════════════
         //  Lifecycle & Context Menu
         // ══════════════════════════════════════════════════════════════════════
-        [MenuItem("DiNe/EX/Screen Saver", false, 101)]
+        [MenuItem("DiNe/Screen Saver", false, 3)]
         public static void ShowWindow()
         {
-            var w = GetWindow<DiNeScreenSaver>();
+            bool created;
+            var w = GetReusableWindow(out created);
             w.minSize  = new Vector2(175, 150);
-            w.position = new Rect(w.position.x, w.position.y, 420, 620);
+            if (created)
+                w.position = new Rect(w.position.x, w.position.y, 420, 620);
+            w.Show();
+            w.Focus();
+        }
+
+        private static DiNeScreenSaver GetReusableWindow(out bool created)
+        {
+            var openWindows = Resources.FindObjectsOfTypeAll<DiNeScreenSaver>();
+            if (openWindows != null && openWindows.Length > 0 && openWindows[0] != null)
+            {
+                created = false;
+                return openWindows[0];
+            }
+
+            created = true;
+            return GetWindow<DiNeScreenSaver>();
+        }
+
+        public static void OpenIconEditor(
+            GameObject target,
+            Texture2D existingIcon,
+            DiNeMultiDresser owner,
+            int layerIndex,
+            int buttonIndex,
+            IEnumerable<GameObject> linkedObjects)
+        {
+            bool created;
+            var window = GetReusableWindow(out created);
+            window.ReleaseIconPreviewResources();
+            window.minSize = new Vector2(420, 620);
+            if (created)
+                window.position = new Rect(window.position.x, window.position.y, 420, 720);
+            window._mode = ToolMode.Icon;
+            window._iconTarget = target;
+            window._prevIconTarget = target;
+            window._previewEuler = new Vector2(0f, 180f);
+            window._previewPan = Vector2.zero;
+            window._zoomFactor = 1f;
+            window._previewDirty = true;
+            window._iconOverwriteAssetPath = existingIcon != null ? AssetDatabase.GetAssetPath(existingIcon) : null;
+            if (!DiNeIconMaker.CanOverwriteAsset(window._iconOverwriteAssetPath))
+                window._iconOverwriteAssetPath = null;
+
+            window._iconDresser = owner;
+            window._iconDresserLayerIndex = layerIndex;
+            window._iconDresserButtonIndex = buttonIndex;
+            window._iconSmartToggle = null;
+            window._iconLinkedObjects.Clear();
+            if (linkedObjects != null)
+                window._iconLinkedObjects.AddRange(linkedObjects);
+
+            window.Show();
+            window.Focus();
+            window.Repaint();
+        }
+
+        public static void OpenIconEditor(DiNeSmartToggle smartToggle)
+        {
+            if (smartToggle == null) return;
+            smartToggle.EnsureDefaults();
+
+            bool created;
+            var window = GetReusableWindow(out created);
+            window.ReleaseIconPreviewResources();
+            window.minSize = new Vector2(420, 620);
+            if (created)
+                window.position = new Rect(window.position.x, window.position.y, 420, 720);
+            window._mode = ToolMode.Icon;
+            window._iconTarget = smartToggle.gameObject;
+            window._prevIconTarget = smartToggle.gameObject;
+            window._previewEuler = smartToggle.IconEuler;
+            window._previewPan = smartToggle.IconPan;
+            window._zoomFactor = smartToggle.IconZoom;
+            window._iconOutlineEnabled = smartToggle.IconOutline;
+            window._iconOutlineColor = smartToggle.IconOutlineColor;
+            window._iconOutlineSize = smartToggle.IconOutlineSize;
+            window._iconForbiddenOverlay = smartToggle.IconForbiddenOverlay;
+            window._iconForbiddenOpacity = smartToggle.IconForbiddenOpacity;
+            window._iconForbiddenScale = smartToggle.IconForbiddenScale;
+            window._iconForbiddenBehindObject = smartToggle.IconForbiddenBehindObject;
+            window._previewDirty = true;
+            window._iconOverwriteAssetPath = smartToggle.Icon != null
+                ? AssetDatabase.GetAssetPath(smartToggle.Icon)
+                : null;
+            if (!DiNeIconMaker.CanOverwriteAsset(window._iconOverwriteAssetPath))
+                window._iconOverwriteAssetPath = null;
+
+            window._iconDresser = null;
+            window._iconDresserLayerIndex = -1;
+            window._iconDresserButtonIndex = -1;
+            window._iconSmartToggle = smartToggle;
+            window._iconLinkedObjects.Clear();
+            window.Show();
+            window.Focus();
+            window.Repaint();
         }
 
         public static void GenerateIconFromHierarchy(MenuCommand menuCommand)
@@ -173,14 +300,8 @@ namespace DiNeScreenSaver
                 return;
             }
 
-            int defaultSize = 256;
-            if (EditorPrefs.HasKey("DiNeScreenSaver_IconSize"))
-            {
-                int sizeIdx = EditorPrefs.GetInt("DiNeScreenSaver_IconSize", 3);
-                defaultSize = ICON_SIZES[sizeIdx];
-            }
-
-            GenerateIconStatic(target, new Vector2(0f, 180f), Vector2.zero, 1f, defaultSize, false);
+            GenerateIconStatic(target, null, new Vector2(0f, 180f), Vector2.zero, 1f, 256, false,
+                new DiNeIconMaker.Settings { outlineEnabled = false }, null);
         }
 
         void OnEnable()
@@ -195,7 +316,7 @@ namespace DiNeScreenSaver
         void OnDisable()
         {
             SaveSettings();
-            if (_previewTex != null) DestroyImmediate(_previewTex);
+            ReleaseIconPreviewResources();
         }
 
         void OnFocus()
@@ -246,14 +367,23 @@ namespace DiNeScreenSaver
             GUILayout.Space(6);
 
             // ── 모드 선택 ──
+            ToolMode previousMode = _mode;
             _mode = (ToolMode)DrawToolbar((int)_mode, new[] { T(14), T(15) }, 32);
+            if (previousMode == ToolMode.Icon && _mode != ToolMode.Icon)
+                ReleaseIconPreviewResources();
+            else if (previousMode != ToolMode.Icon && _mode == ToolMode.Icon)
+                _previewDirty = true;
 
             GUILayout.Space(10);
 
             if (_mode == ToolMode.Screenshot)
                 DrawScreenshotMode();
             else
+            {
+                _iconScroll = EditorGUILayout.BeginScrollView(_iconScroll);
                 DrawIconMode();
+                EditorGUILayout.EndScrollView();
+            }
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -351,11 +481,17 @@ namespace DiNeScreenSaver
             // 타겟 변경 시 프리뷰 갱신
             if (_iconTarget != _prevIconTarget)
             {
+                ReleaseIconPreviewResources();
                 _prevIconTarget  = _iconTarget;
                 _previewEuler    = new Vector2(0f, 180f);
                 _previewPan      = Vector2.zero;
                 _zoomFactor      = 1f;
                 _previewDirty    = true;
+                _iconOverwriteAssetPath = null;
+                _iconDresser = null;
+                _iconDresserLayerIndex = -1;
+                _iconDresserButtonIndex = -1;
+                _iconLinkedObjects.Clear();
             }
 
             GUILayout.Space(8);
@@ -419,13 +555,72 @@ namespace DiNeScreenSaver
 
             GUILayout.Space(8);
 
+            // ── 가시성 효과 ──
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            Rect effectTitleRect = EditorGUILayout.GetControlRect(false, 24f);
+            EditorGUI.DrawRect(new Rect(effectTitleRect.x, effectTitleRect.yMax - 1f, effectTitleRect.width, 1f),
+                new Color(0.30f, 0.82f, 0.76f, 0.65f));
+            GUI.Label(effectTitleRect, T(30), new GUIStyle(EditorStyles.boldLabel)
+            {
+                fontSize = 12,
+                normal = { textColor = Color.white }
+            });
+
+            EditorGUI.BeginChangeCheck();
+
+            EditorGUILayout.BeginHorizontal();
+
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.MinWidth(0));
+            _iconOutlineEnabled = DrawEffectCardHeader(T(31), _iconOutlineEnabled);
+            if (_iconOutlineEnabled)
+            {
+                float previousLabelWidth = EditorGUIUtility.labelWidth;
+                EditorGUIUtility.labelWidth = 54f;
+                _iconOutlineColor = EditorGUILayout.ColorField(T(8), _iconOutlineColor);
+                _iconOutlineSize = EditorGUILayout.IntSlider(T(33), _iconOutlineSize, 1, 12);
+                EditorGUIUtility.labelWidth = previousLabelWidth;
+            }
+            EditorGUILayout.EndVertical();
+
+            GUILayout.Space(4f);
+
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.MinWidth(0));
+            _iconForbiddenOverlay = DrawEffectCardHeader(T(34), _iconForbiddenOverlay);
+            if (_iconForbiddenOverlay)
+            {
+                float previousLabelWidth = EditorGUIUtility.labelWidth;
+                EditorGUIUtility.labelWidth = 54f;
+                _iconForbiddenScale = EditorGUILayout.Slider(T(44), _iconForbiddenScale, 0.2f, 1.2f);
+                _iconForbiddenOpacity = EditorGUILayout.Slider(T(36), _iconForbiddenOpacity, 0f, 1f);
+                EditorGUIUtility.labelWidth = previousLabelWidth;
+
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Label(T(41), EditorStyles.miniLabel, GUILayout.Width(48f));
+                bool frontSelected = !_iconForbiddenBehindObject;
+                if (DrawPositionSegment(T(42), frontSelected, EditorStyles.miniButtonLeft))
+                    _iconForbiddenBehindObject = false;
+                if (DrawPositionSegment(T(43), !frontSelected, EditorStyles.miniButtonRight))
+                    _iconForbiddenBehindObject = true;
+                EditorGUILayout.EndHorizontal();
+            }
+            EditorGUILayout.EndVertical();
+
+            EditorGUILayout.EndHorizontal();
+
+            if (EditorGUI.EndChangeCheck())
+            {
+                _previewDirty = true;
+                Repaint();
+            }
+            EditorGUILayout.EndVertical();
+
+            GUILayout.Space(8);
+
             // ── 설정 및 버튼 ──
             EditorGUILayout.BeginVertical("box");
 
-            EditorGUILayout.BeginHorizontal();
-            GUILayout.Label(T(17), GUILayout.Width(80));
-            _iconSizeIdx = EditorGUILayout.Popup(_iconSizeIdx, ICON_SIZE_LABELS);
-            EditorGUILayout.EndHorizontal();
+            if (!string.IsNullOrEmpty(_iconOverwriteAssetPath))
+                EditorGUILayout.HelpBox($"{T(37)}\n{_iconOverwriteAssetPath}", MessageType.Info);
 
             GUILayout.Space(5);
 
@@ -435,20 +630,23 @@ namespace DiNeScreenSaver
             bool fileExists = false;
             if (_iconTarget != null)
             {
-                string absPath = Application.dataPath.Replace("Assets", "") + ICON_ASSET_PATH + _iconTarget.name + ".png";
-                fileExists = File.Exists(absPath);
+                string candidatePath = !string.IsNullOrEmpty(_iconOverwriteAssetPath)
+                    ? _iconOverwriteAssetPath
+                    : ICON_ASSET_PATH + _iconTarget.name + ".png";
+                fileExists = File.Exists(candidatePath);
             }
 
             EditorGUILayout.BeginHorizontal();
             
             // 기존 덮어쓰기 생성 버튼 (메인)
             GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
-            if (GUILayout.Button(T(18), new GUIStyle(GUI.skin.button)
+            string generateLabel = string.IsNullOrEmpty(_iconOverwriteAssetPath) ? T(18) : T(38);
+            if (GUILayout.Button(generateLabel, new GUIStyle(GUI.skin.button)
                 { fontSize = 14, fontStyle = FontStyle.Bold,
                   normal = { textColor = Color.white }, hover = { textColor = Color.white } },
                 GUILayout.Height(38)))
             {
-                GenerateIconStatic(_iconTarget, _previewEuler, _previewPan, _zoomFactor, ICON_SIZES[_iconSizeIdx], false);
+                GenerateCurrentIcon(false);
             }
 
             // 파일이 존재할 경우 복사본 생성 버튼을 우측에 추가 (가로 폭 제한 제거하여 1:1 분할, 짙은 민트색 적용)
@@ -460,7 +658,7 @@ namespace DiNeScreenSaver
                       normal = { textColor = Color.white }, hover = { textColor = Color.white } },
                     GUILayout.Height(38)))
                 {
-                    GenerateIconStatic(_iconTarget, _previewEuler, _previewPan, _zoomFactor, ICON_SIZES[_iconSizeIdx], true);
+                    GenerateCurrentIcon(true);
                 }
             }
             
@@ -512,6 +710,50 @@ namespace DiNeScreenSaver
             }
             GUI.backgroundColor = prevBg;
             EditorGUILayout.EndHorizontal();
+        }
+
+        private static bool DrawEffectCardHeader(string label, bool enabled)
+        {
+            Rect row = EditorGUILayout.GetControlRect(false, 24f);
+            Color previousBackground = GUI.backgroundColor;
+            Color previousContent = GUI.contentColor;
+            GUI.backgroundColor = enabled ? new Color(0.30f, 0.82f, 0.76f) : new Color(0.55f, 0.55f, 0.55f);
+            GUI.contentColor = Color.white;
+            var style = new GUIStyle(GUI.skin.button)
+            {
+                fontStyle = FontStyle.Bold,
+                fontSize = 11,
+                alignment = TextAnchor.MiddleCenter,
+                normal = { textColor = Color.white },
+                hover = { textColor = Color.white },
+                active = { textColor = Color.white }
+            };
+            string buttonLabel = enabled ? $"✓  {label}" : label;
+            bool updated = GUI.Toggle(row, enabled, buttonLabel, style);
+            GUI.backgroundColor = previousBackground;
+            GUI.contentColor = previousContent;
+            return updated;
+        }
+
+        private static bool DrawPositionSegment(string label, bool selected, GUIStyle baseStyle)
+        {
+            Color previousBackground = GUI.backgroundColor;
+            Color previousContent = GUI.contentColor;
+            GUI.backgroundColor = selected ? new Color(0.30f, 0.82f, 0.76f) : new Color(0.55f, 0.55f, 0.55f);
+            GUI.contentColor = Color.white;
+            var style = new GUIStyle(baseStyle)
+            {
+                fontStyle = FontStyle.Bold,
+                fontSize = 10,
+                normal = { textColor = Color.white },
+                hover = { textColor = Color.white },
+                active = { textColor = Color.white },
+                alignment = TextAnchor.MiddleCenter
+            };
+            bool clicked = GUILayout.Button(label, style, GUILayout.Height(20f), GUILayout.MinWidth(34f));
+            GUI.backgroundColor = previousBackground;
+            GUI.contentColor = previousContent;
+            return clicked;
         }
 
         private void DrawZoomButtons()
@@ -582,72 +824,220 @@ namespace DiNeScreenSaver
             }
         }
 
-        private void RenderPreview()
+        private DiNeIconMaker.Settings GetIconEffectSettings()
         {
-            if (_iconTarget == null) return;
-
-            if (_previewTex != null) { DestroyImmediate(_previewTex); _previewTex = null; }
-
-            GameObject root   = null;
-            GameObject camObj = null;
-            RenderTexture rt  = null;
-
-            try
+            return new DiNeIconMaker.Settings
             {
-                root = new GameObject("_DiNe_Preview_Root");
-                var clone = Instantiate(_iconTarget, root.transform);
-                clone.SetActive(true);
-                ChangeLayerRecursively(root, CAPTURE_LAYER);
+                outlineEnabled = _iconOutlineEnabled,
+                outlineColor = _iconOutlineColor,
+                outlineSize = _iconOutlineSize,
+                forbiddenOverlay = _iconForbiddenOverlay,
+                forbiddenOpacity = _iconForbiddenOpacity,
+                forbiddenScale = _iconForbiddenScale,
+                forbiddenBehindObject = _iconForbiddenBehindObject
+            };
+        }
 
-                foreach (var smr in root.GetComponentsInChildren<SkinnedMeshRenderer>(true))
-                    smr.updateWhenOffscreen = true;
+        private void GenerateCurrentIcon(bool createCopy)
+        {
+            Texture2D generated = GenerateIconStatic(
+                _iconTarget,
+                _iconLinkedObjects,
+                _previewEuler,
+                _previewPan,
+                _zoomFactor,
+                256,
+                createCopy,
+                GetIconEffectSettings(),
+                _iconOverwriteAssetPath);
 
-                var allRenderers = root.GetComponentsInChildren<Renderer>(true);
-                if (allRenderers.Length == 0) return;
+            if (generated == null || createCopy)
+                return;
 
-                Bounds bounds = allRenderers[0].bounds;
-                foreach (var r in allRenderers) bounds.Encapsulate(r.bounds);
-
-                camObj = new GameObject("_DiNe_Preview_Cam");
-                var cam = camObj.AddComponent<Camera>();
-                cam.clearFlags      = CameraClearFlags.SolidColor;
-                cam.backgroundColor = PreviewBG;
-                cam.cullingMask     = 1 << CAPTURE_LAYER;
-                cam.orthographic    = true;
-                cam.nearClipPlane   = 0.001f;
-                cam.farClipPlane    = 10000f;
-
-                float dist = bounds.extents.magnitude * 2.5f;
-                camObj.transform.rotation = Quaternion.Euler(_previewEuler.x, _previewEuler.y, 0f);
-                
-                Vector3 panOffset = camObj.transform.right * _previewPan.x + camObj.transform.up * _previewPan.y;
-                camObj.transform.position = (bounds.center + panOffset) - camObj.transform.forward * dist;
-
-                float orthoSize       = Mathf.Max(bounds.extents.x, bounds.extents.y, bounds.extents.z) * 1.2f / _zoomFactor;
-                cam.orthographicSize  = orthoSize;
-
-                rt = new RenderTexture(PREVIEW_RENDER_SIZE, PREVIEW_RENDER_SIZE, 24, RenderTextureFormat.ARGB32);
-                cam.targetTexture = rt;
-                cam.Render();
-
-                RenderTexture.active = rt;
-                _previewTex = new Texture2D(PREVIEW_RENDER_SIZE, PREVIEW_RENDER_SIZE, TextureFormat.ARGB32, false);
-                _previewTex.ReadPixels(new Rect(0, 0, PREVIEW_RENDER_SIZE, PREVIEW_RENDER_SIZE), 0, 0);
-                _previewTex.Apply();
-                cam.targetTexture = null;
-                RenderTexture.active = null;
+            _iconOverwriteAssetPath = AssetDatabase.GetAssetPath(generated);
+            if (_iconDresser != null && _iconDresserLayerIndex >= 0 && _iconDresserButtonIndex >= 0 &&
+                _iconDresserLayerIndex < _iconDresser.layers.Count)
+            {
+                Undo.RecordObject(_iconDresser, "Edit Multi Dresser Icon");
+                DiNeMultiDresser.DresserLayer layer = _iconDresser.layers[_iconDresserLayerIndex];
+                while (layer.icons.Count <= _iconDresserButtonIndex)
+                    layer.icons.Add(null);
+                layer.icons[_iconDresserButtonIndex] = generated;
+                EditorUtility.SetDirty(_iconDresser);
+                AssetDatabase.SaveAssets();
+                ActiveEditorTracker.sharedTracker.ForceRebuild();
             }
-            finally
+
+            if (_iconSmartToggle != null)
             {
-                if (rt     != null) DestroyImmediate(rt);
-                if (camObj != null) DestroyImmediate(camObj);
-                if (root   != null) DestroyImmediate(root);
+                Undo.RecordObject(_iconSmartToggle, "Edit Smart Toggle Icon");
+                _iconSmartToggle.Icon = generated;
+                _iconSmartToggle.IconEuler = _previewEuler;
+                _iconSmartToggle.IconPan = _previewPan;
+                _iconSmartToggle.IconZoom = _zoomFactor;
+                _iconSmartToggle.IconOutline = _iconOutlineEnabled;
+                _iconSmartToggle.IconOutlineColor = _iconOutlineColor;
+                _iconSmartToggle.IconOutlineSize = _iconOutlineSize;
+                _iconSmartToggle.IconForbiddenOverlay = _iconForbiddenOverlay;
+                _iconSmartToggle.IconForbiddenOpacity = _iconForbiddenOpacity;
+                _iconSmartToggle.IconForbiddenScale = _iconForbiddenScale;
+                _iconSmartToggle.IconForbiddenBehindObject = _iconForbiddenBehindObject;
+                EditorUtility.SetDirty(_iconSmartToggle);
+                AssetDatabase.SaveAssets();
+                ActiveEditorTracker.sharedTracker.ForceRebuild();
             }
         }
 
-        private static void GenerateIconStatic(GameObject target, Vector2 euler, Vector2 pan, float zoom, int outputSize, bool autoRename)
+        public static Texture2D GenerateConfiguredIcon(
+            GameObject target,
+            Vector2 euler,
+            Vector2 pan,
+            float zoom,
+            DiNeIconMaker.Settings effects,
+            string overwriteAssetPath)
         {
-            if (target == null) return;
+            return GenerateIconStatic(target, null, euler, pan, zoom, 256, false, effects, overwriteAssetPath);
+        }
+
+        private void RenderPreview()
+        {
+            if (_iconTarget == null || !EnsureIconPreviewResources()) return;
+
+            float dist = Mathf.Max(_previewBoundsCache.extents.magnitude * 2.5f, 0.01f);
+            _previewCameraObjectCache.transform.rotation = Quaternion.Euler(_previewEuler.x, _previewEuler.y, 0f);
+            Vector3 panOffset = _previewCameraObjectCache.transform.right * _previewPan.x +
+                                _previewCameraObjectCache.transform.up * _previewPan.y;
+            _previewCameraObjectCache.transform.position =
+                (_previewBoundsCache.center + panOffset) - _previewCameraObjectCache.transform.forward * dist;
+            _previewCameraCache.orthographicSize =
+                Mathf.Max(_previewBoundsCache.extents.x, Mathf.Max(_previewBoundsCache.extents.y, _previewBoundsCache.extents.z)) *
+                1.2f / Mathf.Max(_zoomFactor, 0.01f);
+
+            RenderTexture previousActive = RenderTexture.active;
+            try
+            {
+                _previewCameraCache.targetTexture = _previewRenderTextureCache;
+                _previewCameraCache.Render();
+                RenderTexture.active = _previewRenderTextureCache;
+                _previewTex.ReadPixels(new Rect(0, 0, PREVIEW_RENDER_SIZE, PREVIEW_RENDER_SIZE), 0, 0);
+                _previewTex.Apply(false, false);
+                DiNeIconMaker.ApplyEffects(_previewTex, GetIconEffectSettings());
+            }
+            finally
+            {
+                _previewCameraCache.targetTexture = null;
+                RenderTexture.active = previousActive;
+            }
+        }
+
+        private bool EnsureIconPreviewResources()
+        {
+            if (_previewRootCache != null && _previewCameraCache != null &&
+                _previewRenderTextureCache != null && _previewTex != null)
+                return true;
+
+            ReleaseIconPreviewResources();
+            try
+            {
+                _previewCaptureLayer = DiNeIconMaker.FindAvailableCaptureLayer();
+                _previewRootCache = new GameObject("_DiNe_Preview_Root")
+                    { hideFlags = HideFlags.HideAndDontSave };
+                var clone = Instantiate(_iconTarget, _previewRootCache.transform);
+                clone.SetActive(true);
+                foreach (GameObject linked in _iconLinkedObjects)
+                {
+                    if (linked == null || linked == _iconTarget) continue;
+                    var linkedClone = Instantiate(linked, _previewRootCache.transform);
+                    linkedClone.SetActive(true);
+                }
+                ChangeLayerRecursively(_previewRootCache, _previewCaptureLayer);
+
+                foreach (var smr in _previewRootCache.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                    smr.updateWhenOffscreen = true;
+
+                var renderers = _previewRootCache.GetComponentsInChildren<Renderer>(true);
+                if (renderers.Length == 0)
+                {
+                    ReleaseIconPreviewResources();
+                    return false;
+                }
+
+                _previewBoundsCache = renderers[0].bounds;
+                foreach (var renderer in renderers)
+                    _previewBoundsCache.Encapsulate(renderer.bounds);
+
+                _previewCameraObjectCache = new GameObject("_DiNe_Preview_Cam")
+                    { hideFlags = HideFlags.HideAndDontSave };
+                _previewCameraCache = _previewCameraObjectCache.AddComponent<Camera>();
+                _previewCameraCache.enabled = false;
+                _previewCameraCache.clearFlags = CameraClearFlags.SolidColor;
+                _previewCameraCache.backgroundColor = Color.clear;
+                _previewCameraCache.cullingMask = 1 << _previewCaptureLayer;
+                _previewCameraCache.orthographic = true;
+                _previewCameraCache.nearClipPlane = 0.001f;
+                _previewCameraCache.farClipPlane = 10000f;
+                _previewCameraCache.allowHDR = false;
+                _previewCameraCache.allowMSAA = false;
+
+                _previewRenderTextureCache = new RenderTexture(
+                    PREVIEW_RENDER_SIZE, PREVIEW_RENDER_SIZE, 24, RenderTextureFormat.ARGB32)
+                {
+                    name = "_DiNe_Preview_RT",
+                    hideFlags = HideFlags.HideAndDontSave,
+                    filterMode = FilterMode.Bilinear
+                };
+                _previewRenderTextureCache.Create();
+                _previewTex = new Texture2D(
+                    PREVIEW_RENDER_SIZE, PREVIEW_RENDER_SIZE, TextureFormat.ARGB32, false)
+                {
+                    name = "_DiNe_Preview_Texture",
+                    hideFlags = HideFlags.HideAndDontSave
+                };
+                return true;
+            }
+            catch
+            {
+                ReleaseIconPreviewResources();
+                throw;
+            }
+        }
+
+        private void ReleaseIconPreviewResources()
+        {
+            if (_previewCameraCache != null)
+                _previewCameraCache.targetTexture = null;
+            if (_previewTex != null)
+                DestroyImmediate(_previewTex);
+            if (_previewRenderTextureCache != null)
+            {
+                if (_previewRenderTextureCache.IsCreated())
+                    _previewRenderTextureCache.Release();
+                DestroyImmediate(_previewRenderTextureCache);
+            }
+            if (_previewCameraObjectCache != null)
+                DestroyImmediate(_previewCameraObjectCache);
+            if (_previewRootCache != null)
+                DestroyImmediate(_previewRootCache);
+
+            _previewTex = null;
+            _previewRenderTextureCache = null;
+            _previewCameraCache = null;
+            _previewCameraObjectCache = null;
+            _previewRootCache = null;
+        }
+
+        private static Texture2D GenerateIconStatic(
+            GameObject target,
+            IEnumerable<GameObject> linkedObjects,
+            Vector2 euler,
+            Vector2 pan,
+            float zoom,
+            int outputSize,
+            bool autoRename,
+            DiNeIconMaker.Settings effects,
+            string overwriteAssetPath)
+        {
+            if (target == null) return null;
             EnsureDir(ICON_ASSET_PATH);
 
             GameObject root   = null;
@@ -656,16 +1046,26 @@ namespace DiNeScreenSaver
 
             try
             {
+                int captureLayer = DiNeIconMaker.FindAvailableCaptureLayer();
                 root = new GameObject("_DiNe_Icon_Root");
                 var clone = Instantiate(target, root.transform);
                 clone.SetActive(true);
-                ChangeLayerRecursively(root, CAPTURE_LAYER);
+                if (linkedObjects != null)
+                {
+                    foreach (GameObject linked in linkedObjects)
+                    {
+                        if (linked == null || linked == target) continue;
+                        var linkedClone = Instantiate(linked, root.transform);
+                        linkedClone.SetActive(true);
+                    }
+                }
+                ChangeLayerRecursively(root, captureLayer);
 
                 foreach (var smr in root.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                     smr.updateWhenOffscreen = true;
 
                 var allRenderers = root.GetComponentsInChildren<Renderer>(true);
-                if (allRenderers.Length == 0) { Debug.LogWarning("[DiNe Icon] No renderers found."); return; }
+                if (allRenderers.Length == 0) { Debug.LogWarning("[DiNe Icon] No renderers found."); return null; }
 
                 Bounds bounds = allRenderers[0].bounds;
                 foreach (var r in allRenderers) bounds.Encapsulate(r.bounds);
@@ -674,7 +1074,7 @@ namespace DiNeScreenSaver
                 var cam = camObj.AddComponent<Camera>();
                 cam.clearFlags      = CameraClearFlags.SolidColor;
                 cam.backgroundColor = Color.clear;
-                cam.cullingMask     = 1 << CAPTURE_LAYER;
+                cam.cullingMask     = 1 << captureLayer;
                 cam.orthographic    = true;
                 cam.nearClipPlane   = 0.001f;
                 cam.farClipPlane    = 10000f;
@@ -690,7 +1090,8 @@ namespace DiNeScreenSaver
                 const int RENDER_SIZE = 2048;
                 rt = new RenderTexture(RENDER_SIZE, RENDER_SIZE, 24, RenderTextureFormat.ARGB32);
                 cam.targetTexture = rt;
-                cam.Render();
+                using (DiNeIconMaker.IsolateSceneRenderers(root))
+                    cam.Render();
 
                 RenderTexture.active = rt;
                 var raw = new Texture2D(RENDER_SIZE, RENDER_SIZE, TextureFormat.ARGB32, false);
@@ -700,49 +1101,53 @@ namespace DiNeScreenSaver
                 RenderTexture.active = null;
 
                 // 오토 크롭
-                var cropped = AutoCrop(raw, outputSize);
+                int effectMargin = effects != null && effects.outlineEnabled
+                    ? Mathf.Clamp(effects.outlineSize, 1, 12) + 2
+                    : 2;
+                var cropped = AutoCrop(raw, outputSize, effectMargin);
                 DestroyImmediate(raw);
+                DiNeIconMaker.ApplyEffects(cropped, effects ?? new DiNeIconMaker.Settings());
 
                 // 파일 이름 및 복사본 넘버링 처리
-                string absDir = Application.dataPath.Replace("Assets", "") + ICON_ASSET_PATH;
-                string baseName = target.name;
-                string fileName = baseName + ".png";
-                string absPath = absDir + fileName;
+                string filePath = DiNeIconMaker.CanOverwriteAsset(overwriteAssetPath)
+                    ? overwriteAssetPath.Replace('\\', '/')
+                    : DiNeIconMaker.GetDefaultIconAssetPath(target.name);
+                string directoryPath = Path.GetDirectoryName(filePath)?.Replace('\\', '/') ?? ICON_ASSET_PATH.TrimEnd('/');
+                string baseName = Path.GetFileNameWithoutExtension(filePath);
 
-                if (autoRename && File.Exists(absPath))
+                if (autoRename && File.Exists(filePath))
                 {
                     int counter = 2;
-                    while (File.Exists(absDir + baseName + "_" + counter + ".png"))
+                    string candidate;
+                    do
                     {
+                        candidate = $"{directoryPath}/{baseName}_{counter}.png";
                         counter++;
                     }
-                    fileName = baseName + "_" + counter + ".png";
-                    absPath = absDir + fileName;
+                    while (File.Exists(candidate));
+                    filePath = candidate;
                 }
 
-                string filePath = ICON_ASSET_PATH + fileName;
-                
-                File.WriteAllBytes(absPath, cropped.EncodeToPNG());
+                Directory.CreateDirectory(directoryPath);
+                File.WriteAllBytes(filePath, cropped.EncodeToPNG());
                 DestroyImmediate(cropped);
 
-                AssetDatabase.Refresh();
+                AssetDatabase.ImportAsset(filePath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
                 var importer = AssetImporter.GetAtPath(filePath) as TextureImporter;
                 if (importer != null)
                 {
                     importer.alphaIsTransparency = true;
                     importer.textureType         = TextureImporterType.Sprite;
+                    importer.mipmapEnabled       = false;
+                    importer.npotScale           = TextureImporterNPOTScale.None;
+                    importer.maxTextureSize      = 256;
                     importer.SaveAndReimport();
                 }
 
                 // 에셋을 선택 상태로 만들고 하이라이트 표시
                 var asset = AssetDatabase.LoadAssetAtPath<Texture2D>(filePath);
-                if (asset != null)
-                {
-                    Selection.activeObject = asset;
-                    EditorGUIUtility.PingObject(asset);
-                }
-
                 Debug.Log($"[DiNe Icon] {GetUIString(20)} → {filePath}");
+                return asset;
             }
             finally
             {
@@ -753,7 +1158,7 @@ namespace DiNeScreenSaver
         }
 
         // ── 오토 크롭: 불투명 픽셀 범위를 찾아 정사각형으로 잘라낸 후 리사이즈 ──
-        private static Texture2D AutoCrop(Texture2D src, int targetSize)
+        private static Texture2D AutoCrop(Texture2D src, int targetSize, int margin)
         {
             int minX = src.width, maxX = 0, minY = src.height, maxY = 0;
             var pixels = src.GetPixels32();
@@ -776,18 +1181,27 @@ namespace DiNeScreenSaver
             square.SetPixels(sq / 2 - cw / 2, sq / 2 - ch / 2, cw, ch, src.GetPixels(minX, minY, cw, ch));
             square.Apply();
 
-            return ResizeTex(square, targetSize);
+            margin = Mathf.Clamp(margin, 0, targetSize / 4);
+            int contentSize = targetSize - margin * 2;
+            Texture2D resized = ResizeTex(square, contentSize);
+            var output = new Texture2D(targetSize, targetSize, TextureFormat.ARGB32, false);
+            output.SetPixels32(new Color32[targetSize * targetSize]);
+            output.SetPixels(margin, margin, contentSize, contentSize, resized.GetPixels());
+            output.Apply();
+            DestroyImmediate(resized);
+            return output;
         }
 
         private static Texture2D ResizeTex(Texture2D src, int size)
         {
             var dst = new Texture2D(size, size, TextureFormat.ARGB32, false);
             var rt  = RenderTexture.GetTemporary(size, size, 0, RenderTextureFormat.ARGB32);
+            var previous = RenderTexture.active;
             RenderTexture.active = rt;
             Graphics.Blit(src, rt);
             dst.ReadPixels(new Rect(0, 0, size, size), 0, 0);
             dst.Apply();
-            RenderTexture.active = null;
+            RenderTexture.active = previous;
             RenderTexture.ReleaseTemporary(rt);
             DestroyImmediate(src);
             return dst;
@@ -967,7 +1381,13 @@ namespace DiNeScreenSaver
             EditorPrefs.SetString("DiNeScreenSaver_BGColor",  ColorUtility.ToHtmlStringRGBA(_bgColor));
             EditorPrefs.SetFloat("DiNeScreenSaver_CapW",      _captureSize.x);
             EditorPrefs.SetFloat("DiNeScreenSaver_CapH",      _captureSize.y);
-            EditorPrefs.SetInt("DiNeScreenSaver_IconSize",    _iconSizeIdx);
+            EditorPrefs.SetBool("DiNeScreenSaver_IconOutline", _iconOutlineEnabled);
+            EditorPrefs.SetString("DiNeScreenSaver_IconOutlineColor", ColorUtility.ToHtmlStringRGBA(_iconOutlineColor));
+            EditorPrefs.SetInt("DiNeScreenSaver_IconOutlineSize", _iconOutlineSize);
+            EditorPrefs.SetBool("DiNeScreenSaver_IconForbidden", _iconForbiddenOverlay);
+            EditorPrefs.SetFloat("DiNeScreenSaver_IconForbiddenOpacity", _iconForbiddenOpacity);
+            EditorPrefs.SetFloat("DiNeScreenSaver_IconForbiddenScale", _iconForbiddenScale);
+            EditorPrefs.SetBool("DiNeScreenSaver_IconForbiddenBehind", _iconForbiddenBehindObject);
             
             EditorPrefs.SetFloat("DiNe_IconPitch", _previewEuler.x);
             EditorPrefs.SetFloat("DiNe_IconYaw",   _previewEuler.y);
@@ -988,7 +1408,27 @@ namespace DiNeScreenSaver
                 ColorUtility.TryParseHtmlString("#" + EditorPrefs.GetString("DiNeScreenSaver_BGColor"), out _bgColor);
             _captureSize.x = EditorPrefs.GetFloat("DiNeScreenSaver_CapW", 1920);
             _captureSize.y = EditorPrefs.GetFloat("DiNeScreenSaver_CapH", 1080);
-            _iconSizeIdx   = EditorPrefs.GetInt("DiNeScreenSaver_IconSize", 3);
+            _iconOutlineEnabled = EditorPrefs.GetBool("DiNeScreenSaver_IconOutline", true);
+            if (EditorPrefs.HasKey("DiNeScreenSaver_IconOutlineColor"))
+                ColorUtility.TryParseHtmlString("#" + EditorPrefs.GetString("DiNeScreenSaver_IconOutlineColor"), out _iconOutlineColor);
+            _iconOutlineSize = EditorPrefs.GetInt("DiNeScreenSaver_IconOutlineSize", 4);
+            _iconForbiddenOverlay = EditorPrefs.GetBool("DiNeScreenSaver_IconForbidden", false);
+            _iconForbiddenOpacity = EditorPrefs.GetFloat("DiNeScreenSaver_IconForbiddenOpacity", 1f);
+            _iconForbiddenScale = EditorPrefs.GetFloat("DiNeScreenSaver_IconForbiddenScale", 0.85f);
+            _iconForbiddenBehindObject = EditorPrefs.GetBool("DiNeScreenSaver_IconForbiddenBehind", true);
+            const string behindDefaultMigrationKey = "DiNeScreenSaver_IconForbiddenBehind_DefaultTrue_Migrated";
+            if (!EditorPrefs.GetBool(behindDefaultMigrationKey, false))
+            {
+                _iconForbiddenBehindObject = true;
+                EditorPrefs.SetBool(behindDefaultMigrationKey, true);
+            }
+            const string overlayScaleMigrationKey = "DiNeScreenSaver_IconForbiddenScale_085_Migrated";
+            if (!EditorPrefs.GetBool(overlayScaleMigrationKey, false))
+            {
+                if (Mathf.Approximately(_iconForbiddenScale, 0.7f))
+                    _iconForbiddenScale = 0.85f;
+                EditorPrefs.SetBool(overlayScaleMigrationKey, true);
+            }
             
             _previewEuler.x = EditorPrefs.GetFloat("DiNe_IconPitch", 0f);
             _previewEuler.y = EditorPrefs.GetFloat("DiNe_IconYaw", 180f);

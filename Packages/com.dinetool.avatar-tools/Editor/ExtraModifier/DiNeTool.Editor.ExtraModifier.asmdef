@@ -1,0 +1,15 @@
+{
+    "name": "DiNeTool.Editor.ExtraModifier",
+    "references": [
+        "DiNeTool.Runtime",
+        "VRC.SDKBase",
+        "VRC.SDKBase.Editor",
+        "VRC.SDK3A",
+        "VRC.SDK3A.Editor",
+        "nadena.dev.ndmf",
+        "nadena.dev.ndmf.runtime"
+    ],
+    "includePlatforms": ["Editor"],
+    "excludePlatforms": [],
+    "autoReferenced": true
+}

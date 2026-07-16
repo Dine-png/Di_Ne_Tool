@@ -3,6 +3,7 @@ using UnityEditor;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using nadena.dev.modular_avatar.core;
 
 public class ArmatureScalerEditor : EditorWindow
 {
@@ -11,7 +12,9 @@ public class ArmatureScalerEditor : EditorWindow
 
     // ?????? ??????癲ル슢?꾤땟?????????
     private enum EditorMode { Armature, ShapeKey, Expression, ShapeKeyEditor }
+    private enum ArmatureEditMode { DirectTransform, ModularAvatarScale }
     [SerializeField] private EditorMode currentMode = EditorMode.Armature;
+    [SerializeField] private ArmatureEditMode armatureEditMode = ArmatureEditMode.DirectTransform;
 
     [SerializeField] private GameObject targetAvatarRoot;
 
@@ -38,6 +41,12 @@ public class ArmatureScalerEditor : EditorWindow
     [SerializeField] private int    selectedPresetIndex = -1;
     [SerializeField] private string selectedPresetName  = "";
     [SerializeField] private Vector2 presetScrollPosition;
+
+    private string[] maPresetFiles;
+    [SerializeField] private int selectedMaPresetIndex = -1;
+    [SerializeField] private string selectedMaPresetName = "";
+    [SerializeField] private Vector2 maPresetScrollPosition;
+    [SerializeField] private List<string> maAdjustChildPositionParts = new List<string>();
 
     // ?????? ??ш끽維곻쭚?? ?嶺뚮㉡?€쾮???????
 // ?????? Animation Freezer ??ш끽維????????
@@ -134,7 +143,7 @@ public class ArmatureScalerEditor : EditorWindow
         tabIcon    = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe_Icon.png");
         titleFont  = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
         titleContent = new GUIContent("Avi Editor", tabIcon);
-        selectedButtonTex = MakeTex(1, 1, new Color(0.2f, 0.4f, 1f, 1f));
+        selectedButtonTex = MakeTex(1, 1, new Color(0.30f, 0.82f, 0.76f, 1f));
         SetLanguage(language);
         SetShapeKeyLanguage(language);
         InitializeValues();
@@ -235,10 +244,12 @@ public class ArmatureScalerEditor : EditorWindow
         HumanBodyBones boneType = GetBoneType(selectedPart);
         if (TryGetLiveBoneTransform(boneType, out Transform boneTransform))
         {
-            if (boneTransform.localScale != lastKnownScale)
+            Vector3 liveScale = GetDisplayedScale(boneTransform);
+            if (liveScale != lastKnownScale)
             {
-                scaleValues[selectedPart] = boneTransform.localScale;
-                lastKnownScale = boneTransform.localScale;
+                if (armatureEditMode == ArmatureEditMode.DirectTransform)
+                    scaleValues[selectedPart] = liveScale;
+                lastKnownScale = liveScale;
                 Repaint();
             }
 
@@ -284,6 +295,11 @@ public class ArmatureScalerEditor : EditorWindow
         presetFiles = guids.Select(guid => AssetDatabase.GUIDToAssetPath(guid)).ToArray();
         selectedPresetIndex = -1;
         selectedPresetName = "";
+
+        string[] maGuids = AssetDatabase.FindAssets("t:MAScaleAdjusterPresetData", new[] { "Assets" });
+        maPresetFiles = maGuids.Select(AssetDatabase.GUIDToAssetPath).ToArray();
+        selectedMaPresetIndex = -1;
+        selectedMaPresetName = "";
     }
 
     private void InitializeValues()
@@ -440,6 +456,23 @@ public class ArmatureScalerEditor : EditorWindow
         EditorGUI.EndDisabledGroup();
         EditorGUILayout.EndHorizontal();
 
+        GUILayout.Space(4);
+        string[] armatureModes =
+        {
+            Tr("Direct Bone Editing", "직접 뼈 조정", "ボーン直接調整"),
+            Tr("MA Scale Adjustment", "MA 비율 조정", "MA比率調整")
+        };
+        int nextArmatureMode = DrawCustomToolbar((int)armatureEditMode, armatureModes, 30);
+        if (nextArmatureMode != (int)armatureEditMode)
+        {
+            armatureEditMode = (ArmatureEditMode)nextArmatureMode;
+            if (armatureEditMode == ArmatureEditMode.DirectTransform) LoadCurrentValues();
+            selectedPart = HumanoidBodyPart.None;
+            GUI.FocusControl(null);
+        }
+
+        if (armatureEditMode == ArmatureEditMode.DirectTransform)
+        {
         EditorGUILayout.BeginVertical("box");
         EditorGUILayout.LabelField(UI_TEXT[27], EditorStyles.boldLabel);
         
@@ -551,6 +584,11 @@ public class ArmatureScalerEditor : EditorWindow
         EditorGUILayout.EndHorizontal();
         
         EditorGUILayout.EndVertical();
+        }
+        else
+        {
+            DrawMAPresetGUI();
+        }
 
         scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
         DrawBodyMap();
@@ -563,23 +601,29 @@ public class ArmatureScalerEditor : EditorWindow
 
         if (selectedPart != HumanoidBodyPart.None)
         {
-            Vector3 scale = GetPartScale(selectedPart);
+            bool canEditScale = true;
+            if (armatureEditMode == ArmatureEditMode.ModularAvatarScale)
+                canEditScale = DrawMASelectedPartControls();
+
+            EditorGUI.BeginDisabledGroup(!canEditScale);
+            Vector3 scale = GetSelectedScale();
             EditorGUI.BeginChangeCheck();
             float uniformScale = EditorGUILayout.FloatField(UI_TEXT[26], scale.x);
             if (EditorGUI.EndChangeCheck())
             {
-                UpdatePartScale(new Vector3(uniformScale, uniformScale, uniformScale));
-                ArmatureScalerLogic.ApplyScale(boneMapping, MapToHumanBodyBones(scaleValues));
+                ApplySelectedScale(new Vector3(uniformScale, uniformScale, uniformScale));
             }
             
             EditorGUI.BeginChangeCheck();
             Vector3 newScale = EditorGUILayout.Vector3Field(GetPartName(selectedPart) + $" Scale", scale);
             if (EditorGUI.EndChangeCheck())
             {
-                UpdatePartScale(newScale);
-                ArmatureScalerLogic.ApplyScale(boneMapping, MapToHumanBodyBones(scaleValues));
+                ApplySelectedScale(newScale);
             }
+            EditorGUI.EndDisabledGroup();
 
+            if (armatureEditMode == ArmatureEditMode.DirectTransform)
+            {
             GUILayout.Space(10);
             GUILayout.Label(UI_TEXT[41], EditorStyles.boldLabel);
             Vector3 position = GetPartPosition(selectedPart);
@@ -606,6 +650,7 @@ public class ArmatureScalerEditor : EditorWindow
                     ArmatureScalerLogic.ApplyRotation(boneMapping, MapToHumanBodyBonesForRotation(rotationValues));
                 }
             }
+            }
         }
         else
         {
@@ -616,6 +661,330 @@ public class ArmatureScalerEditor : EditorWindow
     }
 
     // ?????? ???ル늅??씤異?에?ル씔???癲ル슢?꾤땟???GUI ??????
+    private void DrawMAPresetGUI()
+    {
+        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.LabelField(Tr("MA Scale Presets", "MA 비율 프리셋", "MA比率プリセット"), EditorStyles.boldLabel);
+
+        maPresetScrollPosition = EditorGUILayout.BeginScrollView(maPresetScrollPosition, GUILayout.Height(60));
+        if (maPresetFiles != null && maPresetFiles.Length > 0)
+        {
+            for (int i = 0; i < maPresetFiles.Length; i += 2)
+            {
+                EditorGUILayout.BeginHorizontal();
+                for (int j = 0; j < 2 && i + j < maPresetFiles.Length; j++)
+                {
+                    int index = i + j;
+                    string fileName = Path.GetFileNameWithoutExtension(maPresetFiles[index]);
+                    GUIStyle style = new GUIStyle(GUI.skin.button);
+                    if (selectedMaPresetIndex == index) style.normal.background = selectedButtonTex;
+                    if (GUILayout.Button(fileName, style, GUILayout.ExpandWidth(true), GUILayout.Height(25)))
+                    {
+                        selectedMaPresetIndex = index;
+                        selectedMaPresetName = fileName;
+                    }
+                }
+                EditorGUILayout.EndHorizontal();
+            }
+        }
+        else
+        {
+            EditorGUILayout.LabelField(Tr("No MA presets found.", "MA 프리셋이 없습니다.", "MAプリセットがありません。"));
+        }
+        EditorGUILayout.EndScrollView();
+
+        EditorGUI.BeginDisabledGroup(targetAvatarRoot == null || selectedMaPresetIndex < 0);
+        if (DrawThemedButton(
+                Tr("Install Selected MA Preset", "선택한 MA 프리셋 설치", "選択したMAプリセットを適用"),
+                new Color(0.30f, 0.82f, 0.76f), true, GUILayout.Height(26)))
+            LoadSelectedMAPreset();
+        EditorGUI.EndDisabledGroup();
+
+        EditorGUI.BeginDisabledGroup(targetAvatarRoot == null);
+        if (DrawThemedButton(
+                Tr("Save Current MA Ratios", "현재 MA 비율 저장", "現在のMA比率を保存"),
+                new Color(0.30f, 0.82f, 0.76f), true, GUILayout.Height(26)))
+            SaveNewMAPreset();
+        EditorGUI.EndDisabledGroup();
+
+        EditorGUI.BeginDisabledGroup(selectedMaPresetIndex < 0);
+        if (DrawThemedButton(
+                Tr("Delete Selected MA Preset", "선택한 MA 프리셋 삭제", "選択したMAプリセットを削除"),
+                new Color(0.78f, 0.34f, 0.34f), false, GUILayout.Height(23)) &&
+            EditorUtility.DisplayDialog(
+                Tr("Delete MA Preset", "MA 프리셋 삭제", "MAプリセットを削除"),
+                Tr($"Delete '{selectedMaPresetName}'?", $"'{selectedMaPresetName}' 프리셋을 삭제할까요?", $"'{selectedMaPresetName}' を削除しますか？"),
+                Tr("Delete", "삭제", "削除"), Tr("Cancel", "취소", "キャンセル")))
+        {
+            AssetDatabase.DeleteAsset(maPresetFiles[selectedMaPresetIndex]);
+            AssetDatabase.Refresh();
+            RefreshPresetList();
+        }
+        EditorGUI.EndDisabledGroup();
+        EditorGUILayout.EndVertical();
+    }
+
+    private bool DrawMASelectedPartControls()
+    {
+        if (!TryGetLiveBoneTransform(GetBoneType(selectedPart), out Transform boneTransform)) return false;
+        ModularAvatarScaleAdjuster adjuster = boneTransform.GetComponent<ModularAvatarScaleAdjuster>();
+
+        bool adjustChildPositions = GetMAAdjustChildPositions(selectedPart);
+        EditorGUILayout.BeginHorizontal();
+        if (adjuster == null)
+        {
+            if (DrawThemedButton(
+                    Tr("Add MA Scale Adjuster", "MA Scale Adjuster 추가", "MA Scale Adjusterを追加"),
+                    new Color(0.30f, 0.82f, 0.76f), true, GUILayout.Height(25)))
+                SetMAScale(boneTransform, Vector3.one, "Add MA Scale Adjuster", adjustChildPositions);
+        }
+        else
+        {
+            bool nextAdjustChildPositions = DrawThemedCheckboxToggle(
+                Tr("Adjust Child Positions", "자식 위치 조정", "子位置調整"),
+                adjustChildPositions,
+                GUILayout.Height(25));
+            if (nextAdjustChildPositions != adjustChildPositions)
+            {
+                adjustChildPositions = nextAdjustChildPositions;
+                SetMAAdjustChildPositions(selectedPart, adjustChildPositions);
+            }
+            if (DrawThemedButton(
+                    Tr("Remove Adjuster", "Adjuster 제거", "Adjusterを削除"),
+                    new Color(0.78f, 0.34f, 0.34f), false, GUILayout.Height(25)) &&
+                EditorUtility.DisplayDialog(
+                    Tr("Remove MA Scale Adjuster", "MA Scale Adjuster 제거", "MA Scale Adjusterを削除"),
+                    Tr("Remove it from the selected bone? Child positions previously adjusted by the option above are not restored.",
+                        "선택한 뼈에서 제거할까요? 위 옵션으로 이미 조정된 자식 위치는 복구되지 않습니다.",
+                        "選択したボーンから削除しますか？上のオプションで調整済みの子位置は復元されません。"),
+                    Tr("Remove", "제거", "削除"), Tr("Cancel", "취소", "キャンセル")))
+            {
+                Undo.DestroyObjectImmediate(adjuster);
+                lastKnownScale = Vector3.one;
+                Selection.activeGameObject = boneTransform.gameObject;
+            }
+        }
+        EditorGUILayout.EndHorizontal();
+
+        return boneTransform.GetComponent<ModularAvatarScaleAdjuster>() != null;
+    }
+
+    private Vector3 GetDisplayedScale(Transform boneTransform)
+    {
+        if (armatureEditMode == ArmatureEditMode.ModularAvatarScale)
+        {
+            ModularAvatarScaleAdjuster adjuster = boneTransform.GetComponent<ModularAvatarScaleAdjuster>();
+            return adjuster != null ? adjuster.Scale : Vector3.one;
+        }
+        return boneTransform.localScale;
+    }
+
+    private Vector3 GetSelectedScale()
+    {
+        if (selectedPart == HumanoidBodyPart.None) return Vector3.one;
+        if (armatureEditMode == ArmatureEditMode.DirectTransform) return GetPartScale(selectedPart);
+        return TryGetLiveBoneTransform(GetBoneType(selectedPart), out Transform boneTransform)
+            ? GetDisplayedScale(boneTransform) : Vector3.one;
+    }
+
+    private void ApplySelectedScale(Vector3 scale)
+    {
+        if (selectedPart == HumanoidBodyPart.None) return;
+        if (armatureEditMode == ArmatureEditMode.DirectTransform)
+        {
+            UpdatePartScale(scale);
+            ArmatureScalerLogic.ApplyScale(boneMapping, MapToHumanBodyBones(scaleValues));
+            return;
+        }
+
+        if (TryGetLiveBoneTransform(GetBoneType(selectedPart), out Transform boneTransform) &&
+            boneTransform.GetComponent<ModularAvatarScaleAdjuster>() != null)
+        {
+            SetMAScale(boneTransform, scale, "Adjust MA Scale", GetMAAdjustChildPositions(selectedPart));
+        }
+    }
+
+    private bool GetMAAdjustChildPositions(HumanoidBodyPart part)
+    {
+        return maAdjustChildPositionParts.Contains(part.ToString());
+    }
+
+    private void SetMAAdjustChildPositions(HumanoidBodyPart part, bool enabled)
+    {
+        string key = part.ToString();
+        if (enabled)
+        {
+            if (!maAdjustChildPositionParts.Contains(key)) maAdjustChildPositionParts.Add(key);
+        }
+        else
+        {
+            maAdjustChildPositionParts.Remove(key);
+        }
+    }
+
+    private void SetMAScale(Transform boneTransform, Vector3 scale, string undoName, bool adjustChildPositions)
+    {
+        ModularAvatarScaleAdjuster adjuster = boneTransform.GetComponent<ModularAvatarScaleAdjuster>();
+        if (adjuster == null) adjuster = Undo.AddComponent<ModularAvatarScaleAdjuster>(boneTransform.gameObject);
+
+        Vector3 oldScale = SanitizeMAScale(adjuster.Scale);
+        Vector3 newScale = SanitizeMAScale(scale);
+        Matrix4x4 targetLocalToWorld = boneTransform.localToWorldMatrix;
+
+        Undo.RecordObject(adjuster, undoName);
+        adjuster.Scale = newScale;
+        ForceUpdateScene(adjuster);
+
+        if (adjustChildPositions && oldScale != newScale)
+            AdjustMAChildPositions(boneTransform, targetLocalToWorld, oldScale, newScale, undoName);
+
+        lastKnownScale = adjuster.Scale;
+    }
+
+    private void AdjustMAChildPositions(
+        Transform boneTransform,
+        Matrix4x4 targetLocalToWorld,
+        Vector3 oldScale,
+        Vector3 newScale,
+        string undoName)
+    {
+        Matrix4x4 baseToScaleCoordinates =
+            (targetLocalToWorld * Matrix4x4.Scale(ClampMAChildScale(oldScale))).inverse * targetLocalToWorld;
+        Matrix4x4 scaleToBaseCoordinates = Matrix4x4.Scale(ClampMAChildScale(newScale));
+        Matrix4x4 updateTransform = scaleToBaseCoordinates * baseToScaleCoordinates;
+
+        foreach (Transform child in boneTransform)
+        {
+            Undo.RecordObject(child, undoName);
+            child.localPosition = updateTransform.MultiplyPoint(child.localPosition);
+            ForceUpdateScene(child);
+        }
+    }
+
+    private static Vector3 ClampMAChildScale(Vector3 scale)
+    {
+        const float threshold = 1f / (1 << 14);
+        return new Vector3(
+            Mathf.Max(threshold, scale.x),
+            Mathf.Max(threshold, scale.y),
+            Mathf.Max(threshold, scale.z));
+    }
+
+    private static Vector3 SanitizeMAScale(Vector3 scale)
+    {
+        const float minimum = 0.0001f;
+        return new Vector3(
+            float.IsNaN(scale.x) || float.IsInfinity(scale.x) ? 1f : Mathf.Max(minimum, scale.x),
+            float.IsNaN(scale.y) || float.IsInfinity(scale.y) ? 1f : Mathf.Max(minimum, scale.y),
+            float.IsNaN(scale.z) || float.IsInfinity(scale.z) ? 1f : Mathf.Max(minimum, scale.z));
+    }
+
+    private void SaveNewMAPreset()
+    {
+        if (targetAvatarRoot == null) return;
+        MAScaleAdjusterPresetData preset = ScriptableObject.CreateInstance<MAScaleAdjusterPresetData>();
+        foreach (HumanoidBodyPart part in System.Enum.GetValues(typeof(HumanoidBodyPart)))
+        {
+            if (part == HumanoidBodyPart.None || !TryGetLiveBoneTransform(GetBoneType(part), out Transform boneTransform)) continue;
+            ModularAvatarScaleAdjuster adjuster = boneTransform.GetComponent<ModularAvatarScaleAdjuster>();
+            if (adjuster != null)
+                preset.entries.Add(new MAScaleAdjusterPresetData.Entry(
+                    part.ToString(), adjuster.Scale, GetMAAdjustChildPositions(part)));
+        }
+
+        if (preset.entries.Count == 0)
+        {
+            DestroyImmediate(preset);
+            EditorUtility.DisplayDialog(Tr("No MA Adjusters", "MA Adjuster 없음", "MA Adjusterがありません"),
+                Tr("No mapped bones have an MA Scale Adjuster.", "매핑된 뼈에 MA Scale Adjuster가 없습니다.",
+                    "マッピングされたボーンにMA Scale Adjusterがありません。"), "OK");
+            return;
+        }
+
+        string path = EditorUtility.SaveFilePanelInProject(Tr("Save MA Scale Preset", "MA 비율 프리셋 저장", "MA比率プリセットを保存"),
+            "NewMAScalePreset", "asset", Tr("Choose a save location.", "저장 위치를 선택하세요.", "保存先を選択してください。"));
+        if (string.IsNullOrEmpty(path))
+        {
+            DestroyImmediate(preset);
+            return;
+        }
+
+        MAScaleAdjusterPresetData existing = AssetDatabase.LoadAssetAtPath<MAScaleAdjusterPresetData>(path);
+        if (existing != null)
+        {
+            if (!EditorUtility.DisplayDialog(Tr("Overwrite Preset", "프리셋 덮어쓰기", "プリセットを上書き"),
+                    Tr("Overwrite the existing MA preset?", "기존 MA 프리셋을 덮어쓸까요?", "既存のMAプリセットを上書きしますか？"),
+                    Tr("Overwrite", "덮어쓰기", "上書き"), Tr("Cancel", "취소", "キャンセル")))
+            {
+                DestroyImmediate(preset);
+                return;
+            }
+            AssetDatabase.DeleteAsset(path);
+        }
+
+        AssetDatabase.CreateAsset(preset, path);
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+        RefreshPresetList();
+    }
+
+    private void LoadSelectedMAPreset()
+    {
+        if (targetAvatarRoot == null || maPresetFiles == null || selectedMaPresetIndex < 0 ||
+            selectedMaPresetIndex >= maPresetFiles.Length) return;
+        MAScaleAdjusterPresetData preset = AssetDatabase.LoadAssetAtPath<MAScaleAdjusterPresetData>(maPresetFiles[selectedMaPresetIndex]);
+        if (preset == null) return;
+
+        int installable = 0;
+        int existingAdjusters = 0;
+        int missing = 0;
+        int childPositionAdjustments = 0;
+        foreach (MAScaleAdjusterPresetData.Entry entry in preset.entries)
+        {
+            if (!System.Enum.TryParse(entry.part, out HumanoidBodyPart part) || part == HumanoidBodyPart.None ||
+                !TryGetLiveBoneTransform(GetBoneType(part), out Transform boneTransform))
+            {
+                missing++;
+                continue;
+            }
+            installable++;
+            if (boneTransform.GetComponent<ModularAvatarScaleAdjuster>() != null) existingAdjusters++;
+            if (entry.adjustChildPositions) childPositionAdjustments++;
+        }
+
+        string confirmation = Tr(
+            $"Install on {installable} bones? {existingAdjusters} existing Adjusters will be updated; {missing} entries will be skipped. {childPositionAdjustments} entries will also change direct child positions.",
+            $"{installable}개 뼈에 설치할까요? 기존 Adjuster {existingAdjusters}개는 갱신되고 {missing}개 항목은 건너뜁니다. {childPositionAdjustments}개 항목은 직계 자식 위치도 변경합니다.",
+            $"{installable}個のボーンに適用しますか？既存Adjuster {existingAdjusters}個を更新し、{missing}項目をスキップします。{childPositionAdjustments}項目は直下の子位置も変更します。" );
+        if (!EditorUtility.DisplayDialog(
+                Tr("Install MA Preset", "MA 프리셋 설치", "MAプリセットを適用"), confirmation,
+                Tr("Install", "설치", "適用"), Tr("Cancel", "취소", "キャンセル"))) return;
+
+        int undoGroup = Undo.GetCurrentGroup();
+        Undo.SetCurrentGroupName("Install MA Scale Preset");
+        int installed = 0;
+        int skipped = 0;
+        foreach (MAScaleAdjusterPresetData.Entry entry in preset.entries)
+        {
+            if (!System.Enum.TryParse(entry.part, out HumanoidBodyPart part) || part == HumanoidBodyPart.None ||
+                !TryGetLiveBoneTransform(GetBoneType(part), out Transform boneTransform))
+            {
+                skipped++;
+                continue;
+            }
+            SetMAAdjustChildPositions(part, entry.adjustChildPositions);
+            SetMAScale(boneTransform, entry.Scale, "Install MA Scale Preset", entry.adjustChildPositions);
+            installed++;
+        }
+        Undo.CollapseUndoOperations(undoGroup);
+        Repaint();
+
+        EditorUtility.DisplayDialog(Tr("MA Preset Installed", "MA 프리셋 설치 완료", "MAプリセット適用完了"),
+            Tr($"Installed on {installed} bones. Skipped {skipped} entries.",
+                $"{installed}개 뼈에 설치했습니다. {skipped}개 항목을 건너뛰었습니다.",
+                $"{installed}個のボーンに適用しました。{skipped}項目をスキップしました。"), "OK");
+    }
+
     private void DrawShapeKeyGUI()
     {
         // ?????怨뚮뼚????????筌????怨좊룴??(?縕?猿녿뎨?T??????れ삀?節낆젂??
@@ -1061,7 +1430,8 @@ public class ArmatureScalerEditor : EditorWindow
         {
             GUI.FocusControl(null);
             
-            if (previousSelectedPart != part && previousSelectedPart != HumanoidBodyPart.None)
+            if (armatureEditMode == ArmatureEditMode.DirectTransform &&
+                previousSelectedPart != part && previousSelectedPart != HumanoidBodyPart.None)
             {
                 ApplyCurrentChanges(previousSelectedPart);
             }
@@ -1070,7 +1440,7 @@ public class ArmatureScalerEditor : EditorWindow
             HumanBodyBones selectedBoneType = GetBoneType(part);
             if (TryGetLiveBoneTransform(selectedBoneType, out Transform boneTransform))
             {
-                lastKnownScale = boneTransform.localScale;
+                lastKnownScale = GetDisplayedScale(boneTransform);
                 lastKnownRotation = boneTransform.localRotation;
                 lastKnownPosition = boneTransform.localPosition;
                 Selection.activeGameObject = boneTransform.gameObject;
@@ -1307,7 +1677,7 @@ public class ArmatureScalerEditor : EditorWindow
             GUIStyle infoStyle = new GUIStyle(EditorStyles.boldLabel)
             {
                 alignment = TextAnchor.MiddleCenter,
-                normal = { textColor = new Color(0.4f, 0.7f, 1f) },
+                normal = { textColor = new Color(0.30f, 0.82f, 0.76f) },
                 fontSize = 12
             };
             Rect infoRect = new Rect(area.x, area.y + 4, area.width, 20);
@@ -1415,7 +1785,7 @@ public class ArmatureScalerEditor : EditorWindow
         bool isSelected = selectedPart == part;
 
         Color dotColor = !found ? new Color(0.3f, 0.3f, 0.3f, 0.6f)
-                       : isSelected ? new Color(0.3f, 0.5f, 1f, 1f)
+                       : isSelected ? new Color(0.30f, 0.82f, 0.76f, 1f)
                        : new Color(0.2f, 0.8f, 0.3f, 0.9f);
 
         float clickSize = Mathf.Max(radius * 2.5f, 26f);
@@ -1423,7 +1793,7 @@ public class ArmatureScalerEditor : EditorWindow
 
         DrawFilledCircle(center, radius, dotColor);
         if (isSelected)
-            DrawCircleOutline(center, radius + 4, new Color(0.3f, 0.5f, 1f, 0.5f), 2f);
+            DrawCircleOutline(center, radius + 4, new Color(0.30f, 0.82f, 0.76f, 0.5f), 2f);
 
         GUIStyle labelStyle = new GUIStyle(EditorStyles.miniLabel)
         {
@@ -1440,13 +1810,14 @@ public class ArmatureScalerEditor : EditorWindow
         {
             Event.current.Use();
             GUI.FocusControl(null);
-            if (selectedPart != part && selectedPart != HumanoidBodyPart.None)
+            if (armatureEditMode == ArmatureEditMode.DirectTransform &&
+                selectedPart != part && selectedPart != HumanoidBodyPart.None)
                 ApplyCurrentChanges(selectedPart);
 
             selectedPart = part;
             if (TryGetLiveBoneTransform(boneType, out Transform boneTransform))
             {
-                lastKnownScale = boneTransform.localScale;
+                lastKnownScale = GetDisplayedScale(boneTransform);
                 lastKnownRotation = boneTransform.localRotation;
                 lastKnownPosition = boneTransform.localPosition;
                 Selection.activeGameObject = boneTransform.gameObject;
@@ -1716,6 +2087,76 @@ public class ArmatureScalerEditor : EditorWindow
     // ??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已?
     //  EXPRESSION TAB
     // ??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已?
+    private bool DrawThemedCheckboxToggle(string label, bool value, params GUILayoutOption[] options)
+    {
+        Color previousBackground = GUI.backgroundColor;
+        GUI.backgroundColor = value
+            ? new Color(0.30f, 0.82f, 0.76f)
+            : new Color(0.42f, 0.42f, 0.45f);
+        GUIStyle buttonStyle = new GUIStyle(GUI.skin.button);
+        Rect buttonRect = GUILayoutUtility.GetRect(GUIContent.none, buttonStyle, options);
+        bool nextValue = GUI.Toggle(buttonRect, value, GUIContent.none, buttonStyle);
+
+        const float boxSize = 14f;
+        Rect boxRect = new Rect(
+            buttonRect.x + 8f,
+            buttonRect.y + (buttonRect.height - boxSize) * 0.5f,
+            boxSize,
+            boxSize);
+        EditorGUI.DrawRect(boxRect, value ? Color.white : new Color(0.72f, 0.72f, 0.74f));
+        Rect boxInner = new Rect(boxRect.x + 2f, boxRect.y + 2f, boxRect.width - 4f, boxRect.height - 4f);
+        EditorGUI.DrawRect(boxInner, value ? new Color(0.22f, 0.62f, 0.57f) : new Color(0.25f, 0.25f, 0.27f));
+
+        if (value)
+        {
+            Handles.BeginGUI();
+            Color previousHandleColor = Handles.color;
+            Handles.color = Color.white;
+            Handles.DrawAAPolyLine(2f,
+                new Vector3(boxRect.x + 3.2f, boxRect.y + 7.2f),
+                new Vector3(boxRect.x + 6.0f, boxRect.y + 10.0f),
+                new Vector3(boxRect.x + 11.2f, boxRect.y + 4.0f));
+            Handles.color = previousHandleColor;
+            Handles.EndGUI();
+        }
+
+        GUIStyle labelStyle = new GUIStyle(EditorStyles.label)
+        {
+            fontStyle = value ? FontStyle.Bold : FontStyle.Normal,
+            fontSize = 12,
+            alignment = TextAnchor.MiddleLeft,
+            normal = { textColor = value ? Color.white : new Color(0.82f, 0.82f, 0.82f) }
+        };
+        Rect labelRect = new Rect(
+            boxRect.xMax + 6f,
+            buttonRect.y,
+            Mathf.Max(0f, buttonRect.xMax - boxRect.xMax - 10f),
+            buttonRect.height);
+        GUI.Label(labelRect, label, labelStyle);
+
+        GUI.backgroundColor = previousBackground;
+        return nextValue;
+    }
+
+    private bool DrawThemedButton(
+        string label,
+        Color backgroundColor,
+        bool bold,
+        params GUILayoutOption[] options)
+    {
+        Color previousBackground = GUI.backgroundColor;
+        GUI.backgroundColor = backgroundColor;
+        GUIStyle style = new GUIStyle(GUI.skin.button)
+        {
+            fontStyle = bold ? FontStyle.Bold : FontStyle.Normal,
+            fontSize = 12,
+            normal = { textColor = Color.white }
+        };
+        bool pressed = GUILayout.Button(label, style, options);
+        GUI.backgroundColor = previousBackground;
+        return pressed;
+    }
+
     private void DrawExpressionGUI()
     {
         if (targetAvatarRoot != _prevExprTarget)

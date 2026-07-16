@@ -92,6 +92,26 @@ public class DiNeMaterialTool : EditorWindow
         /* 61 */ new[] { "Deselect All",       "전체 해제",           "全て解除"                  },
         /* 62 */ new[] { "Remove Textures Only", "텍스쳐만 제거",     "テクスチャのみ削除"         },
         /* 63 */ new[] { "Remove + Disable",   "제거 + 기능 끄기",    "削除＋機能を無効化"         },
+        // ── VRAM bulk resize ──
+        /* 64 */ new[] { "Selected: {0}", "선택: {0}개", "選択: {0}個" },
+        /* 65 */ new[] { "Max Size", "최대 해상도", "最大解像度" },
+        /* 66 */ new[] { "Apply to Selected", "선택 항목에 적용", "選択項目に適用" },
+        /* 67 */ new[] { "Change the maximum resolution of {0} selected texture(s) to {1}.\nThis action is NOT undo-able.\n\nContinue?",
+                         "선택한 텍스처 {0}개의 최대 해상도를 {1}(으)로 변경합니다.\n이 작업은 실행취소(Undo)가 불가능합니다.\n\n계속하시겠습니까?",
+                         "選択したテクスチャ{0}個の最大解像度を{1}に変更します。\nこの操作は元に戻せません。\n\n続けますか？" },
+        /* 68 */ new[] { "Done — Resized {0} texture(s) to {1}", "완료 — 텍스처 {0}개를 {1}(으)로 변경했습니다.", "完了 — テクスチャ{0}個を{1}に変更しました" },
+        /* 69 */ new[] { "No selected textures need changing.", "변경할 선택 텍스처가 없습니다.", "変更が必要な選択テクスチャはありません。" },
+        /* 70 */ new[] { "Selected VRAM: {0}", "선택 합계: {0}", "選択合計: {0}" },
+        /* 71 */ new[] { "Bulk Texture Settings", "선택 텍스처 일괄 변경", "選択テクスチャ一括変更" },
+        /* 72 */ new[] { "Format", "압축", "形式" },
+        /* 73 */ new[] { "Size", "해상도", "解像度" },
+        /* 74 */ new[] { "Apply these settings to {0} selected texture(s)?\n\nCompression: {1}\nMax size: {2}\n\nThis action is NOT undo-able.",
+                         "선택한 텍스처 {0}개에 다음 설정을 적용합니다.\n\n압축 방식: {1}\n최대 해상도: {2}\n\n이 작업은 실행취소(Undo)가 불가능합니다.",
+                         "選択したテクスチャ{0}個に次の設定を適用します。\n\n圧縮方式: {1}\n最大解像度: {2}\n\nこの操作は元に戻せません。" },
+        /* 75 */ new[] { "Done — Updated {0} texture(s)", "완료 — 텍스처 {0}개를 변경했습니다.", "完了 — テクスチャ{0}個を変更しました" },
+        /* 76 */ new[] { "All", "전체", "全て" },
+        /* 77 */ new[] { "Clear", "해제", "解除" },
+        /* 78 */ new[] { "Apply", "적용", "適用" },
     };
     private string T(int i) => UI[i][L];
     private string Tf(int i, params object[] a) => string.Format(UI[i][L], a);
@@ -272,6 +292,7 @@ public class DiNeMaterialTool : EditorWindow
         public long      FormatSavings;
         public long      SizeSavings;
         public TextureImporterFormat SuggestedFormat;
+        public bool      Selected;
         
         // 사용 중인 마테리얼과 오브젝트 리스트
         public List<Material> UsedByMaterials = new List<Material>();
@@ -286,6 +307,10 @@ public class DiNeMaterialTool : EditorWindow
     private bool _vramScanned = false;
     private Vector2 _vramScroll;
     private long _vramTotal;
+    private int _vramBulkSizeIndex = 5; // 1024
+    private int _vramBulkFormatIndex = 4; // BC7
+    private bool _vramBulkChangeFormat;
+    private bool _vramBulkChangeSize = true;
 
     // BPP 딕셔너리는 DiNeTextureVRAM 공용 유틸로 이전됨
     // CalcVRAMBytes도 DiNeTextureVRAM.CalcTextureVRAM 위임
@@ -1340,6 +1365,88 @@ public class DiNeMaterialTool : EditorWindow
 
         GUILayout.Space(4);
 
+        // ── 선택 텍스처 일괄 해상도 변경 ──
+        var editableTextures = _vramTextures.Where(IsVRAMTextureEditable).ToList();
+        var selectedTextures = editableTextures.Where(t => t.Selected).ToList();
+        long selectedVRAM = selectedTextures.Sum(t => t.VRAMBytes);
+
+        prev = GUI.backgroundColor;
+        GUI.backgroundColor = ColCard;
+        EditorGUILayout.BeginVertical("box");
+        GUI.backgroundColor = prev;
+
+        EditorGUILayout.BeginHorizontal();
+        GUILayout.Label(T(71), EditorStyles.boldLabel);
+        GUILayout.FlexibleSpace();
+        GUILayout.Label($"{Tf(64, selectedTextures.Count)}  |  {Tf(70, FormatBytes(selectedVRAM))}",
+            new GUIStyle(EditorStyles.miniLabel) { alignment = TextAnchor.MiddleRight });
+        EditorGUILayout.EndHorizontal();
+
+        // 선택 / 변경 설정 / 적용을 가능한 한 한 줄에 배치
+        bool narrowBulkUI = position.width < 500f;
+        bool canApplyBulk = selectedTextures.Count > 0 && (_vramBulkChangeFormat || _vramBulkChangeSize);
+        var bulkButtonStyle = new GUIStyle(GUI.skin.button)
+            { fontStyle = FontStyle.Bold, normal = { textColor = Color.white }, hover = { textColor = Color.white } };
+        bool applyBulk = false;
+
+        EditorGUILayout.BeginHorizontal();
+        if (GUILayout.Button(T(76), EditorStyles.miniButtonLeft, GUILayout.Width(44), GUILayout.Height(21)))
+            editableTextures.ForEach(t => t.Selected = true);
+        if (GUILayout.Button(T(77), EditorStyles.miniButtonRight, GUILayout.Width(44), GUILayout.Height(21)))
+            editableTextures.ForEach(t => t.Selected = false);
+
+        if (narrowBulkUI)
+        {
+            GUILayout.FlexibleSpace();
+            EditorGUI.BeginDisabledGroup(!canApplyBulk);
+            prev = GUI.backgroundColor;
+            GUI.backgroundColor = ColApply;
+            applyBulk = GUILayout.Button($"{T(78)} ({selectedTextures.Count})", bulkButtonStyle,
+                GUILayout.Width(105), GUILayout.Height(21));
+            GUI.backgroundColor = prev;
+            EditorGUI.EndDisabledGroup();
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.BeginHorizontal();
+        }
+
+        GUILayout.Space(6);
+        _vramBulkChangeFormat = EditorGUILayout.ToggleLeft(T(72), _vramBulkChangeFormat, GUILayout.Width(48));
+        EditorGUI.BeginDisabledGroup(!_vramBulkChangeFormat);
+        _vramBulkFormatIndex = EditorGUILayout.Popup(_vramBulkFormatIndex, _formatNames, GUILayout.Width(115));
+        EditorGUI.EndDisabledGroup();
+
+        GUILayout.Space(6);
+        _vramBulkChangeSize = EditorGUILayout.ToggleLeft(T(73), _vramBulkChangeSize, GUILayout.Width(60));
+        EditorGUI.BeginDisabledGroup(!_vramBulkChangeSize);
+        _vramBulkSizeIndex = EditorGUILayout.Popup(_vramBulkSizeIndex, _sizeNames, GUILayout.Width(64));
+        EditorGUI.EndDisabledGroup();
+
+        if (!narrowBulkUI)
+        {
+            GUILayout.FlexibleSpace();
+            EditorGUI.BeginDisabledGroup(!canApplyBulk);
+            prev = GUI.backgroundColor;
+            GUI.backgroundColor = ColApply;
+            applyBulk = GUILayout.Button($"{T(78)} ({selectedTextures.Count})", bulkButtonStyle,
+                GUILayout.Width(105), GUILayout.Height(21));
+            GUI.backgroundColor = prev;
+            EditorGUI.EndDisabledGroup();
+        }
+        EditorGUILayout.EndHorizontal();
+
+        if (applyBulk)
+        {
+            TextureImporterFormat? format = _vramBulkChangeFormat
+                ? _formatOptions[_vramBulkFormatIndex]
+                : (TextureImporterFormat?)null;
+            int? maxSize = _vramBulkChangeSize ? _sizeOptions[_vramBulkSizeIndex] : (int?)null;
+            VRAMChangeSettingsBulk(selectedTextures, format, maxSize);
+            GUIUtility.ExitGUI();
+        }
+        EditorGUILayout.EndVertical();
+
+        GUILayout.Space(4);
+
         // ── 전체 최적화 버튼 ──
         var optimizable = _vramTextures.Where(t => t.CanOptimizeFormat || t.CanOptimizeSize).ToList();
         long totalSavings = optimizable.Sum(t => t.FormatSavings + t.SizeSavings);
@@ -1387,6 +1494,11 @@ public class DiNeMaterialTool : EditorWindow
 
         // ── 썸네일 + 우측 텍스트 영역 ──
         EditorGUILayout.BeginHorizontal();
+
+        bool editable = IsVRAMTextureEditable(info);
+        EditorGUI.BeginDisabledGroup(!editable);
+        info.Selected = EditorGUILayout.Toggle(info.Selected, GUILayout.Width(18));
+        EditorGUI.EndDisabledGroup();
 
         // 1. 썸네일 영역
         Rect thumbRect = GUILayoutUtility.GetRect(40, 40, GUILayout.Width(40), GUILayout.Height(40));
@@ -1582,6 +1694,9 @@ public class DiNeMaterialTool : EditorWindow
 
     private void VRAMScanTextures()
     {
+        var selectedPaths = new HashSet<string>(_vramTextures
+            .Where(t => t.Selected && !string.IsNullOrEmpty(t.AssetPath))
+            .Select(t => t.AssetPath));
         _vramTextures.Clear(); _vramScanned = false; _vramTotal = 0;
         if (_targetObject == null) { SetStatus(T(19), true); return; }
 
@@ -1621,6 +1736,8 @@ public class DiNeMaterialTool : EditorWindow
         }
 
         _vramTextures = textureMap.Values.OrderByDescending(t => t.VRAMBytes).ToList();
+        foreach (var info in _vramTextures)
+            info.Selected = selectedPaths.Contains(info.AssetPath);
         _vramTotal = _vramTextures.Sum(t => t.VRAMBytes);
         _vramScanned = true;
         SetStatus(Tf(49, _vramTextures.Count, FormatBytes(_vramTotal)), false);
@@ -1738,6 +1855,100 @@ public class DiNeMaterialTool : EditorWindow
         importer.SetPlatformTextureSettings(settings);
         importer.SaveAndReimport();
         VRAMScanTextures();
+    }
+
+    private bool IsVRAMTextureEditable(TextureVRAMInfo info)
+    {
+        return info != null
+            && info.Texture is Texture2D
+            && !string.IsNullOrEmpty(info.AssetPath)
+            && AssetImporter.GetAtPath(info.AssetPath) is TextureImporter;
+    }
+
+    private int GetEffectiveMaxTextureSize(TextureImporter importer, string platform)
+    {
+        var settings = importer.GetPlatformTextureSettings(platform);
+        return settings.overridden && settings.maxTextureSize > 0
+            ? settings.maxTextureSize
+            : importer.maxTextureSize;
+    }
+
+    private void VRAMChangeSettingsBulk(
+        List<TextureVRAMInfo> selected,
+        TextureImporterFormat? format,
+        int? maxSize)
+    {
+        string platform = GetActivePlatformName();
+        var targets = selected
+            .Select(info => new
+            {
+                Info = info,
+                Importer = AssetImporter.GetAtPath(info.AssetPath) as TextureImporter
+            })
+            .Where(x =>
+            {
+                if (x.Importer == null) return false;
+                var settings = x.Importer.GetPlatformTextureSettings(platform);
+                bool needsFormat = format.HasValue
+                    && (!settings.overridden || settings.format != format.Value);
+                bool needsSize = maxSize.HasValue
+                    && GetEffectiveMaxTextureSize(x.Importer, platform) != maxSize.Value;
+                return needsFormat || needsSize;
+            })
+            .ToList();
+
+        if (targets.Count == 0)
+        {
+            SetStatus(T(69), false);
+            return;
+        }
+
+        string formatLabel = format.HasValue ? format.Value.ToString() : "—";
+        string sizeLabel = maxSize.HasValue ? maxSize.Value.ToString() : "—";
+        if (!EditorUtility.DisplayDialog(T(71), Tf(74, targets.Count, formatLabel, sizeLabel), T(24), T(25)))
+            return;
+
+        int changed = 0;
+        try
+        {
+            for (int i = 0; i < targets.Count; i++)
+            {
+                var target = targets[i];
+                EditorUtility.DisplayProgressBar(T(66), target.Info.Texture.name, (float)i / targets.Count);
+
+                var settings = target.Importer.GetPlatformTextureSettings(platform);
+                bool wasOverridden = settings.overridden;
+                settings.name = platform;
+                settings.overridden = true;
+
+                // 포맷만 변경할 때 기존 최대 해상도가 플랫폼 기본값으로 덮이지 않도록 유지한다.
+                if (!wasOverridden && !maxSize.HasValue)
+                    settings.maxTextureSize = target.Importer.maxTextureSize;
+
+                if (format.HasValue)
+                {
+                    settings.format = format.Value;
+                    settings.compressionQuality = 100;
+                }
+
+                if (maxSize.HasValue)
+                {
+                    target.Importer.maxTextureSize = maxSize.Value;
+                    settings.maxTextureSize = maxSize.Value;
+                }
+
+                target.Importer.SetPlatformTextureSettings(settings);
+                target.Importer.SaveAndReimport();
+                changed++;
+            }
+        }
+        finally
+        {
+            EditorUtility.ClearProgressBar();
+        }
+
+        VRAMScanTextures();
+        SetStatus(Tf(75, changed), false);
     }
 
     private void VRAMOptimizeSingle(TextureVRAMInfo info)

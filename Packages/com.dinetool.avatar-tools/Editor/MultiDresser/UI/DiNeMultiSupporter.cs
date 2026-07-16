@@ -496,14 +496,17 @@ public class DiNeMultiSupporter : Editor
             bool isPreviewing = (previewLayerIndex == index && previewButtonIndex == i);
             GUI.backgroundColor = isPreviewing ? new Color(0.3f, 0.82f, 0.9f) : new Color(0.55f, 0.55f, 0.55f);
             GUIStyle previewStyle = new GUIStyle(GUI.skin.button) { fontSize = 11, normal = { textColor = Color.white } };
-            if (GUILayout.Button("미리보기", previewStyle, GUILayout.Width(60), GUILayout.Height(20)))
+            string previewLabel = currentLanguage == Language.Korean
+                ? "미리보기"
+                : currentLanguage == Language.Japanese ? "プレビュー" : "Preview";
+            if (GUILayout.Button(previewLabel, previewStyle, GUILayout.Width(76), GUILayout.Height(24)))
             {
                 if (isPreviewing) ClearPreview();
                 else { ClearPreview(); ApplyPreview(gen, currentLayerData, i, index); }
             }
             GUI.backgroundColor = Color.white;
 
-            if (GUILayout.Button("X", GUILayout.Width(30), GUILayout.Height(20)))
+            if (GUILayout.Button("×", GUILayout.Width(30), GUILayout.Height(24)))
             {
                 ClearPreview();
                 if (i < currentLayerData.icons.Count)
@@ -522,8 +525,19 @@ public class DiNeMultiSupporter : Editor
             EditorGUI.BeginChangeCheck();
 
             var previousTarget = t.objectReferenceValue as GameObject;
-            t.objectReferenceValue = EditorGUILayout.ObjectField(GUIContent.none, t.objectReferenceValue, typeof(GameObject), true);
+            string targetObjectLabel = currentLanguage == Language.Korean
+                ? "대상 오브젝트"
+                : currentLanguage == Language.Japanese ? "対象オブジェクト" : "Target Object";
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label(targetObjectLabel, new GUIStyle(EditorStyles.miniBoldLabel)
+            {
+                alignment = TextAnchor.MiddleLeft
+            }, GUILayout.Width(96), GUILayout.Height(22));
+            t.objectReferenceValue = EditorGUILayout.ObjectField(
+                GUIContent.none, t.objectReferenceValue, typeof(GameObject), true, GUILayout.Height(22));
+            EditorGUILayout.EndHorizontal();
             var currentTarget = t.objectReferenceValue as GameObject;
+            EditorGUI.EndChangeCheck();
 
             if (previousTarget != currentTarget)
             {
@@ -550,16 +564,40 @@ public class DiNeMultiSupporter : Editor
 
             if (i != 0)
             {
+                GUILayout.Space(4);
                 EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.BeginVertical();
-                l.stringValue = EditorGUILayout.TextField(lang["menuName"], l.stringValue);
-                EditorGUILayout.EndVertical();
+                Rect iconRect = GUILayoutUtility.GetRect(76, 76, GUILayout.Width(76), GUILayout.Height(76));
+                icon.objectReferenceValue = EditorGUI.ObjectField(
+                    iconRect, icon.objectReferenceValue, typeof(Texture2D), false);
 
-                icon.objectReferenceValue = EditorGUILayout.ObjectField(
-                    icon.objectReferenceValue, typeof(Texture2D), false,
-                    GUILayout.Width(60), GUILayout.Height(60)
-                );
+                GUILayout.Space(8);
+                EditorGUILayout.BeginVertical(GUILayout.MinHeight(76));
+                GUILayout.Label(lang["menuName"], EditorStyles.miniBoldLabel);
+                l.stringValue = EditorGUILayout.TextField(l.stringValue, GUILayout.Height(22));
+                GUILayout.FlexibleSpace();
+
+                string editIconLabel = currentLanguage == Language.Korean
+                    ? "아이콘 편집"
+                    : currentLanguage == Language.Japanese ? "アイコン編集" : "Edit Icon";
+                Color previousIconButtonColor = GUI.backgroundColor;
+                GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+                if (GUILayout.Button(editIconLabel, GUILayout.Height(26)))
+                {
+                    serializedObject.ApplyModifiedProperties();
+                    Texture2D existingIcon = icon.objectReferenceValue as Texture2D;
+                    GameObject editTarget = i < currentLayerData.targets.Count ? currentLayerData.targets[i] : null;
+
+                    DiNeScreenSaver.DiNeScreenSaver.OpenIconEditor(
+                        editTarget, existingIcon, gen, index, i, null);
+                }
+                GUI.backgroundColor = previousIconButtonColor;
+                EditorGUILayout.EndVertical();
                 EditorGUILayout.EndHorizontal();
+                GUILayout.Space(7);
+
+                Rect sectionLine = GUILayoutUtility.GetRect(0, 1, GUILayout.ExpandWidth(true));
+                EditorGUI.DrawRect(sectionLine, new Color(0.24f, 0.26f, 0.27f));
+                GUILayout.Space(3);
             }
             else
             {
@@ -572,7 +610,7 @@ public class DiNeMultiSupporter : Editor
             if (currentLayerData.linkedObjects.Count > i)
             {
                 int capturedI = i;
-                EditorGUILayout.LabelField(lang["linkedObj"]);
+                EditorGUILayout.LabelField(lang["linkedObj"], EditorStyles.miniBoldLabel);
                 for (int j = 0; j < currentLayerData.linkedObjects[i].objects.Count; j++)
                 {
                     EditorGUILayout.BeginHorizontal();
@@ -597,7 +635,7 @@ public class DiNeMultiSupporter : Editor
                     EditorGUILayout.EndHorizontal();
                 }
 
-                Rect subDrop = GUILayoutUtility.GetRect(0, 25, GUILayout.ExpandWidth(true));
+                Rect subDrop = GUILayoutUtility.GetRect(0, 22, GUILayout.ExpandWidth(true));
                 Color subOriginalColor = GUI.backgroundColor;
                 GUI.backgroundColor = new Color(0.6f, 0.9f, 1f);
                 GUI.Box(subDrop, lang["linkDragHint"], EditorStyles.helpBox);
@@ -648,7 +686,7 @@ public class DiNeMultiSupporter : Editor
             alignment = TextAnchor.MiddleCenter,
             normal    = { textColor = Color.white }
         };
-        Rect dropArea = GUILayoutUtility.GetRect(0, 50, GUILayout.ExpandWidth(true));
+        Rect dropArea = GUILayoutUtility.GetRect(0, 36, GUILayout.ExpandWidth(true));
         Color dropOrigColor = GUI.backgroundColor;
         GUI.backgroundColor = new Color(0.6f, 0.9f, 1f);
         GUI.Box(dropArea, lang["mainDragHint"], dragHintStyle);
@@ -1171,14 +1209,15 @@ public class DiNeMultiSupporter : Editor
 
         EditorGUILayout.BeginHorizontal();
         foldout = EditorGUILayout.Foldout(foldout, lang["matSwap"], true);
+        Color previousColor = GUI.backgroundColor;
         GUI.backgroundColor = new Color(0.7f, 0.9f, 0.7f);
-        if (GUILayout.Button(lang["addMatSwap"], GUILayout.Width(60), GUILayout.Height(16)))
+        if (GUILayout.Button(lang["addMatSwap"], GUILayout.Width(60), GUILayout.Height(20)))
         {
             swapList.entries.Add(new DiNeMultiDresser.MaterialSwapEntry());
             foldout = true;
             EditorUtility.SetDirty(target);
         }
-        GUI.backgroundColor = Color.white;
+        GUI.backgroundColor = previousColor;
         EditorGUILayout.EndHorizontal();
 
         EditorPrefs.SetBool(foldoutKey, foldout);
