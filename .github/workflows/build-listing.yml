@@ -3,6 +3,12 @@ name: Build Repo Listing
 on:
   release:
     types: [published, created, edited, deleted]
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/build-listing.yml
+      - Packages/com.dinetool.avatar-tools/package.json
   workflow_dispatch:
 
 jobs:
@@ -21,24 +27,38 @@ jobs:
       - name: Build index.json
         run: |
           mkdir -p Website
-          
+
           pkg_name=$(jq -r '.name' Packages/com.dinetool.avatar-tools/package.json)
           pkg_display=$(jq -r '.displayName' Packages/com.dinetool.avatar-tools/package.json)
           pkg_version=$(jq -r '.version' Packages/com.dinetool.avatar-tools/package.json)
           zip_url="https://github.com/${{ github.repository }}/releases/download/${pkg_version}/${pkg_name}-${pkg_version}.zip"
-          
+          listing_id="com.dinetool.listing"
+          listing_url="https://dine-png.github.io/Di_Ne_Tool/index.json"
+
           pkg=$(jq --arg url "$zip_url" '.url = $url' Packages/com.dinetool.avatar-tools/package.json)
-          
-          jq -n \
+
+          # Keep every previously published version. VPM projects can remain locked
+          # to old versions, so dropping them from the listing breaks restores.
+          if ! curl --fail --silent --show-error --location "$listing_url" -o Website/current.json; then
+            echo '{}' > Website/current.json
+          fi
+
+          jq -s \
             --arg name "$pkg_display" \
             --arg author "Dine" \
-            --arg url "https://Dine-png.github.io/Di_Ne_Tool/index.json" \
+            --arg id "$listing_id" \
+            --arg url "$listing_url" \
             --arg pkg_name "$pkg_name" \
             --arg version "$pkg_version" \
             --argjson pkg "$pkg" \
-            '{name: $name, author: $author, url: $url, packages: {($pkg_name): {versions: {($version): $pkg}}}}' \
+            '((.[0].packages[$pkg_name].versions // {}) *
+              (.[1].packages[$pkg_name].versions // {}) *
+              {($version): $pkg}) as $versions |
+             {name: $name, id: $id, url: $url, author: $author,
+              packages: {($pkg_name): {versions: $versions}}}' \
+            index.json Website/current.json \
             > Website/index.json
-          
+
           cat Website/index.json
 
       - name: Upload Pages artifact
