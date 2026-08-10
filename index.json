@@ -1,5 +1,5 @@
 {
-  "name": "Di Ne Tool Listing",
+  "name": "Di Ne Tool",
   "id": "com.dinetool.listing",
   "url": "https://dine-png.github.io/Di_Ne_Tool/index.json",
   "author": "Dine",
@@ -130,6 +130,23 @@
             "com.vrchat.avatars": ">=3.5.0"
           },
           "url": "https://github.com/Dine-png/DI_NE_TOOL/releases/download/1.4.8/com.dine.tool-1.4.8.zip"
+        },
+        "1.5.0": {
+          "name": "com.dine.tool",
+          "version": "1.5.0",
+          "displayName": "Di Ne Tool",
+          "description": "Unity editor tools for VRChat avatar editing, menu generation, and optimization.",
+          "unity": "2022.3",
+          "author": {
+            "name": "Dine",
+            "url": "https://github.com/Dine-png"
+          },
+          "vpmDependencies": {
+            "nadena.dev.ndmf": ">=1.8.0 <2.0.0",
+            "nadena.dev.modular-avatar": ">=1.15.1 <2.0.0",
+            "com.vrchat.avatars": ">=3.5.0"
+          },
+          "url": "https://github.com/Dine-png/Di_Ne_Tool/releases/download/1.5.0/com.dine.tool-1.5.0.zip"
         }
       }
     }

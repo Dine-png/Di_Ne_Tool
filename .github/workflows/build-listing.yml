@@ -14,19 +14,17 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     permissions:
       contents: write
-      pages: write
-      id-token: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Build index.json
         run: |
-          mkdir -p Website
+          build_dir="$(mktemp -d)"
+          trap 'rm -rf "$build_dir"' EXIT
 
           pkg_name=$(jq -r '.name' Packages/com.dinetool.avatar-tools/package.json)
           pkg_display=$(jq -r '.displayName' Packages/com.dinetool.avatar-tools/package.json)
@@ -39,8 +37,8 @@ jobs:
 
           # Keep every previously published version. VPM projects can remain locked
           # to old versions, so dropping them from the listing breaks restores.
-          if ! curl --fail --silent --show-error --location "$listing_url" -o Website/current.json; then
-            echo '{}' > Website/current.json
+          if ! curl --fail --silent --show-error --location "$listing_url" -o "$build_dir/current.json"; then
+            echo '{}' > "$build_dir/current.json"
           fi
 
           jq -s \
@@ -56,16 +54,20 @@ jobs:
               {($version): $pkg}) as $versions |
              {name: $name, id: $id, url: $url, author: $author,
               packages: {($pkg_name): {versions: $versions}}}' \
-            index.json Website/current.json \
-            > Website/index.json
+            index.json "$build_dir/current.json" \
+            > "$build_dir/index.json"
 
-          cat Website/index.json
+          mv "$build_dir/index.json" index.json
+          cat index.json
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: Website
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Update canonical listing
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.json
+          if git diff --cached --quiet; then
+            echo "Listing is already up to date"
+            exit 0
+          fi
+          git commit -m "Update VPM package listing"
+          git push origin HEAD:main
