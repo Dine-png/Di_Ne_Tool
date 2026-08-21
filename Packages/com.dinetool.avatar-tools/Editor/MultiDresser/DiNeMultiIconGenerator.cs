@@ -1,19 +1,15 @@
 #if UNITY_EDITOR
-using System.IO;
 using UnityEditor;
 using UnityEngine;
 
 /// <summary>Multi Dresser 아이콘 생성과 참조 관리를 담당한다.</summary>
 public static class DiNeMultiIconGenerator
 {
-    private const string SavePath = "Assets/Di Ne/MultiDresser/Icons";
-
     public static void GenerateIcons(DiNeMultiDresser context)
     {
         if (context == null || context.layers == null)
             return;
 
-        EnsureSavePath();
         foreach (DiNeMultiDresser.DresserLayer layer in context.layers)
         {
             if (layer?.targets == null)
@@ -80,28 +76,7 @@ public static class DiNeMultiIconGenerator
 
     public static string GetIconAssetPath(string iconName)
     {
-        return $"{SavePath}/{GetSafeFileName(iconName)}.png";
-    }
-
-    private static string GetSafeFileName(string iconName)
-    {
-        if (string.IsNullOrWhiteSpace(iconName))
-            return "Icon";
-
-        foreach (char invalidCharacter in Path.GetInvalidFileNameChars())
-            iconName = iconName.Replace(invalidCharacter, '_');
-
-        iconName = iconName.Trim();
-        return string.IsNullOrEmpty(iconName) ? "Icon" : iconName;
-    }
-
-    private static void EnsureSavePath()
-    {
-        if (AssetDatabase.IsValidFolder(SavePath))
-            return;
-
-        Directory.CreateDirectory(SavePath);
-        AssetDatabase.Refresh();
+        return DiNeIconMaker.GetDefaultIconAssetPath(iconName);
     }
 }
 #endif

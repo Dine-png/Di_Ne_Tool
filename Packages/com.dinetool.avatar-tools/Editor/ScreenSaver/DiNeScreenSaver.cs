@@ -37,7 +37,7 @@ namespace DiNeScreenSaver
         //  Output paths
         // ══════════════════════════════════════════════════════════════════════
         private const string SCREENSHOT_ASSET_PATH = "Assets/Di Ne/ScreenShot/";
-        private const string ICON_ASSET_PATH       = "Assets/Di Ne/Icons/";
+        private const string ICON_ASSET_PATH       = DiNeIconMaker.DefaultIconAssetFolder + "/";
 
         // ══════════════════════════════════════════════════════════════════════
         //  UI text
@@ -278,8 +278,13 @@ namespace DiNeScreenSaver
             window._previewPan = Vector2.zero;
             window._zoomFactor = 1f;
             window._previewDirty = true;
-            window._iconOverwriteAssetPath = existingIcon != null ? AssetDatabase.GetAssetPath(existingIcon) : null;
-            if (!DiNeIconMaker.CanOverwriteAsset(window._iconOverwriteAssetPath))
+            window._iconOverwriteAssetPath = existingIcon != null
+                ? AssetDatabase.GetAssetPath(existingIcon).Replace('\\', '/')
+                : null;
+            // Multi Dresser에서 편집한 아이콘도 공용 Icons 폴더에만 저장한다.
+            if (!DiNeIconMaker.CanOverwriteAsset(window._iconOverwriteAssetPath) ||
+                !window._iconOverwriteAssetPath.StartsWith(
+                    ICON_ASSET_PATH, System.StringComparison.OrdinalIgnoreCase))
                 window._iconOverwriteAssetPath = null;
 
             window._iconDresser = owner;

@@ -16,8 +16,8 @@ using Object = UnityEngine.Object;
 public static class DiNeIconMaker
 {
     public const int OutputSize = 256;
+    public const string DefaultIconAssetFolder = "Assets/Di Ne/Icons";
 
-    private const string SavePath = "Assets/Di Ne/Icons";
     private const string ForbiddenOverlayRelativePath = "Assets/IconMaker/ForbiddenOverlay.png";
     // 256px 출력에 4배 슈퍼샘플링을 적용해 품질과 편집 창 반응성을 함께 확보한다.
     private const int CaptureSize = 1024;
@@ -181,7 +181,7 @@ public static class DiNeIconMaker
 
     public static string GetDefaultIconAssetPath(string targetName)
     {
-        return $"{SavePath}/{GetSafeFileName(targetName)}.png";
+        return $"{DefaultIconAssetFolder}/{GetSafeFileName(targetName)}.png";
     }
 
     public static bool CanOverwriteAsset(string assetPath)

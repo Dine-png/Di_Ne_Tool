@@ -231,6 +231,9 @@ Supports 60+ texture formats with accurate BPP data based on GPU memory layout.
 
 ## 📝 Version History
 
+**v1.6.1**
+- Multi Dresser: Store generated and edited icons in the shared `Assets/Di Ne/Icons` folder
+
 **v1.6.0**
 - Screen Saver / Icon Maker: Added an interactive Game View preview with orbit, pan, dolly, selection focus, camera apply, aspect-ratio framing, and live background previews; isolated icon previews in an editor-only preview scene
 - Lighting Designer: Added non-destructive lighting controls, material profiles, texture baking, and NDMF build integration
