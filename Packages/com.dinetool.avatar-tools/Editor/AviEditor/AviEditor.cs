@@ -7,6 +7,9 @@ using nadena.dev.modular_avatar.core;
 
 public class ArmatureScalerEditor : EditorWindow
 {
+    private const string ArmaturePresetPreferenceKey = "DiNe.AviEditor.ArmaturePreset";
+    private const string MaPresetPreferenceKey = "DiNe.AviEditor.MAScalePreset";
+
     private enum LanguagePreset { English, Korean, Japanese }
     private LanguagePreset language
     {
@@ -52,12 +55,10 @@ public class ArmatureScalerEditor : EditorWindow
     private string[] presetFiles;
     [SerializeField] private int    selectedPresetIndex = -1;
     [SerializeField] private string selectedPresetName  = "";
-    [SerializeField] private Vector2 presetScrollPosition;
 
     private string[] maPresetFiles;
     [SerializeField] private int selectedMaPresetIndex = -1;
     [SerializeField] private string selectedMaPresetName = "";
-    [SerializeField] private Vector2 maPresetScrollPosition;
     [SerializeField] private List<string> maAdjustChildPositionParts = new List<string>();
 
     // ?????? ??ш끽維곻쭚?? ?嶺뚮㉡?€쾮???????
@@ -182,12 +183,14 @@ public class ArmatureScalerEditor : EditorWindow
         RefreshPresetList();
         
         EditorApplication.update += OnEditorUpdate;
+        EditorApplication.projectChanged += OnProjectAssetsChanged;
         Undo.undoRedoPerformed += OnUndoRedo;
     }
 
     void OnDisable()
     {
         EditorApplication.update -= OnEditorUpdate;
+        EditorApplication.projectChanged -= OnProjectAssetsChanged;
         Undo.undoRedoPerformed -= OnUndoRedo;
 
         if (_faceRT != null)
@@ -315,17 +318,68 @@ public class ArmatureScalerEditor : EditorWindow
         RefreshPresetList();
     }
 
-    private void RefreshPresetList()
+    private void OnProjectAssetsChanged()
     {
-        string[] guids = AssetDatabase.FindAssets("t:ArmatureScalerPresetData", new[] { "Assets" });
-        presetFiles = guids.Select(guid => AssetDatabase.GUIDToAssetPath(guid)).ToArray();
-        selectedPresetIndex = -1;
-        selectedPresetName = "";
+        RefreshPresetList();
+        Repaint();
+    }
 
-        string[] maGuids = AssetDatabase.FindAssets("t:MAScaleAdjusterPresetData", new[] { "Assets" });
-        maPresetFiles = maGuids.Select(AssetDatabase.GUIDToAssetPath).ToArray();
-        selectedMaPresetIndex = -1;
-        selectedMaPresetName = "";
+    private void RefreshPresetList(string preferredPresetPath = null, string preferredMaPresetPath = null)
+    {
+        if (string.IsNullOrEmpty(preferredPresetPath) &&
+            presetFiles != null && selectedPresetIndex >= 0 && selectedPresetIndex < presetFiles.Length)
+            preferredPresetPath = presetFiles[selectedPresetIndex];
+        if (string.IsNullOrEmpty(preferredMaPresetPath) &&
+            maPresetFiles != null && selectedMaPresetIndex >= 0 && selectedMaPresetIndex < maPresetFiles.Length)
+            preferredMaPresetPath = maPresetFiles[selectedMaPresetIndex];
+
+        string contextPath = GetPresetContextPath();
+        presetFiles = DiNePresetAssetSelector.FindPresetPaths<ArmatureScalerPresetData>();
+        selectedPresetIndex = DiNePresetAssetSelector.RestoreSelection(
+            ArmaturePresetPreferenceKey,
+            presetFiles,
+            preferredPresetPath,
+            contextPath);
+        selectedPresetName = selectedPresetIndex >= 0
+            ? Path.GetFileNameWithoutExtension(presetFiles[selectedPresetIndex])
+            : "";
+
+        maPresetFiles = DiNePresetAssetSelector.FindPresetPaths<MAScaleAdjusterPresetData>();
+        selectedMaPresetIndex = DiNePresetAssetSelector.RestoreSelection(
+            MaPresetPreferenceKey,
+            maPresetFiles,
+            preferredMaPresetPath,
+            contextPath);
+        selectedMaPresetName = selectedMaPresetIndex >= 0
+            ? Path.GetFileNameWithoutExtension(maPresetFiles[selectedMaPresetIndex])
+            : "";
+    }
+
+    private string GetPresetContextPath()
+    {
+        if (targetAvatarRoot == null) return string.Empty;
+        string prefabPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(targetAvatarRoot);
+        return !string.IsNullOrEmpty(prefabPath) ? prefabPath : targetAvatarRoot.scene.path;
+    }
+
+    private void SelectArmaturePreset(int index)
+    {
+        selectedPresetIndex = index;
+        selectedPresetName = index >= 0 && index < presetFiles.Length
+            ? Path.GetFileNameWithoutExtension(presetFiles[index])
+            : "";
+        if (index >= 0 && index < presetFiles.Length)
+            DiNePresetAssetSelector.RememberSelection(ArmaturePresetPreferenceKey, presetFiles[index]);
+    }
+
+    private void SelectMaPreset(int index)
+    {
+        selectedMaPresetIndex = index;
+        selectedMaPresetName = index >= 0 && index < maPresetFiles.Length
+            ? Path.GetFileNameWithoutExtension(maPresetFiles[index])
+            : "";
+        if (index >= 0 && index < maPresetFiles.Length)
+            DiNePresetAssetSelector.RememberSelection(MaPresetPreferenceKey, maPresetFiles[index]);
     }
 
     private void InitializeValues()
@@ -771,69 +825,24 @@ public class ArmatureScalerEditor : EditorWindow
         {
         EditorGUILayout.BeginVertical("box");
         EditorGUILayout.LabelField(UI_TEXT[27], EditorStyles.boldLabel);
-        
-        presetScrollPosition = EditorGUILayout.BeginScrollView(presetScrollPosition, GUILayout.Height(60));
-        
-        if (presetFiles != null && presetFiles.Length > 0)
-        {
-            const int buttonsPerRow = 2;
-            int buttonCount = presetFiles.Length;
+        int nextPreset = DiNePresetAssetSelector.DrawPopup(
+            new GUIContent(
+                Tr("Select Preset", "프리셋 선택", "プリセット選択"),
+                Tr("Presets in the project are detected automatically.", "프로젝트의 프리셋을 자동으로 인식합니다.", "プロジェクト内のプリセットを自動検出します。")),
+            selectedPresetIndex,
+            presetFiles,
+            Tr("No presets found", "프리셋 없음", "プリセットなし"));
+        if (nextPreset != selectedPresetIndex)
+            SelectArmaturePreset(nextPreset);
 
-            for (int i = 0; i < buttonCount; i += buttonsPerRow)
-            {
-                EditorGUILayout.BeginHorizontal();
-                
-                int buttonsOnThisRow = Mathf.Min(buttonsPerRow, buttonCount - i);
-
-                for (int j = 0; j < buttonsOnThisRow; j++)
-                {
-                    int index = i + j;
-                    if (index < buttonCount)
-                    {
-                        string fileName = Path.GetFileNameWithoutExtension(presetFiles[index]);
-                        GUIStyle buttonStyle = new GUIStyle(GUI.skin.button);
-                        if (selectedPresetIndex == index)
-                        {
-                            buttonStyle.normal.background = selectedButtonTex;
-                        }
-                        
-                        if (buttonsOnThisRow == 1)
-                        {
-                            GUILayout.FlexibleSpace();
-                            if (GUILayout.Button(fileName, buttonStyle, GUILayout.Width(position.width * 0.45f), GUILayout.Height(25)))
-                            {
-                                selectedPresetIndex = index;
-                                selectedPresetName = fileName;
-                            }
-                            GUILayout.FlexibleSpace();
-                        }
-                        else
-                        {
-                            if (GUILayout.Button(fileName, buttonStyle, GUILayout.ExpandWidth(true), GUILayout.Height(25)))
-                            {
-                                selectedPresetIndex = index;
-                                selectedPresetName = fileName;
-                            }
-                        }
-                    }
-                }
-                
-                EditorGUILayout.EndHorizontal();
-            }
-        }
-        else
-        {
-            EditorGUILayout.LabelField(Tr("No presets found.", "프리셋이 없습니다.", "プリセットがありません。"), EditorStyles.wordWrappedLabel);
-        }
-
-        EditorGUILayout.EndScrollView();
-        
-        EditorGUI.BeginDisabledGroup(selectedPresetIndex == -1);
-        
-        if (GUILayout.Button(UI_TEXT[28]))
-        {
+        GUILayout.Space(3f);
+        EditorGUI.BeginDisabledGroup(targetAvatarRoot == null || selectedPresetIndex == -1);
+        if (DrawThemedButton(
+                UI_TEXT[28],
+                new Color(0.30f, 0.82f, 0.76f),
+                true,
+                GUILayout.Height(28f)))
             LoadSelectedPreset(true, true, true);
-        }
 
         EditorGUILayout.BeginHorizontal();
         if (GUILayout.Button(UI_TEXT[39]))
@@ -852,23 +861,24 @@ public class ArmatureScalerEditor : EditorWindow
         
         EditorGUI.EndDisabledGroup();
 
-        var prevBg = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
-        if (GUILayout.Button(UI_TEXT[29], new GUIStyle(GUI.skin.button) { fontStyle = FontStyle.Bold, normal = { textColor = Color.white } }))
-        {
+        EditorGUI.BeginDisabledGroup(targetAvatarRoot == null);
+        if (GUILayout.Button(Tr("＋ Save as New Preset", "＋ 새 프리셋으로 저장", "＋ 新規プリセットとして保存"), GUILayout.Height(25f)))
             SaveNewPreset();
-        }
-        GUI.backgroundColor = prevBg;
+        EditorGUI.EndDisabledGroup();
         
         EditorGUILayout.BeginHorizontal();
-        EditorGUI.BeginDisabledGroup(selectedPresetIndex == -1);
-        if (GUILayout.Button(UI_TEXT[31]))
+        EditorGUI.BeginDisabledGroup(selectedPresetIndex == -1 || presetFiles == null);
+        if (DrawThemedButton(
+                UI_TEXT[31],
+                new Color(0.78f, 0.34f, 0.34f),
+                false,
+                GUILayout.Height(23f)))
         {
             if (EditorUtility.DisplayDialog(UI_TEXT[31], UI_TEXT[32] + selectedPresetName + UI_TEXT[33], UI_TEXT[34], UI_TEXT[35]))
             {
-                DeletePreset(presetFiles[selectedPresetIndex]);
-                RefreshPresetList();
-                selectedPresetIndex = -1;
+                string deletedPath = presetFiles[selectedPresetIndex];
+                DeletePreset(deletedPath);
+                RefreshPresetList(preferredPresetPath: deletedPath);
             }
         }
         EditorGUI.EndDisabledGroup();
@@ -961,33 +971,17 @@ public class ArmatureScalerEditor : EditorWindow
     {
         EditorGUILayout.BeginVertical("box");
         EditorGUILayout.LabelField(Tr("MA Scale Presets", "MA 비율 프리셋", "MA比率プリセット"), EditorStyles.boldLabel);
+        int nextPreset = DiNePresetAssetSelector.DrawPopup(
+            new GUIContent(
+                Tr("Select Preset", "프리셋 선택", "プリセット選択"),
+                Tr("MA presets in the project are detected automatically.", "프로젝트의 MA 프리셋을 자동으로 인식합니다.", "プロジェクト内のMAプリセットを自動検出します。")),
+            selectedMaPresetIndex,
+            maPresetFiles,
+            Tr("No MA presets found", "MA 프리셋 없음", "MAプリセットなし"));
+        if (nextPreset != selectedMaPresetIndex)
+            SelectMaPreset(nextPreset);
 
-        maPresetScrollPosition = EditorGUILayout.BeginScrollView(maPresetScrollPosition, GUILayout.Height(60));
-        if (maPresetFiles != null && maPresetFiles.Length > 0)
-        {
-            for (int i = 0; i < maPresetFiles.Length; i += 2)
-            {
-                EditorGUILayout.BeginHorizontal();
-                for (int j = 0; j < 2 && i + j < maPresetFiles.Length; j++)
-                {
-                    int index = i + j;
-                    string fileName = Path.GetFileNameWithoutExtension(maPresetFiles[index]);
-                    GUIStyle style = new GUIStyle(GUI.skin.button);
-                    if (selectedMaPresetIndex == index) style.normal.background = selectedButtonTex;
-                    if (GUILayout.Button(fileName, style, GUILayout.ExpandWidth(true), GUILayout.Height(25)))
-                    {
-                        selectedMaPresetIndex = index;
-                        selectedMaPresetName = fileName;
-                    }
-                }
-                EditorGUILayout.EndHorizontal();
-            }
-        }
-        else
-        {
-            EditorGUILayout.LabelField(Tr("No MA presets found.", "MA 프리셋이 없습니다.", "MAプリセットがありません。"));
-        }
-        EditorGUILayout.EndScrollView();
+        GUILayout.Space(3f);
 
         EditorGUI.BeginDisabledGroup(targetAvatarRoot == null || selectedMaPresetIndex < 0);
         if (DrawThemedButton(
@@ -997,9 +991,9 @@ public class ArmatureScalerEditor : EditorWindow
         EditorGUI.EndDisabledGroup();
 
         EditorGUI.BeginDisabledGroup(targetAvatarRoot == null);
-        if (DrawThemedButton(
-                Tr("Save Current MA Ratios", "현재 MA 비율 저장", "現在のMA比率を保存"),
-                new Color(0.30f, 0.82f, 0.76f), true, GUILayout.Height(26)))
+        if (GUILayout.Button(
+                Tr("＋ Save Current as New Preset", "＋ 현재 비율을 새 프리셋으로 저장", "＋ 現在の比率を新規プリセットとして保存"),
+                GUILayout.Height(25f)))
             SaveNewMAPreset();
         EditorGUI.EndDisabledGroup();
 
@@ -1012,9 +1006,10 @@ public class ArmatureScalerEditor : EditorWindow
                 Tr($"Delete '{selectedMaPresetName}'?", $"'{selectedMaPresetName}' 프리셋을 삭제할까요?", $"'{selectedMaPresetName}' を削除しますか？"),
                 Tr("Delete", "삭제", "削除"), Tr("Cancel", "취소", "キャンセル")))
         {
-            AssetDatabase.DeleteAsset(maPresetFiles[selectedMaPresetIndex]);
+            string deletedPath = maPresetFiles[selectedMaPresetIndex];
+            AssetDatabase.DeleteAsset(deletedPath);
             AssetDatabase.Refresh();
-            RefreshPresetList();
+            RefreshPresetList(preferredMaPresetPath: deletedPath);
         }
         EditorGUI.EndDisabledGroup();
         EditorGUILayout.EndVertical();
@@ -1215,19 +1210,31 @@ public class ArmatureScalerEditor : EditorWindow
                 DestroyImmediate(preset);
                 return;
             }
-            AssetDatabase.DeleteAsset(path);
+            Undo.RecordObject(existing, "Overwrite MA Scale Preset");
+            existing.entries.Clear();
+            foreach (var entry in preset.entries)
+                existing.entries.Add(new MAScaleAdjusterPresetData.Entry(
+                    entry.part,
+                    entry.Scale,
+                    entry.adjustChildPositions));
+            EditorUtility.SetDirty(existing);
+            DestroyImmediate(preset);
+        }
+        else
+        {
+            AssetDatabase.CreateAsset(preset, path);
         }
 
-        AssetDatabase.CreateAsset(preset, path);
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
-        RefreshPresetList();
+        RefreshPresetList(preferredMaPresetPath: path);
     }
 
     private void LoadSelectedMAPreset()
     {
         if (targetAvatarRoot == null || maPresetFiles == null || selectedMaPresetIndex < 0 ||
             selectedMaPresetIndex >= maPresetFiles.Length) return;
+        DiNePresetAssetSelector.RememberSelection(MaPresetPreferenceKey, maPresetFiles[selectedMaPresetIndex]);
         MAScaleAdjusterPresetData preset = AssetDatabase.LoadAssetAtPath<MAScaleAdjusterPresetData>(maPresetFiles[selectedMaPresetIndex]);
         if (preset == null) return;
 
@@ -2249,6 +2256,7 @@ public class ArmatureScalerEditor : EditorWindow
         if (selectedPresetIndex >= 0 && selectedPresetIndex < presetFiles.Length)
         {
             string filePath = presetFiles[selectedPresetIndex];
+            DiNePresetAssetSelector.RememberSelection(ArmaturePresetPreferenceKey, filePath);
             ArmatureScalerPresetData loadedData = AssetDatabase.LoadAssetAtPath<ArmatureScalerPresetData>(filePath);
             if (loadedData != null)
             {
@@ -2306,32 +2314,57 @@ public class ArmatureScalerEditor : EditorWindow
     }
     private void SaveNewPreset()
     {
-        string path = EditorUtility.SaveFilePanelInProject("Save Preset", "NewPreset", "asset", "Choose a location and name for the new preset.");
-        if (!string.IsNullOrEmpty(path))
+        string path = EditorUtility.SaveFilePanelInProject(
+            Tr("Save Armature Preset", "아마추어 프리셋 저장", "アーマチュアプリセットを保存"),
+            "NewArmaturePreset",
+            "asset",
+            Tr("Choose a save location and name.", "저장 위치와 이름을 선택하세요.", "保存先と名前を選択してください。"));
+        if (string.IsNullOrEmpty(path)) return;
+
+        ArmatureScalerPresetData preset = AssetDatabase.LoadAssetAtPath<ArmatureScalerPresetData>(path);
+        bool isNew = preset == null;
+        if (!isNew)
         {
-            ArmatureScalerPresetData existingPreset = AssetDatabase.LoadAssetAtPath<ArmatureScalerPresetData>(path);
-            if (existingPreset != null)
-            {
-                if (!EditorUtility.DisplayDialog("Warning", "Overwrite the existing preset?", "Overwrite", "Cancel"))
-                    return;
-                AssetDatabase.DeleteAsset(path);
-            }
-
-            ArmatureScalerPresetData newPreset = ScriptableObject.CreateInstance<ArmatureScalerPresetData>();
-            foreach (var kvp in scaleValues)
-                newPreset.scales.dictionary.Add(kvp.Key.ToString(), new ArmatureScalerPresetData.SerializableVector3(kvp.Value));
-            foreach (var kvp in rotationValues)
-                if (CanRotate(kvp.Key))
-                    newPreset.rotations.dictionary.Add(kvp.Key.ToString(), new ArmatureScalerPresetData.SerializableQuaternion(kvp.Value));
-            foreach (var kvp in positionValues)
-                newPreset.positions.dictionary.Add(kvp.Key.ToString(), new ArmatureScalerPresetData.SerializableVector3(kvp.Value));
-
-            AssetDatabase.CreateAsset(newPreset, path);
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
-            RefreshPresetList();
-            Debug.Log($"Preset saved: {path}");
+            if (!EditorUtility.DisplayDialog(
+                    Tr("Overwrite Preset", "프리셋 덮어쓰기", "プリセットを上書き"),
+                    Tr("Overwrite the existing preset?", "기존 프리셋을 덮어쓸까요?", "既存のプリセットを上書きしますか？"),
+                    Tr("Overwrite", "덮어쓰기", "上書き"),
+                    Tr("Cancel", "취소", "キャンセル")))
+                return;
+            Undo.RecordObject(preset, "Overwrite Armature Preset");
         }
+        else
+        {
+            preset = ScriptableObject.CreateInstance<ArmatureScalerPresetData>();
+        }
+
+        preset.scales.dictionary.Clear();
+        preset.scales.keys.Clear();
+        preset.scales.values.Clear();
+        preset.rotations.dictionary.Clear();
+        preset.rotations.keys.Clear();
+        preset.rotations.values.Clear();
+        preset.positions.dictionary.Clear();
+        preset.positions.keys.Clear();
+        preset.positions.values.Clear();
+
+        foreach (var kvp in scaleValues)
+            preset.scales.dictionary.Add(kvp.Key.ToString(), new ArmatureScalerPresetData.SerializableVector3(kvp.Value));
+        foreach (var kvp in rotationValues)
+            if (CanRotate(kvp.Key))
+                preset.rotations.dictionary.Add(kvp.Key.ToString(), new ArmatureScalerPresetData.SerializableQuaternion(kvp.Value));
+        foreach (var kvp in positionValues)
+            preset.positions.dictionary.Add(kvp.Key.ToString(), new ArmatureScalerPresetData.SerializableVector3(kvp.Value));
+
+        if (isNew)
+            AssetDatabase.CreateAsset(preset, path);
+        else
+            EditorUtility.SetDirty(preset);
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+        RefreshPresetList(preferredPresetPath: path);
+        EditorGUIUtility.PingObject(preset);
+        Debug.Log(Tr($"Preset saved: {path}", $"프리셋 저장 완료: {path}", $"プリセットを保存しました: {path}"));
     }
     private void DeletePreset(string filePath)
     {

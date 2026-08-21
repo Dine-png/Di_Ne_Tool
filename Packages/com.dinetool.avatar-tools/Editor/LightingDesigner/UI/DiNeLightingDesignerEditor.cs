@@ -10,6 +10,7 @@ using VRC.SDK3.Avatars.ScriptableObjects;
 public sealed class DiNeLightingDesignerEditor : Editor
 {
     private static readonly Color MintActive = new Color(0.30f, 0.82f, 0.76f);
+    private const string SettingsPresetPreferenceKey = "DiNe.LightingDesigner.SettingsPreset";
 
     // Light Limit Changer의 기본 흐름과 같은 범위: 밝기 + 자주 쓰는 추가 제어만 먼저 보여준다.
     private static readonly DiNeLightingControl[] SimpleAdditionalControls =
@@ -34,6 +35,8 @@ public sealed class DiNeLightingDesignerEditor : Editor
 
     private DiNeLightingDesigner _designer;
     private DiNeLightingDesignerPreset _settingsPreset;
+    private string[] _settingsPresetPaths = new string[0];
+    private int _settingsPresetIndex = -1;
     private Texture2D _windowIcon;
     private Font _titleFont;
     private int _settingsMode;
@@ -59,6 +62,19 @@ public sealed class DiNeLightingDesignerEditor : Editor
         _windowIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
         _titleFont = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
         _designer.EnsureDefaults();
+        RefreshSettingsPresetList();
+        EditorApplication.projectChanged += OnProjectChanged;
+    }
+
+    private void OnDisable()
+    {
+        EditorApplication.projectChanged -= OnProjectChanged;
+    }
+
+    private void OnProjectChanged()
+    {
+        RefreshSettingsPresetList();
+        Repaint();
     }
 
     public override void OnInspectorGUI()
@@ -167,16 +183,18 @@ public sealed class DiNeLightingDesignerEditor : Editor
         using (new EditorGUILayout.VerticalScope("GroupBox"))
         {
             GUILayout.Label(T("설정 프리셋", "Settings Preset", "設定プリセット"), EditorStyles.boldLabel);
-            _settingsPreset = (DiNeLightingDesignerPreset)EditorGUILayout.ObjectField(
+            int selected = DiNePresetAssetSelector.DrawPopup(
                 new GUIContent(
-                    T("프리셋", "Preset", "プリセット"),
+                    T("프리셋 선택", "Select Preset", "プリセット選択"),
                     T(
-                        "프로젝트에 저장해 다른 아바타에도 적용할 수 있는 라이팅 설정입니다.",
-                        "A reusable lighting setup saved in the project for other avatars.",
-                        "プロジェクトに保存し、別のアバターにも使えるライティング設定です。")),
-                _settingsPreset,
-                typeof(DiNeLightingDesignerPreset),
-                false);
+                        "프로젝트의 라이팅 프리셋을 자동으로 찾습니다.",
+                        "Automatically finds Lighting Designer presets in the project.",
+                        "プロジェクト内のLighting Designerプリセットを自動検出します。")),
+                _settingsPresetIndex,
+                _settingsPresetPaths,
+                T("프리셋 없음", "No presets found", "プリセットなし"));
+            if (selected != _settingsPresetIndex)
+                SelectSettingsPreset(selected);
 
             using (new EditorGUILayout.HorizontalScope())
             {
@@ -193,7 +211,7 @@ public sealed class DiNeLightingDesignerEditor : Editor
             }
 
             if (GUILayout.Button(
-                T("새 프리셋으로 저장", "Save as New Preset", "新規プリセットとして保存"),
+                T("＋ 새 프리셋으로 저장", "＋ Save as New Preset", "＋ 新規プリセットとして保存"),
                 GUILayout.Height(26f)))
                 SaveNewPreset();
 
@@ -808,6 +826,7 @@ public sealed class DiNeLightingDesignerEditor : Editor
     {
         if (_settingsPreset == null) return;
 
+        RememberSelectedSettingsPreset();
         serializedObject.ApplyModifiedProperties();
         Undo.RecordObject(_designer, "Apply Lighting Designer Preset");
         _settingsPreset.ApplyTo(_designer);
@@ -819,6 +838,7 @@ public sealed class DiNeLightingDesignerEditor : Editor
     {
         if (_settingsPreset == null) return;
 
+        RememberSelectedSettingsPreset();
         serializedObject.ApplyModifiedProperties();
         Undo.RecordObject(_settingsPreset, "Save Lighting Designer Preset");
         _settingsPreset.Capture(_designer);
@@ -858,10 +878,51 @@ public sealed class DiNeLightingDesignerEditor : Editor
         AssetDatabase.CreateAsset(preset, path);
         AssetDatabase.SaveAssets();
 
-        _settingsPreset = preset;
+        RefreshSettingsPresetList(path);
         EditorGUIUtility.PingObject(preset);
         serializedObject.Update();
         GUIUtility.ExitGUI();
+    }
+
+    private void RefreshSettingsPresetList(string preferredPath = null)
+    {
+        if (string.IsNullOrEmpty(preferredPath) && _settingsPreset != null)
+            preferredPath = AssetDatabase.GetAssetPath(_settingsPreset);
+
+        _settingsPresetPaths = DiNePresetAssetSelector.FindPresetPaths<DiNeLightingDesignerPreset>();
+        _settingsPresetIndex = DiNePresetAssetSelector.RestoreSelection(
+            SettingsPresetPreferenceKey,
+            _settingsPresetPaths,
+            preferredPath,
+            GetPresetContextPath());
+        _settingsPreset = _settingsPresetIndex >= 0
+            ? AssetDatabase.LoadAssetAtPath<DiNeLightingDesignerPreset>(_settingsPresetPaths[_settingsPresetIndex])
+            : null;
+    }
+
+    private void SelectSettingsPreset(int index)
+    {
+        _settingsPresetIndex = index;
+        _settingsPreset = index >= 0 && index < _settingsPresetPaths.Length
+            ? AssetDatabase.LoadAssetAtPath<DiNeLightingDesignerPreset>(_settingsPresetPaths[index])
+            : null;
+        RememberSelectedSettingsPreset();
+    }
+
+    private void RememberSelectedSettingsPreset()
+    {
+        if (_settingsPresetIndex < 0 || _settingsPresetIndex >= _settingsPresetPaths.Length)
+            return;
+        DiNePresetAssetSelector.RememberSelection(
+            SettingsPresetPreferenceKey,
+            _settingsPresetPaths[_settingsPresetIndex]);
+    }
+
+    private string GetPresetContextPath()
+    {
+        if (_designer == null) return string.Empty;
+        string prefabPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(_designer.gameObject);
+        return !string.IsNullOrEmpty(prefabPath) ? prefabPath : _designer.gameObject.scene.path;
     }
 
     private static bool MintButton(string label, float height)
