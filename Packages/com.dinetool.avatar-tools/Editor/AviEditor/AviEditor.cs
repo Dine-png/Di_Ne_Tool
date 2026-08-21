@@ -8,13 +8,25 @@ using nadena.dev.modular_avatar.core;
 public class ArmatureScalerEditor : EditorWindow
 {
     private enum LanguagePreset { English, Korean, Japanese }
-    private LanguagePreset language = LanguagePreset.Korean;
+    private LanguagePreset language
+    {
+        get
+        {
+            int value = EditorPrefs.GetInt("DiNeLang", 0);
+            if (value < 0 || value > 2) value = 0;
+            return (LanguagePreset)value;
+        }
+        set => EditorPrefs.SetInt("DiNeLang", (int)value);
+    }
+    private LanguagePreset appliedLanguage = (LanguagePreset)(-1);
 
     // ?????? ??????癲ル슢?꾤땟?????????
-    private enum EditorMode { Armature, ShapeKey, Expression, ShapeKeyEditor }
+    private enum EditorMode { Armature, ShapeKey, Expression, ShapeKeyEditor, Extra }
     private enum ArmatureEditMode { DirectTransform, ModularAvatarScale }
+    private enum ShapeKeyWorkspaceMode { Expression, ShapeKey }
     [SerializeField] private EditorMode currentMode = EditorMode.Armature;
     [SerializeField] private ArmatureEditMode armatureEditMode = ArmatureEditMode.DirectTransform;
+    [SerializeField] private ShapeKeyWorkspaceMode shapeKeyWorkspaceMode = ShapeKeyWorkspaceMode.Expression;
 
     [SerializeField] private GameObject targetAvatarRoot;
 
@@ -110,6 +122,9 @@ public class ArmatureScalerEditor : EditorWindow
     private string                _skeSearch             = "";
     private Vector2               _skeSKListScroll;
 
+    // Extra
+    [SerializeField] private Vector2 _extraScroll;
+
     // ── 얼굴 미리보기 카메라 (표정/쉐이프키 공용) ──
     [SerializeField] private float   _headPrevYaw   = 0f;    // 좌우 회전 (도)
     [SerializeField] private float   _headPrevPitch = 0f;    // 상하 회전 (도)
@@ -149,8 +164,14 @@ public class ArmatureScalerEditor : EditorWindow
         titleFont  = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
         titleContent = new GUIContent("Avi Editor", tabIcon);
         selectedButtonTex = MakeTex(1, 1, new Color(0.30f, 0.82f, 0.76f, 1f));
-        SetLanguage(language);
-        SetShapeKeyLanguage(language);
+        LanguagePreset selectedLanguage = language;
+        SetLanguage(selectedLanguage);
+        SetShapeKeyLanguage(selectedLanguage);
+        appliedLanguage = selectedLanguage;
+        if (currentMode == EditorMode.ShapeKeyEditor)
+            shapeKeyWorkspaceMode = ShapeKeyWorkspaceMode.ShapeKey;
+        else if (currentMode == EditorMode.Expression)
+            shapeKeyWorkspaceMode = ShapeKeyWorkspaceMode.Expression;
         InitializeValues();
         if (targetAvatarRoot != null)
         {
@@ -357,6 +378,7 @@ public class ArmatureScalerEditor : EditorWindow
     }
     void OnGUI()
     {
+        Color headerBackground = GUI.backgroundColor;
         GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
 
         EditorGUILayout.BeginVertical("box");
@@ -381,38 +403,50 @@ public class ArmatureScalerEditor : EditorWindow
 
         GUILayout.Space(4);
         GUILayout.Label(Tr(
-                "Easily and safely edit your avatar's armature and shapekeys.",
-                "아바타의 아마추어와 쉐이프키를 쉽고 안전하게 편집합니다.",
-                "アバターのアーマチュアとシェイプキーを簡単かつ安全に編集します。"),
+                "Easily and safely edit your avatar's armature, shapekeys, and extra settings.",
+                "아바타의 아마추어, 쉐이프키와 기타 설정을 쉽고 안전하게 편집합니다.",
+                "アバターのアーマチュア、シェイプキー、追加設定を簡単かつ安全に編集します。"),
             new GUIStyle(EditorStyles.wordWrappedLabel)
             { alignment = TextAnchor.MiddleCenter, fontSize = 12, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } });
 
         GUILayout.Space(5);
         EditorGUILayout.EndVertical();
+        GUI.backgroundColor = headerBackground;
 
         GUILayout.Space(5);
 
-        int currentLanguageIndex = (int)language;
+        LanguagePreset selectedLanguage = language;
+        if (selectedLanguage != appliedLanguage)
+        {
+            SetLanguage(selectedLanguage);
+            SetShapeKeyLanguage(selectedLanguage);
+            appliedLanguage = selectedLanguage;
+        }
+
+        int currentLanguageIndex = (int)selectedLanguage;
         string[] languageButtons = { "English", "한국어", "日本語" };
-        int newLanguageIndex = DrawCustomToolbar(currentLanguageIndex, languageButtons, 30);
+        int newLanguageIndex = DrawCustomToolbar(currentLanguageIndex, languageButtons, 35);
         if (newLanguageIndex != currentLanguageIndex)
         {
             language = (LanguagePreset)newLanguageIndex;
-            SetLanguage(language);
-            SetShapeKeyLanguage(language);
+            selectedLanguage = language;
+            SetLanguage(selectedLanguage);
+            SetShapeKeyLanguage(selectedLanguage);
+            appliedLanguage = selectedLanguage;
         }
-        GUILayout.Space(5);
+        GUILayout.Space(15);
 
         string[] modeLabels =
         {
             Tr("Armature", "아마추어", "アーマチュア"),
             Tr("Animation", "애니메이션", "アニメーション"),
-            Tr("Expression", "표정", "表情"),
-            Tr("Shape Key", "쉐이프키", "シェイプキー")
+            Tr("Shape Key", "쉐이프키", "シェイプキー"),
+            Tr("Extra", "엑스트라", "エクストラ")
         };
-        int newMode = DrawCustomToolbar((int)currentMode, modeLabels, 30);
-        if (newMode != (int)currentMode)
-            currentMode = (EditorMode)newMode;
+        int currentMainMode = GetMainModeIndex();
+        int newMainMode = DrawCustomToolbar(currentMainMode, modeLabels, 35);
+        if (newMainMode != currentMainMode)
+            SetMainModeIndex(newMainMode);
 
         GUILayout.Space(10);
 
@@ -420,10 +454,267 @@ public class ArmatureScalerEditor : EditorWindow
             DrawArmatureGUI();
         else if (currentMode == EditorMode.ShapeKey)
             DrawShapeKeyGUI();
-        else if (currentMode == EditorMode.Expression)
+        else if (currentMode == EditorMode.Expression || currentMode == EditorMode.ShapeKeyEditor)
+            DrawShapeKeyWorkspaceGUI();
+        else
+            DrawExtraGUI();
+    }
+
+    private int GetMainModeIndex()
+    {
+        switch (currentMode)
+        {
+            case EditorMode.Armature:
+                return 0;
+            case EditorMode.ShapeKey:
+                return 1;
+            case EditorMode.Expression:
+            case EditorMode.ShapeKeyEditor:
+                return 2;
+            case EditorMode.Extra:
+                return 3;
+            default:
+                return 0;
+        }
+    }
+
+    private void SetMainModeIndex(int index)
+    {
+        switch (index)
+        {
+            case 0:
+                currentMode = EditorMode.Armature;
+                break;
+            case 1:
+                currentMode = EditorMode.ShapeKey;
+                break;
+            case 2:
+                currentMode = shapeKeyWorkspaceMode == ShapeKeyWorkspaceMode.Expression
+                    ? EditorMode.Expression
+                    : EditorMode.ShapeKeyEditor;
+                break;
+            case 3:
+                currentMode = EditorMode.Extra;
+                break;
+            default:
+                currentMode = EditorMode.Armature;
+                break;
+        }
+
+        GUI.FocusControl(null);
+    }
+
+    private void DrawShapeKeyWorkspaceGUI()
+    {
+        string[] workspaceLabels =
+        {
+            Tr("Expression", "표정", "表情"),
+            Tr("Shape Key", "쉐이프키", "シェイプキー")
+        };
+
+        int currentWorkspaceMode = (int)shapeKeyWorkspaceMode;
+        int newWorkspaceMode = DrawCustomToolbar(currentWorkspaceMode, workspaceLabels, 35);
+        if (newWorkspaceMode != currentWorkspaceMode)
+        {
+            shapeKeyWorkspaceMode = (ShapeKeyWorkspaceMode)newWorkspaceMode;
+            currentMode = shapeKeyWorkspaceMode == ShapeKeyWorkspaceMode.Expression
+                ? EditorMode.Expression
+                : EditorMode.ShapeKeyEditor;
+            GUI.FocusControl(null);
+        }
+
+        GUILayout.Space(8);
+
+        if (shapeKeyWorkspaceMode == ShapeKeyWorkspaceMode.Expression)
             DrawExpressionGUI();
         else
             DrawShapeKeyEditorGUI();
+    }
+
+    private void DrawExtraGUI()
+    {
+        EditorGUILayout.BeginHorizontal();
+        EditorGUI.BeginChangeCheck();
+        GameObject nextAvatarRoot = (GameObject)EditorGUILayout.ObjectField(
+            new GUIContent(
+                Tr("Avatar", "아바타", "アバター"),
+                Tr("The avatar root whose child PhysBones will be edited.",
+                    "하위 PhysBone을 일괄 편집할 아바타 루트입니다.",
+                    "子PhysBoneを一括編集するアバタールートです。")),
+            targetAvatarRoot, typeof(GameObject), true);
+        if (EditorGUI.EndChangeCheck())
+        {
+            targetAvatarRoot = nextAvatarRoot;
+            if (targetAvatarRoot != null)
+            {
+                boneMapping = ArmatureScalerCore.AssignBoneMappings(targetAvatarRoot);
+                LoadCurrentValues();
+            }
+            else
+            {
+                boneMapping = null;
+                InitializeValues();
+            }
+
+            selectedPart = HumanoidBodyPart.None;
+            GUI.FocusControl(null);
+        }
+
+        EditorGUI.BeginDisabledGroup(targetAvatarRoot == null);
+        Color previousBackground = GUI.backgroundColor;
+        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+        if (GUILayout.Button(new GUIContent("\u21BA", Tr("Refresh", "새로고침", "更新")),
+                GUILayout.Width(28), GUILayout.Height(18)))
+        {
+            Repaint();
+        }
+        GUI.backgroundColor = previousBackground;
+        EditorGUI.EndDisabledGroup();
+        EditorGUILayout.EndHorizontal();
+
+        GUILayout.Space(6);
+
+        if (targetAvatarRoot == null)
+        {
+            EditorGUILayout.HelpBox(
+                Tr("Assign an avatar to batch edit its PhysBones.",
+                    "PhysBone을 일괄 편집할 아바타를 지정해 주세요.",
+                    "PhysBoneを一括編集するアバターを指定してください。"),
+                MessageType.Info);
+            return;
+        }
+
+        _extraScroll = EditorGUILayout.BeginScrollView(_extraScroll);
+
+        DiNePhysBoneBatchSummary total = DiNePhysBoneBatchUtility.GetSummary(
+            targetAvatarRoot, DiNePhysBoneBatchSetting.AllowGrabbing);
+
+        EditorGUILayout.BeginVertical("GroupBox");
+        EditorGUILayout.LabelField(
+            Tr("PhysBone Interaction", "PhysBone 상호작용", "PhysBoneインタラクション"),
+            EditorStyles.boldLabel);
+        EditorGUILayout.LabelField(
+            Tr($"Found {total.Total} PhysBone component(s), including inactive objects.",
+                $"비활성 오브젝트를 포함해 PhysBone {total.Total}개를 찾았습니다.",
+                $"非アクティブを含むPhysBoneが{total.Total}個見つかりました。"),
+            EditorStyles.wordWrappedMiniLabel);
+        EditorGUILayout.EndVertical();
+
+        GUILayout.Space(8);
+
+        EditorGUI.BeginDisabledGroup(total.Total == 0);
+        DrawPhysBoneBatchRow(
+            DiNePhysBoneBatchSetting.AllowGrabbing,
+            Tr("Grabbing", "잡기", "つかむ"),
+            Tr("Allow players to grab and move PhysBones.",
+                "플레이어가 PhysBone을 잡아 움직일 수 있게 합니다.",
+                "プレイヤーがPhysBoneをつかんで動かせるようにします。"));
+
+        GUILayout.Space(8);
+
+        DrawPhysBoneBatchRow(
+            DiNePhysBoneBatchSetting.AllowPosing,
+            Tr("Pose Lock", "포즈 고정", "ポーズ固定"),
+            Tr("Allow a grabbed PhysBone to remain fixed in a pose.",
+                "잡은 PhysBone을 원하는 자세로 고정할 수 있게 합니다.",
+                "つかんだPhysBoneを任意のポーズで固定できるようにします。"));
+
+        GUILayout.Space(8);
+
+        DrawPhysBoneBatchRow(
+            DiNePhysBoneBatchSetting.AllowCollision,
+            Tr("Player Collider Response", "플레이어 콜라이더 반응", "プレイヤーコライダー反応"),
+            Tr("Control collisions with player hands and other global colliders.",
+                "플레이어의 손과 기타 글로벌 콜라이더에 대한 충돌 반응을 조절합니다.",
+                "プレイヤーの手やその他のグローバルコライダーとの衝突を調整します。"));
+        EditorGUI.EndDisabledGroup();
+
+        GUILayout.Space(8);
+        EditorGUILayout.HelpBox(
+            Tr("Turning off Player Collider Response does not remove or disable colliders explicitly assigned in each PhysBone's Colliders list.",
+                "플레이어 콜라이더 반응을 꺼도 각 PhysBone의 Colliders 목록에 직접 지정한 콜라이더는 제거되거나 비활성화되지 않습니다.",
+                "プレイヤーコライダー反応をオフにしても、各PhysBoneのCollidersリストに直接指定したコライダーは削除・無効化されません。"),
+            MessageType.Info);
+
+        EditorGUILayout.EndScrollView();
+    }
+
+    private void DrawPhysBoneBatchRow(
+        DiNePhysBoneBatchSetting setting, string title, string description)
+    {
+        DiNePhysBoneBatchSummary summary = DiNePhysBoneBatchUtility.GetSummary(targetAvatarRoot, setting);
+
+        EditorGUILayout.BeginVertical("GroupBox");
+        EditorGUILayout.BeginHorizontal();
+        EditorGUILayout.LabelField(title, EditorStyles.boldLabel);
+        GUILayout.FlexibleSpace();
+        GUILayout.Label(FormatPhysBoneSummary(summary), EditorStyles.miniLabel);
+        EditorGUILayout.EndHorizontal();
+
+        EditorGUILayout.LabelField(description, EditorStyles.wordWrappedMiniLabel);
+        GUILayout.Space(2);
+
+        EditorGUILayout.BeginHorizontal();
+        Color previousBackground = GUI.backgroundColor;
+        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+        GUIContent enableContent = new GUIContent(
+            Tr("Enable All", "모두 켜기", "すべてオン"),
+            Tr("Enable this setting on every found PhysBone.",
+                "찾은 모든 PhysBone에서 이 설정을 켭니다.",
+                "見つかったすべてのPhysBoneでこの設定をオンにします。"));
+        if (GUILayout.Button(enableContent, GUILayout.Height(30)))
+            ApplyPhysBoneBatchSetting(setting, true, title);
+
+        GUI.backgroundColor = previousBackground;
+        GUIContent disableContent = new GUIContent(
+            Tr("Disable All", "모두 끄기", "すべてオフ"),
+            Tr("Disable this setting on every found PhysBone.",
+                "찾은 모든 PhysBone에서 이 설정을 끕니다.",
+                "見つかったすべてのPhysBoneでこの設定をオフにします。"));
+        if (GUILayout.Button(disableContent, GUILayout.Height(30)))
+            ApplyPhysBoneBatchSetting(setting, false, title);
+
+        GUI.backgroundColor = previousBackground;
+        EditorGUILayout.EndHorizontal();
+        EditorGUILayout.EndVertical();
+    }
+
+    private string FormatPhysBoneSummary(DiNePhysBoneBatchSummary summary)
+    {
+        string result = Tr(
+            $"On {summary.Enabled} / Off {summary.Disabled}",
+            $"켜짐 {summary.Enabled} / 꺼짐 {summary.Disabled}",
+            $"オン {summary.Enabled} / オフ {summary.Disabled}");
+
+        if (summary.Custom > 0)
+            result += Tr($" / Custom {summary.Custom}", $" / 개별 {summary.Custom}", $" / 個別 {summary.Custom}");
+        if (summary.Unsupported > 0)
+            result += Tr($" / Unsupported {summary.Unsupported}", $" / 미지원 {summary.Unsupported}", $" / 未対応 {summary.Unsupported}");
+
+        return result;
+    }
+
+    private void ApplyPhysBoneBatchSetting(
+        DiNePhysBoneBatchSetting setting, bool enabled, string settingTitle)
+    {
+        DiNePhysBoneBatchResult result = DiNePhysBoneBatchUtility.Apply(targetAvatarRoot, setting, enabled);
+        if (result.Unsupported > 0)
+        {
+            Debug.LogWarning(Tr(
+                $"[Avi Editor] {result.Unsupported} PhysBone(s) did not expose the {settingTitle} setting.",
+                $"[Avi Editor] PhysBone {result.Unsupported}개에서 {settingTitle} 설정을 찾지 못했습니다.",
+                $"[Avi Editor] {result.Unsupported}個のPhysBoneで{settingTitle}設定が見つかりませんでした。"),
+                targetAvatarRoot);
+        }
+
+        Debug.Log(Tr(
+            $"[Avi Editor] {settingTitle}: set {result.Changed} of {result.Total} PhysBone(s) to {(enabled ? "On" : "Off")}.",
+            $"[Avi Editor] {settingTitle}: PhysBone {result.Total}개 중 {result.Changed}개를 {(enabled ? "켜짐" : "꺼짐")}으로 변경했습니다.",
+            $"[Avi Editor] {settingTitle}: {result.Total}個のPhysBoneのうち{result.Changed}個を{(enabled ? "オン" : "オフ")}に変更しました。"),
+            targetAvatarRoot);
+
+        SceneView.RepaintAll();
+        Repaint();
     }
     private void DrawArmatureGUI()
     {

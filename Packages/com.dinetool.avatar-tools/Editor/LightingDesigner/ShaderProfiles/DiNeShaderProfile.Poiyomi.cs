@@ -18,13 +18,20 @@ internal sealed class DiNeShaderProfilePoiyomi : DiNeShaderProfile
 
     private const string LightingMinLightBrightness = "_LightingMinLightBrightness";
     private const string LightingCap = "_LightingCap";
+    private const string LightingAdditiveLimit = "_LightingAdditiveLimit";
     private const string MainColorAdjustToggle = "_MainColorAdjustToggle";
     private const string MainColorAdjustTexture = "_MainColorAdjustTexture";
     private const string Saturation = "_Saturation";
     private const string MainHueShift = "_MainHueShift";
     private const string MainHueShiftReplace = "_MainHueShiftReplace";
     private const string MainBrightness = "_MainBrightness";
+    private const string MainGamma = "_MainGamma";
     private const string MonochromeLighting = "_LightingMonochromatic";
+    private const string AdditiveMonochromeLighting = "_LightingAdditiveMonochromatic";
+    private const string EmissionMultiplier = "_PPEmissionMultiplier";
+    // Poiyomi 셰이더 자체의 프로퍼티 이름이 Lightng로 표기되어 있다. 오타를 고치면 동작하지 않는다.
+    private const string ForcedLightDirection = "_LightngForcedDirection";
+    private const string LightingDirectionMode = "_LightingDirectionMode";
     private const string ShadowStrength = "_ShadowStrength";
     private const string LineColor = "_LineColor";
     private const string LineWidth = "_LineWidth";
@@ -54,20 +61,20 @@ internal sealed class DiNeShaderProfilePoiyomi : DiNeShaderProfile
             case DiNeLightingControl.Saturation:
             case DiNeLightingControl.Hue:
             case DiNeLightingControl.Brightness:
+            case DiNeLightingControl.Gamma:
             case DiNeLightingControl.ColorTemperature:
             case DiNeLightingControl.Monochrome:
+            case DiNeLightingControl.Emission:
             case DiNeLightingControl.ShadowStrength:
             case DiNeLightingControl.OutlineTint:
             case DiNeLightingControl.OutlineWidth:
             case DiNeLightingControl.Reflectance:
+            case DiNeLightingControl.LightDirection:
                 return true;
 
             // Poiyomi에 대응 프로퍼티가 없는 항목들.
-            case DiNeLightingControl.Gamma:
             case DiNeLightingControl.Unlit:
-            case DiNeLightingControl.Emission:
             case DiNeLightingControl.ShadowBorder:
-            case DiNeLightingControl.LightDirection:
             default:
                 return false;
         }
@@ -84,6 +91,9 @@ internal sealed class DiNeShaderProfilePoiyomi : DiNeShaderProfile
             case DiNeLightingControl.LightMin:
                 sink.SetFloatConstant(LightingMinLightBrightness, context.DefaultMinLight);
                 sink.SetFloatConstant(LightingCap, context.DefaultMaxLight);
+                sink.SetFloatConstant(
+                    LightingAdditiveLimit,
+                    ReadFloat(context.Materials, LightingAdditiveLimit, context.DefaultMaxLight));
                 break;
             case DiNeLightingControl.Saturation:
                 sink.SetFloatConstant(Saturation, 0f);
@@ -94,11 +104,22 @@ internal sealed class DiNeShaderProfilePoiyomi : DiNeShaderProfile
             case DiNeLightingControl.Brightness:
                 sink.SetFloatConstant(MainBrightness, 0f);
                 break;
+            case DiNeLightingControl.Gamma:
+                sink.SetFloatConstant(MainGamma, ReadFloat(context.Materials, MainGamma, 1f));
+                break;
             case DiNeLightingControl.ColorTemperature:
                 sink.SetColorConstant(ColorMain, Color.white);
                 break;
             case DiNeLightingControl.Monochrome:
                 sink.SetFloatConstant(MonochromeLighting, context.DefaultMonochrome);
+                sink.SetFloatConstant(
+                    AdditiveMonochromeLighting,
+                    ReadFloat(context.Materials, AdditiveMonochromeLighting, context.DefaultMonochrome));
+                break;
+            case DiNeLightingControl.Emission:
+                sink.SetFloatConstant(
+                    EmissionMultiplier,
+                    ReadFloat(context.Materials, EmissionMultiplier, 1f));
                 break;
             case DiNeLightingControl.ShadowStrength:
                 sink.SetFloatConstant(ShadowStrength, ReadFloat(context.Materials, ShadowStrength, 1f));
@@ -112,6 +133,14 @@ internal sealed class DiNeShaderProfilePoiyomi : DiNeShaderProfile
             case DiNeLightingControl.Reflectance:
                 sink.SetFloatConstant(Reflectance, ReadFloat(context.Materials, Reflectance, 0.04f));
                 break;
+            case DiNeLightingControl.LightDirection:
+                sink.SetFloatConstant(
+                    LightingDirectionMode,
+                    ReadFloat(context.Materials, LightingDirectionMode, 0f));
+                sink.SetVectorConstant(
+                    ForcedLightDirection,
+                    ReadVector(context.Materials, ForcedLightDirection, Vector4.zero));
+                break;
         }
     }
 
@@ -122,6 +151,7 @@ internal sealed class DiNeShaderProfilePoiyomi : DiNeShaderProfile
             case DiNeLightingControl.LightMin:
                 sink.SetFloatRange(LightingMinLightBrightness, context.MinLight, context.MaxLight);
                 sink.SetFloatRange(LightingCap, context.MinLight, context.MaxLight);
+                sink.SetFloatRange(LightingAdditiveLimit, context.MinLight, context.MaxLight);
                 break;
             case DiNeLightingControl.Saturation:
                 // Poiyomi의 _Saturation은 0이 원본, -1이 완전 흑백. 상한은 10까지 열려 있지만
@@ -135,6 +165,11 @@ internal sealed class DiNeShaderProfilePoiyomi : DiNeShaderProfile
                 // Range(-1,1) 가산. 0이 원본이므로 슬라이더 중앙(0.5)이 원본이 된다.
                 sink.SetFloatRange(MainBrightness, -1f, 1f);
                 break;
+            case DiNeLightingControl.Gamma:
+                sink.SetFloat(0f, MainGamma, 0.01f);
+                sink.SetFloat(0.5f, MainGamma, 1f);
+                sink.SetFloat(1f, MainGamma, 2f);
+                break;
             case DiNeLightingControl.ColorTemperature:
                 sink.SetColor(0f, ColorMain, new Color(0.6f, 0.95f, 1f, 1f));
                 sink.SetColor(0.5f, ColorMain, Color.white);
@@ -142,6 +177,10 @@ internal sealed class DiNeShaderProfilePoiyomi : DiNeShaderProfile
                 break;
             case DiNeLightingControl.Monochrome:
                 sink.SetFloatRange(MonochromeLighting, 0f, 1f);
+                sink.SetFloatRange(AdditiveMonochromeLighting, 0f, 1f);
+                break;
+            case DiNeLightingControl.Emission:
+                sink.SetFloatRange(EmissionMultiplier, 0f, 1f);
                 break;
             case DiNeLightingControl.ShadowStrength:
                 sink.SetFloatRange(ShadowStrength, 0f, 1f);
@@ -154,6 +193,18 @@ internal sealed class DiNeShaderProfilePoiyomi : DiNeShaderProfile
                 break;
             case DiNeLightingControl.Reflectance:
                 sink.SetFloatRange(Reflectance, 0f, context.ReflectanceMax);
+                break;
+            case DiNeLightingControl.LightDirection:
+                float originalMode = ReadFloat(context.Materials, LightingDirectionMode, 0f);
+                var originalDirection = ReadVector(context.Materials, ForcedLightDirection, Vector4.zero);
+                sink.SetFloat(0f, LightingDirectionMode, originalMode);
+                sink.SetVector(0f, ForcedLightDirection, originalDirection);
+
+                var direction = context.LightDirection.sqrMagnitude > 0.0001f
+                    ? context.LightDirection.normalized
+                    : Vector3.up;
+                sink.SetFloat(1f, LightingDirectionMode, 2f); // Forced World Direction
+                sink.SetVector(1f, ForcedLightDirection, new Vector4(direction.x, direction.y, direction.z, 0f));
                 break;
         }
     }
@@ -178,7 +229,8 @@ internal sealed class DiNeShaderProfilePoiyomi : DiNeShaderProfile
         bool usesColorAdjust =
             controls.Contains(DiNeLightingControl.Hue) ||
             controls.Contains(DiNeLightingControl.Saturation) ||
-            controls.Contains(DiNeLightingControl.Brightness);
+            controls.Contains(DiNeLightingControl.Brightness) ||
+            controls.Contains(DiNeLightingControl.Gamma);
 
         if (usesColorAdjust)
         {
@@ -207,16 +259,26 @@ internal sealed class DiNeShaderProfilePoiyomi : DiNeShaderProfile
             case DiNeLightingControl.LightMin:
                 yield return LightingMinLightBrightness;
                 yield return LightingCap;
+                yield return LightingAdditiveLimit;
                 break;
             case DiNeLightingControl.Saturation: yield return Saturation; break;
             case DiNeLightingControl.Hue: yield return MainHueShift; break;
             case DiNeLightingControl.Brightness: yield return MainBrightness; break;
+            case DiNeLightingControl.Gamma: yield return MainGamma; break;
             case DiNeLightingControl.ColorTemperature: yield return ColorMain; break;
-            case DiNeLightingControl.Monochrome: yield return MonochromeLighting; break;
+            case DiNeLightingControl.Monochrome:
+                yield return MonochromeLighting;
+                yield return AdditiveMonochromeLighting;
+                break;
+            case DiNeLightingControl.Emission: yield return EmissionMultiplier; break;
             case DiNeLightingControl.ShadowStrength: yield return ShadowStrength; break;
             case DiNeLightingControl.OutlineTint: yield return LineColor; break;
             case DiNeLightingControl.OutlineWidth: yield return LineWidth; break;
             case DiNeLightingControl.Reflectance: yield return Reflectance; break;
+            case DiNeLightingControl.LightDirection:
+                yield return ForcedLightDirection;
+                yield return LightingDirectionMode;
+                break;
         }
     }
 
@@ -363,6 +425,15 @@ internal sealed class DiNeShaderProfilePoiyomi : DiNeShaderProfile
         foreach (var material in materials)
             if (material != null && material.HasProperty(property))
                 return material.GetColor(property);
+        return fallback;
+    }
+
+    private static Vector4 ReadVector(Material[] materials, string property, Vector4 fallback)
+    {
+        if (materials == null) return fallback;
+        foreach (var material in materials)
+            if (material != null && material.HasProperty(property))
+                return material.GetVector(property);
         return fallback;
     }
 }

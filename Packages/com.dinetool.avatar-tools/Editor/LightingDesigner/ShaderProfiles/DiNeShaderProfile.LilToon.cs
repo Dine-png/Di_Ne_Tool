@@ -55,12 +55,15 @@ internal sealed class DiNeShaderProfileLilToon : DiNeShaderProfile
             case DiNeLightingControl.Saturation:
             case DiNeLightingControl.Hue:
             case DiNeLightingControl.Brightness:
+            case DiNeLightingControl.Gamma:
             case DiNeLightingControl.ColorTemperature:
             case DiNeLightingControl.Monochrome:
+            case DiNeLightingControl.Emission:
             case DiNeLightingControl.ShadowStrength:
             case DiNeLightingControl.OutlineTint:
             case DiNeLightingControl.OutlineWidth:
             case DiNeLightingControl.Reflectance:
+            case DiNeLightingControl.LightDirection:
                 return true;
             default:
                 return false;
@@ -118,8 +121,8 @@ internal sealed class DiNeShaderProfileLilToon : DiNeShaderProfile
                 sink.SetFloatConstant(MonochromeLighting, context.DefaultMonochrome);
                 break;
             case DiNeLightingControl.Emission:
-                sink.SetFloatConstant(EmissionBlend, 1f);
-                sink.SetFloatConstant(Emission2ndBlend, 1f);
+                sink.SetFloatConstant(EmissionBlend, ReadFloat(context.Materials, EmissionBlend, 1f));
+                sink.SetFloatConstant(Emission2ndBlend, ReadFloat(context.Materials, Emission2ndBlend, 1f));
                 break;
             case DiNeLightingControl.ShadowStrength:
                 sink.SetFloatConstant(ShadowStrength, ReadFloat(context.Materials, ShadowStrength, 0f));
@@ -137,7 +140,9 @@ internal sealed class DiNeShaderProfileLilToon : DiNeShaderProfile
                 sink.SetFloatConstant(Reflectance, ReadFloat(context.Materials, Reflectance, 0.04f));
                 break;
             case DiNeLightingControl.LightDirection:
-                sink.SetVectorConstant(LightDirectionOverride, NeutralLightDirection);
+                sink.SetVectorConstant(
+                    LightDirectionOverride,
+                    ReadVector(context.Materials, LightDirectionOverride, NeutralLightDirection));
                 break;
         }
     }
@@ -164,7 +169,9 @@ internal sealed class DiNeShaderProfileLilToon : DiNeShaderProfile
                 sink.SetFloatRange(MainTexHSVG + ".z", 0f, 2f);
                 break;
             case DiNeLightingControl.Gamma:
-                sink.SetFloatRange(MainTexHSVG + ".w", 0f, 2f);
+                sink.SetFloat(0f, MainTexHSVG + ".w", 0.01f);
+                sink.SetFloat(0.5f, MainTexHSVG + ".w", 1f);
+                sink.SetFloat(1f, MainTexHSVG + ".w", 2f);
                 break;
             case DiNeLightingControl.ColorTemperature:
                 WriteColorTemperature(sink, ColorMain);
@@ -425,6 +432,15 @@ internal sealed class DiNeShaderProfileLilToon : DiNeShaderProfile
         foreach (var material in materials)
             if (material != null && material.HasProperty(property))
                 return material.GetColor(property);
+        return fallback;
+    }
+
+    private static Vector4 ReadVector(Material[] materials, string property, Vector4 fallback)
+    {
+        if (materials == null) return fallback;
+        foreach (var material in materials)
+            if (material != null && material.HasProperty(property))
+                return material.GetVector(property);
         return fallback;
     }
 }

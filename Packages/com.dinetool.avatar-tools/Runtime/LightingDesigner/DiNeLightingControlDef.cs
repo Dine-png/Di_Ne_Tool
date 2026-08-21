@@ -82,10 +82,14 @@ public sealed class DiNeLightingControlDef
             "색상환을 따라 전체 색을 회전시킨다. 0이 원본."),
         new DiNeLightingControlDef(DiNeLightingControl.Brightness, "명도", "Brightness", DiNeLightingControlKind.Radial, 0.5f,
             "0.5가 원본. 텍스처 자체의 밝기를 조절한다."),
+        new DiNeLightingControlDef(DiNeLightingControl.Gamma, "감마", "Gamma", DiNeLightingControlKind.Radial, 0.5f,
+            "0.5가 원본. 중간톤의 밝기를 조절한다."),
         new DiNeLightingControlDef(DiNeLightingControl.ColorTemperature, "색온도", "ColorTemp", DiNeLightingControlKind.Radial, 0.5f,
             "0.5가 원본. 낮추면 따뜻하게(주황), 올리면 차갑게(파랑)."),
         new DiNeLightingControlDef(DiNeLightingControl.Monochrome, "흑백화", "Monochrome", DiNeLightingControlKind.Radial, 0f,
             "라이팅의 색 성분을 제거해 조명 색에 덜 물들게 한다."),
+        new DiNeLightingControlDef(DiNeLightingControl.Emission, "에미션 강도", "Emission", DiNeLightingControlKind.Radial, 1f,
+            "발광 효과의 강도를 조절한다."),
         new DiNeLightingControlDef(DiNeLightingControl.ShadowStrength, "그림자 농도", "ShadowStrength", DiNeLightingControlKind.Radial, 0f,
             "그림자가 얼마나 진하게 깔릴지."),
         new DiNeLightingControlDef(DiNeLightingControl.OutlineTint, "아웃라인 색", "OutlineTint", DiNeLightingControlKind.Radial, 0f,
@@ -94,6 +98,8 @@ public sealed class DiNeLightingControlDef
             "아웃라인 굵기."),
         new DiNeLightingControlDef(DiNeLightingControl.Reflectance, "반사/광택", "Reflectance", DiNeLightingControlKind.Radial, 0f,
             "표면 반사율. 올리면 광택이 강해진다."),
+        new DiNeLightingControlDef(DiNeLightingControl.LightDirection, "라이트 방향 고정", "LightDir", DiNeLightingControlKind.Toggle, 0f,
+            "켜면 조명 방향을 지정한 방향으로 고정한다."),
     };
 
     private static Dictionary<DiNeLightingControl, DiNeLightingControlDef> _byControl;

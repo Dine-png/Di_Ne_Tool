@@ -23,6 +23,9 @@ public sealed class DiNeLightingDesignerEditor : Editor
     {
         DiNeLightingControl.Hue,
         DiNeLightingControl.Brightness,
+        DiNeLightingControl.Gamma,
+        DiNeLightingControl.Emission,
+        DiNeLightingControl.LightDirection,
         DiNeLightingControl.ShadowStrength,
         DiNeLightingControl.OutlineTint,
         DiNeLightingControl.OutlineWidth,
@@ -281,9 +284,9 @@ public sealed class DiNeLightingDesignerEditor : Editor
             GUILayout.Label(T("심화 제어 항목", "Advanced Controls", "詳細制御項目"), EditorStyles.boldLabel);
             EditorGUILayout.LabelField(
                 T(
-                    "색 보정, 그림자, 아웃라인과 반사 효과를 세부 조절합니다.",
-                    "Fine-tune color correction, shadows, outlines, and reflections.",
-                    "色補正、影、アウトライン、反射効果を細かく調整します。"),
+                    "색 보정, 발광, 라이트 방향, 그림자와 외곽 효과를 세부 조절합니다.",
+                    "Fine-tune color correction, emission, light direction, shadows, and edge effects.",
+                    "色補正、発光、ライト方向、影、輪郭効果を細かく調整します。"),
                 EditorStyles.wordWrappedMiniLabel);
             EditorGUILayout.Space(3f);
 
