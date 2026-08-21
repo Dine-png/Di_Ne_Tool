@@ -246,7 +246,7 @@ public class DiNeOpticoreEditor : Editor
 #endif
     }
 
-    private void DrawHeader()
+    private new void DrawHeader()
     {
         EditorGUILayout.BeginVertical("box");
         EditorGUILayout.BeginHorizontal();

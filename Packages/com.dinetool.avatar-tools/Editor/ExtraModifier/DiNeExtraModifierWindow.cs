@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 using VRC.SDK3.Avatars.Components;
@@ -63,12 +64,56 @@ namespace DiNeTool.ExtraModifier.Editor
             new[] { "Convert All PhysBones", "모든 PhysBone 자동 변환", "すべてのPhysBoneを自動変換" },
             new[] { "UniVRM 0.x is required for SpringBone conversion.", "SpringBone 변환에는 UniVRM 0.x가 필요합니다.", "SpringBone変換にはUniVRM 0.xが必要です。" },
             new[] { "3. Clean VRM Components", "3. VRM 컴포넌트 정리", "3. VRMコンポーネント整理" },
-            new[] { "Converts static VRC Constraints to Unity Constraints where possible, then removes MA, NDMF, VRC, and other non-VRM MonoBehaviours.", "정적 VRC Constraint를 가능한 경우 Unity Constraint로 변환한 뒤 MA, NDMF, VRC 및 기타 VRM 비호환 MonoBehaviour를 제거합니다.", "静的VRC Constraintを可能な場合はUnity Constraintへ変換し、MA、NDMF、VRC、その他VRM非互換MonoBehaviourを削除します。" },
+            new[] { "Converts static VRC Constraints to Unity Constraints where possible, then removes MA, NDMF, VRC, and other non-VRM MonoBehaviours. PhysBones are left to step 2.", "정적 VRC Constraint를 가능한 경우 Unity Constraint로 변환한 뒤 MA, NDMF, VRC 및 기타 VRM 비호환 MonoBehaviour를 제거합니다. PhysBone은 건드리지 않고 2번 단계에 맡깁니다.", "静的VRC Constraintを可能な場合はUnity Constraintへ変換し、MA、NDMF、VRC、その他VRM非互換MonoBehaviourを削除します。PhysBoneには触れず、手順2に任せます。" },
             new[] { "Clean Components", "컴포넌트 정리", "コンポーネントを整理" },
             new[] { "Result", "처리 결과", "処理結果" },
             new[] { "Ready", "준비됨", "準備完了" },
             new[] { "Working copy created.", "작업 복사본을 만들었습니다.", "作業コピーを作成しました。" },
-            new[] { "Focus is temporarily sealed and does not run during play mode or avatar builds.", "포커스 기능은 임시 봉인되어 플레이 모드와 아바타 빌드에서 동작하지 않습니다.", "フォーカス機能は一時的に封印され、プレイモードとアバタービルドでは動作しません。" }
+            new[] { "Focus is temporarily sealed and does not run during play mode or avatar builds.", "포커스 기능은 임시 봉인되어 플레이 모드와 아바타 빌드에서 동작하지 않습니다.", "フォーカス機能は一時的に封印され、プレイモードとアバタービルドでは動作しません。" },
+            new[] { "PhysBone Handling", "PhysBone 처리 방식", "PhysBone処理方法" },
+            new[] { "Convert", "변환", "変換" },
+            new[] { "Delete", "삭제", "削除" },
+            new[] { "Keep", "유지", "維持" },
+            new[] { "Converts PhysBones into UniVRM SpringBones. Collider groups are created on the transform each collider belongs to, and capsule colliders are approximated with spheres.", "PhysBone을 UniVRM SpringBone으로 변환합니다. 콜라이더 그룹은 각 콜라이더가 속한 트랜스폼에 생성되고, 캡슐 콜라이더는 구 여러 개로 근사합니다.", "PhysBoneをUniVRM SpringBoneへ変換します。コライダーグループは各コライダーが属するTransformに作成し、カプセルは複数の球で近似します。" },
+            new[] { "Deletes PhysBones and their colliders without converting anything. Use this only when you plan to rebuild the physics by hand.", "변환 없이 PhysBone과 콜라이더를 삭제합니다. 흔들림을 직접 다시 만들 때만 사용하세요.", "変換せずPhysBoneとコライダーを削除します。揺れを手作業で作り直す場合のみ使用してください。" },
+            new[] { "Leaves PhysBones untouched. The cleanup step will not remove them either.", "PhysBone을 그대로 둡니다. 컴포넌트 정리 단계에서도 삭제하지 않습니다.", "PhysBoneをそのまま残します。コンポーネント整理でも削除しません。" },
+            new[] { "Delete All PhysBones", "모든 PhysBone 삭제", "すべてのPhysBoneを削除" },
+            new[] { "Keep PhysBones (no action)", "PhysBone 유지 (동작 없음)", "PhysBoneを維持（処理なし）" },
+            new[] { "4. Convert Materials to MToon", "4. 머티리얼 MToon 변환", "4. マテリアルをMToon変換" },
+            new[] { "Replaces lilToon, Poiyomi, and Standard materials with VRM MToon. Checked data is carried over; unchecked data is dropped during conversion.", "lilToon, Poiyomi, Standard 계열 머티리얼을 VRM MToon으로 교체합니다. 체크한 데이터는 살려서 옮기고, 체크를 해제한 데이터는 변환하면서 버립니다.", "lilToon、Poiyomi、Standard系マテリアルをVRM MToonへ置き換えます。チェックしたデータは引き継ぎ、外したデータは変換時に破棄します。" },
+            new[] { "Convert Materials", "머티리얼 변환", "マテリアルを変換" },
+            new[] { "Normal map", "노말맵", "ノーマルマップ" },
+            new[] { "MatCap (sphere add)", "맷캡 (가산 스피어)", "マットキャップ（加算スフィア）" },
+            new[] { "Emission", "이미시브", "エミッション" },
+            new[] { "Shade color", "그림자 색", "影色" },
+            new[] { "Outline", "아웃라인", "アウトライン" },
+            new[] { "Rim light", "림 라이트", "リムライト" },
+            new[] { "Keep All", "모두 유지", "すべて維持" },
+            new[] { "Drop All", "모두 제거", "すべて破棄" },
+            new[] { "MToon shader was not found. Install UniVRM to convert materials.", "MToon 셰이더를 찾을 수 없습니다. 머티리얼 변환에는 UniVRM이 필요합니다.", "MToonシェーダーが見つかりません。マテリアル変換にはUniVRMが必要です。" },
+            new[] { "Save converted materials under Assets/DiNe/VRM Materials", "변환한 머티리얼을 Assets/DiNe/VRM Materials에 저장", "変換したマテリアルをAssets/DiNe/VRM Materialsに保存" },
+            new[] { "Include material conversion in the full automatic preparation", "전체 자동 처리에 머티리얼 변환 포함", "全自動処理にマテリアル変換を含める" },
+            new[] { "UniVRM Integration", "UniVRM 연동", "UniVRM連携" },
+            new[] { "This tool prepares the avatar; T-Pose freezing, mesh utilities, meta input, and the actual export are handed over to UniVRM's own windows.", "이 툴은 아바타를 준비하는 역할만 하고, T-Pose 고정·메시 유틸리티·메타 입력·실제 내보내기는 UniVRM의 창에 그대로 넘깁니다.", "このツールはアバターの準備を担当し、T-Pose固定・メッシュユーティリティ・メタ入力・実際の書き出しはUniVRM側のウィンドウに任せます。" },
+            new[] { "Installed", "설치됨", "インストール済み" },
+            new[] { "UniVRM was not found. Install UniVRM (VRM 0.x or VRM 1.0) to freeze T-Pose and export.", "UniVRM을 찾을 수 없습니다. T-Pose 고정과 내보내기에는 UniVRM(VRM 0.x 또는 VRM 1.0)이 필요합니다.", "UniVRMが見つかりません。T-Pose固定と書き出しにはUniVRM（VRM 0.xまたはVRM 1.0）が必要です。" },
+            new[] { "Run Preflight Check", "사전 점검 실행", "事前チェックを実行" },
+            new[] { "No problems found. Ready to hand off to UniVRM.", "문제가 없습니다. UniVRM으로 넘겨도 됩니다.", "問題ありません。UniVRMへ引き渡せます。" },
+            new[] { "Fix", "고치기", "修正" },
+            new[] { "Freeze T-Pose (UniVRM)", "T-Pose 고정 (UniVRM)", "T-Pose固定（UniVRM）" },
+            new[] { "Open MeshUtility (UniVRM)", "MeshUtility 열기 (UniVRM)", "MeshUtilityを開く（UniVRM）" },
+            new[] { "Open VRM 0.x Exporter (UniVRM)", "VRM 0.x 내보내기 열기 (UniVRM)", "VRM 0.x書き出しを開く（UniVRM）" },
+            new[] { "Open VRM 1.0 Exporter (UniVRM)", "VRM 1.0 내보내기 열기 (UniVRM)", "VRM 1.0書き出しを開く（UniVRM）" },
+            new[] { "Open VRM Converter for VRChat", "VRM Converter for VRChat 열기", "VRM Converter for VRChatを開く" },
+            new[] { "UniVRM is not installed.", "UniVRM이 설치되어 있지 않습니다.", "UniVRMがインストールされていません。" },
+            new[] { "The avatar root has no humanoid Animator. VRM export requires a humanoid rig.", "루트에 휴머노이드 Animator가 없습니다. VRM 내보내기에는 휴머노이드 리그가 필요합니다.", "ルートにHumanoid Animatorがありません。VRM書き出しにはHumanoidリグが必要です。" },
+            new[] { "The root transform is not at the origin with unit scale. Freeze T-Pose or reset it before exporting.", "루트 트랜스폼이 원점·기본 스케일이 아닙니다. 내보내기 전에 T-Pose 고정 또는 초기화가 필요합니다.", "ルートTransformが原点・等倍ではありません。書き出し前にT-Pose固定またはリセットが必要です。" },
+            new[] { "Missing scripts remain: {0}", "Missing script가 {0}개 남아 있습니다.", "Missing scriptが{0}個残っています。" },
+            new[] { "PhysBones remain: {0}. Convert them to SpringBones or delete them.", "PhysBone이 {0}개 남아 있습니다. SpringBone으로 변환하거나 삭제하세요.", "PhysBoneが{0}個残っています。SpringBoneへ変換するか削除してください。" },
+            new[] { "VRM-incompatible components remain: {0}", "VRM 비호환 컴포넌트가 {0}개 남아 있습니다.", "VRM非互換コンポーネントが{0}個残っています。" },
+            new[] { "UniVRM cannot export {0} material(s) as-is ({1}); they would fall back to a flat material.", "UniVRM이 그대로 내보낼 수 없는 머티리얼이 {0}개 있습니다 ({1}). 변환하지 않으면 단순 머티리얼로 나갑니다.", "UniVRMがそのまま書き出せないマテリアルが{0}個あります（{1}）。変換しないと簡易マテリアルになります。" },
+            new[] { "No VRMMeta yet. You can fill in the title and author in UniVRM's export window.", "아직 VRMMeta가 없습니다. UniVRM 내보내기 창에서 제목·제작자를 입력할 수 있습니다.", "まだVRMMetaがありません。UniVRMの書き出しウィンドウでタイトルや作者を入力できます。" },
+            new[] { "Finish with UniVRM's Freeze T-Pose (runs last, after PhysBone conversion)", "마지막에 UniVRM의 T-Pose 고정 실행 (PhysBone 변환 이후)", "最後にUniVRMのT-Pose固定を実行（PhysBone変換の後）" }
         };
 
         private Language language;
@@ -78,6 +123,11 @@ namespace DiNeTool.ExtraModifier.Editor
         private string vrmStatus;
         private MessageType vrmStatusType = MessageType.Info;
         private bool advanced;
+        private DiNeVrmPhysBoneMode physBoneMode = DiNeVrmPhysBoneMode.Convert;
+        private DiNeVrmMaterialOptions materialOptions = DiNeVrmMaterialOptions.Preserve;
+        private bool convertMaterialsInAuto = true;
+        private bool freezeTPoseInAuto;
+        private List<DiNeVrmIssue> preflightIssues;
         private Vector2 scroll;
         private Texture2D windowIcon;
         private Texture2D tabIcon;
@@ -336,16 +386,28 @@ namespace DiNeTool.ExtraModifier.Editor
             GUILayout.Space(4f);
             EditorGUILayout.BeginVertical("box");
             GUILayout.Label(T(25), EditorStyles.wordWrappedLabel);
-            if (!DiNeVrmUtility.IsUniVrmAvailable)
+            var autoNeedsUniVrm = physBoneMode == DiNeVrmPhysBoneMode.Convert;
+            if (autoNeedsUniVrm && !DiNeVrmUtility.IsUniVrmAvailable)
                 EditorGUILayout.HelpBox(T(33), MessageType.Error);
 
-            using (new EditorGUI.DisabledScope(vrmAvatar == null || !DiNeVrmUtility.IsUniVrmAvailable))
+            convertMaterialsInAuto = EditorGUILayout.ToggleLeft(T(63), convertMaterialsInAuto);
+            using (new EditorGUI.DisabledScope(!DiNeUniVrmBridge.IsAvailable(DiNeUniVrmAction.FreezeTPose)))
+                freezeTPoseInAuto = EditorGUILayout.ToggleLeft(T(84), freezeTPoseInAuto);
+
+            using (new EditorGUI.DisabledScope(vrmAvatar == null || (autoNeedsUniVrm && !DiNeVrmUtility.IsUniVrmAvailable)))
             {
                 var previousColor = GUI.backgroundColor;
                 GUI.backgroundColor = AccentColor;
                 if (GUILayout.Button(T(26), ActionButtonStyle(), GUILayout.Height(42f)))
                 {
-                    var report = DiNeVrmUtility.RunAll(vrmAvatar, out var copy);
+                    var options = new DiNeVrmOptions
+                    {
+                        PhysBoneMode = physBoneMode,
+                        ConvertMaterials = convertMaterialsInAuto && DiNeVrmMaterialConverter.IsMToonAvailable,
+                        MaterialOptions = materialOptions,
+                        FreezeTPose = freezeTPoseInAuto && DiNeUniVrmBridge.IsAvailable(DiNeUniVrmAction.FreezeTPose)
+                    };
+                    var report = DiNeVrmUtility.RunAll(vrmAvatar, options, out var copy);
                     if (copy != null)
                         vrmAvatar = copy;
                     ShowVrmReport(report);
@@ -357,9 +419,13 @@ namespace DiNeTool.ExtraModifier.Editor
             GUILayout.Space(10f);
             DrawVrmActionSection(27, 28, 29, true, () => DiNeVrmUtility.MergeOutfitBones(vrmAvatar));
             GUILayout.Space(8f);
-            DrawVrmActionSection(30, 31, 32, DiNeVrmUtility.IsUniVrmAvailable, () => DiNeVrmUtility.ConvertPhysBones(vrmAvatar));
+            DrawPhysBoneSection();
             GUILayout.Space(8f);
             DrawVrmActionSection(34, 35, 36, true, () => DiNeVrmUtility.CleanupForVrm(vrmAvatar));
+            GUILayout.Space(8f);
+            DrawMaterialSection();
+            GUILayout.Space(10f);
+            DrawUniVrmSection();
 
             if (!string.IsNullOrEmpty(vrmStatus))
             {
@@ -367,6 +433,247 @@ namespace DiNeTool.ExtraModifier.Editor
                 SectionLabel(T(37));
                 GUILayout.Space(4f);
                 EditorGUILayout.HelpBox(vrmStatus, vrmStatusType);
+            }
+        }
+
+        private void DrawPhysBoneSection()
+        {
+            SectionLabel(T(30));
+            GUILayout.Space(4f);
+            EditorGUILayout.BeginVertical("box");
+            GUILayout.Label(T(41), EditorStyles.miniBoldLabel);
+
+            var modeIndex = DrawToolbar((int)physBoneMode, new[] { T(42), T(43), T(44) }, 24f);
+            physBoneMode = (DiNeVrmPhysBoneMode)modeIndex;
+            GUILayout.Space(4f);
+
+            switch (physBoneMode)
+            {
+                case DiNeVrmPhysBoneMode.Delete:
+                    GUILayout.Label(T(46), EditorStyles.wordWrappedLabel);
+                    using (new EditorGUI.DisabledScope(vrmAvatar == null))
+                    {
+                        var previousColor = GUI.backgroundColor;
+                        GUI.backgroundColor = DangerColor;
+                        if (GUILayout.Button(T(48), GUILayout.Height(30f)))
+                            ShowVrmReport(DiNeVrmUtility.RemovePhysBones(vrmAvatar));
+                        GUI.backgroundColor = previousColor;
+                    }
+                    break;
+
+                case DiNeVrmPhysBoneMode.Keep:
+                    GUILayout.Label(T(47), EditorStyles.wordWrappedLabel);
+                    using (new EditorGUI.DisabledScope(true))
+                        GUILayout.Button(T(49), GUILayout.Height(30f));
+                    break;
+
+                default:
+                    GUILayout.Label(T(45), EditorStyles.wordWrappedLabel);
+                    if (!DiNeVrmUtility.IsUniVrmAvailable)
+                        EditorGUILayout.HelpBox(T(33), MessageType.Error);
+                    using (new EditorGUI.DisabledScope(vrmAvatar == null || !DiNeVrmUtility.IsUniVrmAvailable))
+                    {
+                        if (GUILayout.Button(T(32), GUILayout.Height(30f)))
+                            ShowVrmReport(DiNeVrmUtility.ConvertPhysBones(vrmAvatar));
+                    }
+                    break;
+            }
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawMaterialSection()
+        {
+            SectionLabel(T(50));
+            GUILayout.Space(4f);
+            EditorGUILayout.BeginVertical("box");
+            GUILayout.Label(T(51), EditorStyles.wordWrappedLabel);
+
+            var available = DiNeVrmMaterialConverter.IsMToonAvailable;
+            if (!available)
+                EditorGUILayout.HelpBox(T(61), MessageType.Error);
+
+            GUILayout.Space(4f);
+            materialOptions.KeepNormalMap = EditorGUILayout.ToggleLeft(T(53), materialOptions.KeepNormalMap);
+            materialOptions.KeepMatcap = EditorGUILayout.ToggleLeft(T(54), materialOptions.KeepMatcap);
+            materialOptions.KeepEmission = EditorGUILayout.ToggleLeft(T(55), materialOptions.KeepEmission);
+            materialOptions.KeepShadeColor = EditorGUILayout.ToggleLeft(T(56), materialOptions.KeepShadeColor);
+            materialOptions.KeepOutline = EditorGUILayout.ToggleLeft(T(57), materialOptions.KeepOutline);
+            materialOptions.KeepRim = EditorGUILayout.ToggleLeft(T(58), materialOptions.KeepRim);
+
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button(T(59), EditorStyles.miniButtonLeft, GUILayout.Height(20f)))
+            {
+                var saveAsAssets = materialOptions.SaveAsAssets;
+                materialOptions = DiNeVrmMaterialOptions.Preserve;
+                materialOptions.SaveAsAssets = saveAsAssets;
+            }
+            if (GUILayout.Button(T(60), EditorStyles.miniButtonRight, GUILayout.Height(20f)))
+            {
+                var saveAsAssets = materialOptions.SaveAsAssets;
+                materialOptions = DiNeVrmMaterialOptions.Strip;
+                materialOptions.SaveAsAssets = saveAsAssets;
+            }
+            EditorGUILayout.EndHorizontal();
+
+            GUILayout.Space(4f);
+            materialOptions.SaveAsAssets = EditorGUILayout.ToggleLeft(T(62), materialOptions.SaveAsAssets);
+
+            GUILayout.Space(4f);
+            using (new EditorGUI.DisabledScope(vrmAvatar == null || !available))
+            {
+                if (GUILayout.Button(T(52), GUILayout.Height(30f)))
+                    ShowVrmReport(DiNeVrmMaterialConverter.ConvertToMToon(vrmAvatar, materialOptions));
+            }
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawUniVrmSection()
+        {
+            SectionLabel(T(64));
+            GUILayout.Space(4f);
+            EditorGUILayout.BeginVertical("box");
+            GUILayout.Label(T(65), EditorStyles.wordWrappedLabel);
+
+            var installed = DiNeUniVrmBridge.DescribeInstallation();
+            if (string.IsNullOrEmpty(installed))
+                EditorGUILayout.HelpBox(T(67), MessageType.Error);
+            else
+                GUILayout.Label($"{T(66)}: {installed}", EditorStyles.miniLabel);
+
+            GUILayout.Space(4f);
+            using (new EditorGUI.DisabledScope(vrmAvatar == null))
+            {
+                if (GUILayout.Button(T(68), GUILayout.Height(26f)))
+                    preflightIssues = DiNeVrmPreflight.Run(vrmAvatar);
+            }
+
+            if (preflightIssues != null)
+            {
+                GUILayout.Space(4f);
+                if (preflightIssues.Count == 0)
+                {
+                    EditorGUILayout.HelpBox(T(69), MessageType.Info);
+                }
+                else
+                {
+                    Action pendingFix = null;
+                    foreach (var issue in preflightIssues.ToArray())
+                    {
+                        var requested = DrawIssue(issue);
+                        pendingFix = pendingFix ?? requested;
+                    }
+
+                    if (pendingFix != null)
+                    {
+                        // 레이아웃이 끝난 뒤에 실행해야 GUI 그리는 도중 컴포넌트가 사라지지 않는다.
+                        EditorApplication.delayCall += () =>
+                        {
+                            pendingFix();
+                            preflightIssues = vrmAvatar != null ? DiNeVrmPreflight.Run(vrmAvatar) : null;
+                            Repaint();
+                        };
+                    }
+                }
+            }
+
+            GUILayout.Space(6f);
+            HLine();
+            DrawBridgeButton(71, DiNeUniVrmAction.FreezeTPose);
+            DrawBridgeButton(72, DiNeUniVrmAction.MeshUtility);
+            DrawBridgeButton(73, DiNeUniVrmAction.ExportVrm0);
+            if (DiNeUniVrmBridge.HasVrm1)
+                DrawBridgeButton(74, DiNeUniVrmAction.ExportVrm1);
+            if (DiNeUniVrmBridge.HasVrmConverterForVrChat)
+                DrawBridgeButton(75, DiNeUniVrmAction.VrmConverterForVrChat);
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawBridgeButton(int textIndex, DiNeUniVrmAction action)
+        {
+            using (new EditorGUI.DisabledScope(vrmAvatar == null || !DiNeUniVrmBridge.IsAvailable(action)))
+            {
+                if (!GUILayout.Button(T(textIndex), GUILayout.Height(26f)))
+                    return;
+
+                // UniVRM 창을 여는 동작이라 레이아웃이 끝난 뒤에 호출한다.
+                var target = vrmAvatar;
+                EditorApplication.delayCall += () =>
+                {
+                    if (DiNeUniVrmBridge.Invoke(action, target, out var message))
+                        preflightIssues = target != null ? DiNeVrmPreflight.Run(target) : null;
+                    else
+                        SetVrmStatus(message, MessageType.Error);
+                    Repaint();
+                };
+            }
+        }
+
+        /// <summary>항목을 그리고, 사용자가 [고치기]를 눌렀으면 실행할 동작을 돌려준다.</summary>
+        private Action DrawIssue(DiNeVrmIssue issue)
+        {
+            Action requested = null;
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.HelpBox(DescribeIssue(issue), ToMessageType(issue.Severity));
+
+            var fix = GetIssueFix(issue.Kind);
+            using (new EditorGUI.DisabledScope(fix == null))
+            {
+                if (GUILayout.Button(T(70), GUILayout.Width(60f), GUILayout.Height(32f)) && fix != null)
+                    requested = fix;
+            }
+            EditorGUILayout.EndHorizontal();
+            return requested;
+        }
+
+        private string DescribeIssue(DiNeVrmIssue issue)
+        {
+            switch (issue.Kind)
+            {
+                case DiNeVrmIssueKind.UniVrmMissing: return T(76);
+                case DiNeVrmIssueKind.NoHumanoid: return T(77);
+                case DiNeVrmIssueKind.RootTransform: return T(78);
+                case DiNeVrmIssueKind.MissingScripts: return string.Format(T(79), issue.Count);
+                case DiNeVrmIssueKind.PhysBones: return string.Format(T(80), issue.Count);
+                case DiNeVrmIssueKind.VrcComponents: return string.Format(T(81), issue.Count);
+                case DiNeVrmIssueKind.UnsupportedShaders: return string.Format(T(82), issue.Count, issue.Detail);
+                case DiNeVrmIssueKind.NoVrmMeta: return T(83);
+                default: return issue.Kind.ToString();
+            }
+        }
+
+        /// <summary>사전 점검 항목을 우리 기능으로 고치는 동작. 고칠 수 없으면 null.</summary>
+        private Action GetIssueFix(DiNeVrmIssueKind kind)
+        {
+            switch (kind)
+            {
+                case DiNeVrmIssueKind.RootTransform:
+                    return () =>
+                    {
+                        if (!DiNeUniVrmBridge.Invoke(DiNeUniVrmAction.FreezeTPose, vrmAvatar, out var message))
+                            SetVrmStatus(message, MessageType.Error);
+                    };
+                case DiNeVrmIssueKind.MissingScripts:
+                case DiNeVrmIssueKind.VrcComponents:
+                    return () => ShowVrmReport(DiNeVrmUtility.CleanupForVrm(vrmAvatar));
+                case DiNeVrmIssueKind.PhysBones:
+                    return () => ShowVrmReport(DiNeVrmUtility.ProcessPhysBones(vrmAvatar, physBoneMode));
+                case DiNeVrmIssueKind.UnsupportedShaders:
+                    return DiNeVrmMaterialConverter.IsMToonAvailable
+                        ? (Action)(() => ShowVrmReport(DiNeVrmMaterialConverter.ConvertToMToon(vrmAvatar, materialOptions)))
+                        : null;
+                default:
+                    return null;
+            }
+        }
+
+        private static MessageType ToMessageType(DiNeVrmIssueSeverity severity)
+        {
+            switch (severity)
+            {
+                case DiNeVrmIssueSeverity.Error: return MessageType.Error;
+                case DiNeVrmIssueSeverity.Warning: return MessageType.Warning;
+                default: return MessageType.Info;
             }
         }
 
@@ -402,16 +709,27 @@ namespace DiNeTool.ExtraModifier.Editor
             switch (language)
             {
                 case Language.Korean:
-                    message = $"병합 본 {report.MergedBones} / SpringBone {report.SpringBones} / Constraint 변환 {report.ConvertedConstraints} / 제거 컴포넌트 {report.RemovedComponents}";
+                    message = $"병합 본 {report.MergedBones} / SpringBone {report.SpringBones}(콜라이더 그룹 {report.SpringColliders}, 미지원 {report.SkippedColliders})" +
+                              $" / PhysBone 삭제 {report.RemovedPhysBones} / 유지 {report.KeptPhysBones}" +
+                              $" / Constraint 변환 {report.ConvertedConstraints} / 제거 컴포넌트 {report.RemovedComponents}" +
+                              $"\n머티리얼 {report.ConvertedMaterials} (노말 {report.KeptNormalMaps}, 맷캡 {report.KeptMatcaps}, 이미시브 {report.KeptEmissions}, 아웃라인 {report.KeptOutlines}, 림 {report.KeptRims}, 버림 {report.DroppedMaterialFeatures})";
                     break;
                 case Language.Japanese:
-                    message = $"統合ボーン {report.MergedBones} / SpringBone {report.SpringBones} / Constraint変換 {report.ConvertedConstraints} / 削除コンポーネント {report.RemovedComponents}";
+                    message = $"統合ボーン {report.MergedBones} / SpringBone {report.SpringBones}(コライダーグループ {report.SpringColliders}、非対応 {report.SkippedColliders})" +
+                              $" / PhysBone削除 {report.RemovedPhysBones} / 維持 {report.KeptPhysBones}" +
+                              $" / Constraint変換 {report.ConvertedConstraints} / 削除コンポーネント {report.RemovedComponents}" +
+                              $"\nマテリアル {report.ConvertedMaterials}（ノーマル {report.KeptNormalMaps}、マットキャップ {report.KeptMatcaps}、エミッション {report.KeptEmissions}、アウトライン {report.KeptOutlines}、リム {report.KeptRims}、破棄 {report.DroppedMaterialFeatures}）";
                     break;
                 default:
-                    message = $"Merged bones {report.MergedBones} / SpringBones {report.SpringBones} / Converted constraints {report.ConvertedConstraints} / Removed components {report.RemovedComponents}";
+                    message = $"Merged bones {report.MergedBones} / SpringBones {report.SpringBones} (collider groups {report.SpringColliders}, unsupported {report.SkippedColliders})" +
+                              $" / PhysBones deleted {report.RemovedPhysBones} / kept {report.KeptPhysBones}" +
+                              $" / Converted constraints {report.ConvertedConstraints} / Removed components {report.RemovedComponents}" +
+                              $"\nMaterials {report.ConvertedMaterials} (normal {report.KeptNormalMaps}, matcap {report.KeptMatcaps}, emission {report.KeptEmissions}, outline {report.KeptOutlines}, rim {report.KeptRims}, dropped {report.DroppedMaterialFeatures})";
                     break;
             }
-            SetVrmStatus(message, MessageType.Info);
+            if (!string.IsNullOrEmpty(report.Warning))
+                message += $"\n{report.Warning}";
+            SetVrmStatus(message, string.IsNullOrEmpty(report.Warning) ? MessageType.Info : MessageType.Warning);
         }
 
         private void SetVrmStatus(string message, MessageType type)

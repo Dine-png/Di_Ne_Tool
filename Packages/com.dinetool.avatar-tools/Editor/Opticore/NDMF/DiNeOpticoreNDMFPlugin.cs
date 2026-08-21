@@ -14,7 +14,7 @@ namespace DiNeTool.Opticore.Ndmf
 
     internal sealed class DiNeOpticoreLoadPass : Pass<DiNeOpticoreLoadPass>
     {
-        public static readonly DiNeOpticoreLoadPass Instance = new DiNeOpticoreLoadPass();
+        public new static readonly DiNeOpticoreLoadPass Instance = new DiNeOpticoreLoadPass();
 
         public override string DisplayName => "Opticore: Load Configuration";
 
@@ -45,7 +45,7 @@ namespace DiNeTool.Opticore.Ndmf
 
     internal sealed class DiNeOpticoreApplyPass : Pass<DiNeOpticoreApplyPass>
     {
-        public static readonly DiNeOpticoreApplyPass Instance = new DiNeOpticoreApplyPass();
+        public new static readonly DiNeOpticoreApplyPass Instance = new DiNeOpticoreApplyPass();
 
         public override string DisplayName => "Opticore: Apply Optimizations";
 
@@ -76,7 +76,7 @@ namespace DiNeTool.Opticore.Ndmf
 
     internal sealed class DiNeRemoveMeshPass : Pass<DiNeRemoveMeshPass>
     {
-        public static readonly DiNeRemoveMeshPass Instance = new DiNeRemoveMeshPass();
+        public new static readonly DiNeRemoveMeshPass Instance = new DiNeRemoveMeshPass();
 
         public override string DisplayName => "Opticore: Remove Mesh In Box";
 

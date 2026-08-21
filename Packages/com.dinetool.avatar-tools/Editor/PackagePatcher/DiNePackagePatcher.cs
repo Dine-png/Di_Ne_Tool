@@ -13,6 +13,7 @@ public class DiNePackagePatcher : EditorWindow
     [System.Serializable]
     public class PackageItem
     {
+        public string Id = Guid.NewGuid().ToString("N");
         public string SourcePath;
         public string PackagePathInZip;
         public string DisplayName;
@@ -22,6 +23,8 @@ public class DiNePackagePatcher : EditorWindow
         public bool   IsFailed   = false;
 
         public string CachedTempPath; // set when pre-extracted during ProcessFile (e.g. from Bandizip temp)
+        public string ArchiveLabel = "ZIP"; // 목록 뱃지에 쓰는 압축 종류 (ZIP / RAR / 7Z)
+        public bool   IsExternalArchive = false; // rar·7z: .NET 이 못 여는 포맷
 
         public PackageItem(string sourcePath, string displayName, bool isFromZip, string packagePathInZip = null)
         {
@@ -34,55 +37,330 @@ public class DiNePackagePatcher : EditorWindow
 
     private enum LanguagePreset { English, Korean, Japanese }
 
-    // ── 도메인 리로드 대응 (스크립트 포함 패키지 임포트 시 리로드 발생) ──────────
-    // 임포트 중 도메인 리로드가 일어나면 모든 인스턴스 상태와 콜백이 초기화된다.
-    // SessionState에 "정리 예정 작업"을 저장하고, [InitializeOnLoad] 정적 생성자로
-    // 리로드 직후 자동 재실행한다.
-    private const string SESSION_TARGET = "DiNePatcher_PendingTarget";
-    private const string SESSION_ROOTS  = "DiNePatcher_PendingRoots";
+    // ══════════════════════════════════════════════════════════════════════════
+    //  임포트 드라이버 (도메인 리로드 내성)
+    //
+    //  스크립트/셰이더가 든 패키지는 임포트 도중 어셈블리 리로드를 일으킨다.
+    //  리로드는 EditorWindow 의 OnDisable 을 호출하고 인스턴스 필드·delayCall·
+    //  콜백 구독을 전부 날려버리므로, 진행 상태를 창이 아니라 SessionState 에
+    //  두고 [InitializeOnLoad] 정적 드라이버가 이어서 굴린다.
+    //  창을 닫아도(OnDestroy) 배치는 그대로 끝까지 진행된다.
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private const int PHASE_IMPORT   = 0;
+    private const int PHASE_REFRESH  = 1;
+    private const int PHASE_ORGANIZE = 2;
+
+    [System.Serializable]
+    private class PendingState
+    {
+        public string       target  = "_1_Patch";
+        public List<string> roots   = new List<string>(); // 이동 대상 후보 (Assets/xxx)
+        public List<string> before  = new List<string>(); // 임포트 전 Assets 최상위 목록
+        public List<string> queue   = new List<string>(); // 남은 임시 패키지 경로
+        public List<string> queueId = new List<string>(); // queue 와 1:1 대응하는 PackageItem.Id
+        public string inFlight;      // 현재 임포트 중인 임시 경로 (없으면 빈 값)
+        public string inFlightId;
+        public int    total;
+        public int    done;
+        public int    phase = PHASE_IMPORT;
+    }
+
+    private const string SESSION_STATE = "DiNePatcher_State";
+
+    private static bool   s_driverRunning;
+    private static bool   s_callbacksHooked;
+    private static double s_settleUntil;
+    private static DiNePackagePatcher s_window;
+
     static DiNePackagePatcher()
     {
-        EditorApplication.delayCall += TryOrganizeAfterReload;
+        // 리로드 직후에도 남은 작업이 있으면 창 없이 자동으로 이어서 진행한다.
+        EditorApplication.delayCall += ResumePendingBatch;
     }
 
-    private static void SavePendingOrganization(string target, IEnumerable<string> roots)
+    private static PendingState LoadState()
     {
-        SessionState.SetString(SESSION_TARGET, target);
-        SessionState.SetString(SESSION_ROOTS,  string.Join("\n", roots));
+        string raw = SessionState.GetString(SESSION_STATE, "");
+        if (string.IsNullOrEmpty(raw)) return null;
+        try { return JsonUtility.FromJson<PendingState>(raw); }
+        catch { SessionState.EraseString(SESSION_STATE); return null; }
     }
 
-    private static void ClearPendingOrganization()
+    private static void SaveState(PendingState st)
     {
-        SessionState.EraseString(SESSION_TARGET);
-        SessionState.EraseString(SESSION_ROOTS);
+        SessionState.SetString(SESSION_STATE, JsonUtility.ToJson(st));
     }
 
-    private static void TryOrganizeAfterReload()
+    private static void ClearState()
     {
-        string target   = SessionState.GetString(SESSION_TARGET, "");
-        string rootsRaw = SessionState.GetString(SESSION_ROOTS,  "");
-        if (string.IsNullOrEmpty(target) || string.IsNullOrEmpty(rootsRaw)) return;
-
-        ClearPendingOrganization();
-        var roots = rootsRaw.Split('\n').Where(s => !string.IsNullOrEmpty(s)).ToList();
-        Debug.Log($"[DiNe] 도메인 리로드 감지 → 정리 재개: [{string.Join(", ", roots)}] → {target}");
-        EditorApplication.delayCall += () => StaticMoveNewFolders(target, roots);
+        SessionState.EraseString(SESSION_STATE);
     }
 
-    private static void StaticMoveNewFolders(string targetFolderName, List<string> roots)
+    private static bool HasPendingBatch() => !string.IsNullOrEmpty(SessionState.GetString(SESSION_STATE, ""));
+
+    private static void ResumePendingBatch()
     {
-        foreach (var root in roots)
-            OrganizeRootFolder(root, targetFolderName);
+        var st = LoadState();
+        if (st == null) return;
 
-        BadgeOrganizedFolders(roots, targetFolderName);
-
-        if (HasOpenInstances<DiNePackagePatcher>())
+        if (!string.IsNullOrEmpty(st.inFlight))
         {
-            var win = GetWindow<DiNePackagePatcher>(false, null, false);
-            if (win != null) { win.isImporting = false; win.statusMessage = "완료!"; win.Repaint(); }
+            // 리로드 시점에 임포트 중이던 항목. ImportPackage 는 리로드보다 먼저
+            // 파일 기록을 끝내므로 성공으로 간주하고 다음으로 넘어간다.
+            // 여기서 배치를 포기하면 남은 패키지가 통째로 누락된다.
+            Debug.Log($"[DiNe] 도메인 리로드 감지 → 임포트 이어서 진행 ({st.done + 1}/{st.total})");
+            MarkItem(st.inFlightId, true);
+            st.inFlight   = "";
+            st.inFlightId = "";
+            st.done++;
+            SaveState(st);
+        }
+
+        StartDriver();
+    }
+
+    private static void StartDriver()
+    {
+        if (s_driverRunning) return;
+        s_driverRunning = true;
+        s_settleUntil   = EditorApplication.timeSinceStartup + 0.25;
+        HookImportCallbacks();
+        EditorApplication.update += Drive;
+    }
+
+    private static void StopDriver()
+    {
+        if (!s_driverRunning) return;
+        s_driverRunning = false;
+        EditorApplication.update -= Drive;
+        UnhookImportCallbacks();
+    }
+
+    private static void HookImportCallbacks()
+    {
+        if (s_callbacksHooked) return;
+        s_callbacksHooked = true;
+        AssetDatabase.importPackageCompleted += OnPackageCompleted;
+        AssetDatabase.importPackageFailed    += OnPackageFailed;
+        AssetDatabase.importPackageCancelled += OnPackageCancelled;
+    }
+
+    private static void UnhookImportCallbacks()
+    {
+        if (!s_callbacksHooked) return;
+        s_callbacksHooked = false;
+        AssetDatabase.importPackageCompleted -= OnPackageCompleted;
+        AssetDatabase.importPackageFailed    -= OnPackageFailed;
+        AssetDatabase.importPackageCancelled -= OnPackageCancelled;
+    }
+
+    /// <summary>
+    /// 에디터가 에셋 임포트·컴파일로 바쁜 동안에는 다음 ImportPackage 를 걸지 않는다.
+    /// 파일이 많은 패키지는 importPackageCompleted 이후에도 AssetDatabase 작업이
+    /// 남아 있고, 그 위에 다음 임포트를 얹으면 임포트가 중간에 끊긴다.
+    /// </summary>
+    private static bool EditorIsBusy()
+        => EditorApplication.isCompiling || EditorApplication.isUpdating || EditorApplication.isPlayingOrWillChangePlaymode;
+
+    private static void Drive()
+    {
+        var st = LoadState();
+        if (st == null) { StopDriver(); return; }
+
+        if (EditorIsBusy())
+        {
+            // 바쁜 동안에는 대기 시각을 계속 뒤로 민다 → 완전히 한가해진 뒤 진행.
+            s_settleUntil = EditorApplication.timeSinceStartup + 0.4;
+            return;
+        }
+        if (EditorApplication.timeSinceStartup < s_settleUntil) return;
+        if (!string.IsNullOrEmpty(st.inFlight)) return; // 콜백 대기 중
+
+        switch (st.phase)
+        {
+            case PHASE_IMPORT:
+                if (st.queue.Count == 0)
+                {
+                    st.phase = PHASE_REFRESH;
+                    SaveState(st);
+                    return;
+                }
+                ImportNext(st);
+                return;
+
+            case PHASE_REFRESH:
+                st.phase = PHASE_ORGANIZE;
+                SaveState(st);
+                s_settleUntil = EditorApplication.timeSinceStartup + 0.5;
+                try { AssetDatabase.Refresh(); }
+                catch (Exception e) { Debug.LogError($"[DiNe] 임포트 후 새로고침 실패\n{e}"); }
+                return;
+
+            case PHASE_ORGANIZE:
+                RunOrganize(st);
+                return;
         }
     }
-    // ──────────────────────────────────────────────────────────────────────────
+
+    private static void ImportNext(PendingState st)
+    {
+        string path = st.queue[0];
+        string id   = st.queueId.Count > 0 ? st.queueId[0] : "";
+        st.queue.RemoveAt(0);
+        if (st.queueId.Count > 0) st.queueId.RemoveAt(0);
+
+        st.inFlight   = path;
+        st.inFlightId = id;
+        SaveState(st);
+        RepaintWindow();
+
+        try
+        {
+            if (!File.Exists(path))
+                throw new FileNotFoundException("임포트할 임시 패키지 파일이 없습니다.", path);
+
+            AssetDatabase.ImportPackage(path, false);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[DiNe] 임포트 시작 실패: {Path.GetFileName(path)}\n{e}");
+            FinishInFlight(false);
+        }
+    }
+
+    private static void OnPackageCompleted(string name)
+    {
+        Debug.Log($"[DiNe] importPackageCompleted: {name}");
+        FinishInFlight(true);
+    }
+
+    private static void OnPackageFailed(string name, string err)
+    {
+        Debug.LogError($"[DiNe] 임포트 실패: {name} ({err})");
+        FinishInFlight(false);
+    }
+
+    private static void OnPackageCancelled(string name)
+    {
+        Debug.LogWarning($"[DiNe] 임포트 취소됨: {name}");
+        FinishInFlight(false);
+    }
+
+    private static void FinishInFlight(bool succeeded)
+    {
+        var st = LoadState();
+        if (st == null || string.IsNullOrEmpty(st.inFlight)) return;
+
+        MarkItem(st.inFlightId, succeeded);
+        st.inFlight   = "";
+        st.inFlightId = "";
+        st.done++;
+        SaveState(st);
+
+        // 임포트 직후에는 에셋 처리가 계속되므로 최소 대기 시간을 준다.
+        s_settleUntil = EditorApplication.timeSinceStartup + 0.4;
+        StartDriver();
+        RepaintWindow();
+    }
+
+    private static void RunOrganize(PendingState st)
+    {
+        // 스크립트를 옮기면 곧바로 컴파일/리로드가 걸린다. 정리 작업을 다시 타지
+        // 않도록 상태를 먼저 지운다.
+        ClearState();
+        StopDriver();
+
+        var roots = new HashSet<string>(st.roots, StringComparer.OrdinalIgnoreCase);
+
+        // tar 파싱이 완전히 실패한 경우에만 임포트 전후 스냅샷을 안전망으로 쓴다.
+        // 정상 파싱된 패키지를 처리하는 동안 사용자가 만든 무관한 에셋까지 이동시키지 않는다.
+        if (roots.Count == 0)
+        {
+            foreach (var added in FindNewTopLevelAssets(st.before, st.target))
+                roots.Add(added);
+        }
+
+        var organizedFolders = new List<string>();
+        try
+        {
+            foreach (var root in roots)
+            {
+                try
+                {
+                    string organized = OrganizeRootFolder(root, st.target);
+                    if (!string.IsNullOrEmpty(organized)) organizedFolders.Add(organized);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError($"[DiNe] '{root}' 정리 실패\n{e}");
+                }
+            }
+
+            BadgeFolders(organizedFolders);
+        }
+        finally
+        {
+            CleanTempFolder();
+            SetWindowStatusDone(st);
+        }
+    }
+
+    /// <summary>임포트 전 스냅샷에 없던 Assets 최상위 폴더/파일을 찾는다.</summary>
+    private static IEnumerable<string> FindNewTopLevelAssets(List<string> before, string targetFolderName)
+    {
+        var known  = new HashSet<string>(before ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
+        string tgt = "Assets/" + targetFolderName;
+
+        foreach (var path in EnumerateTopLevelAssets())
+        {
+            if (known.Contains(path)) continue;
+            if (path.Equals(tgt, StringComparison.OrdinalIgnoreCase)) continue;
+            Debug.Log($"[DiNe] 패키지 목록에 없던 새 항목 발견 → 함께 정리: {path}");
+            yield return path;
+        }
+    }
+
+    private static List<string> EnumerateTopLevelAssets()
+    {
+        var list = new List<string>();
+        try
+        {
+            list.AddRange(AssetDatabase.GetSubFolders("Assets"));
+            foreach (var f in Directory.GetFiles("Assets"))
+            {
+                if (f.EndsWith(".meta", StringComparison.OrdinalIgnoreCase)) continue;
+                list.Add(f.Replace('\\', '/'));
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[DiNe] Assets 최상위 스캔 실패: {e.Message}");
+        }
+        return list;
+    }
+
+    private static void MarkItem(string id, bool succeeded)
+    {
+        if (s_window == null || string.IsNullOrEmpty(id)) return;
+        var item = s_window.foundPackages.FirstOrDefault(p => p.Id == id);
+        if (item == null) return;
+        item.IsDone   = succeeded;
+        item.IsFailed = !succeeded;
+    }
+
+    private static void RepaintWindow()
+    {
+        if (s_window != null) s_window.Repaint();
+    }
+
+    private static void SetWindowStatusDone(PendingState st)
+    {
+        if (s_window == null) return;
+        s_window.statusMessage = s_window.UI_TEXT != null ? s_window.UI_TEXT[11] : "완료!";
+        s_window.Repaint();
+    }
+    // ══════════════════════════════════════════════════════════════════════════
 
     private LanguagePreset language = LanguagePreset.Korean;
 
@@ -91,22 +369,15 @@ public class DiNePackagePatcher : EditorWindow
     private Vector2 packageScrollPos;
 
     private string statusMessage   = "";
-    private bool   isImporting     = false;
 
     private string[] UI_TEXT;
     private Texture2D windowIcon;
     private Texture2D tabIcon;
     private Font      titleFont;
 
-    private HashSet<string> predictedRootFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    private int    totalPackagesToImport      = 0;
-    private int    currentlyProcessedPackages = 0;
-    private string pendingTargetFolderName    = "_1_Patch";
-    private PackageItem _currentItem;
-
-    private Queue<(string path, PackageItem item)> importQueue = new Queue<(string, PackageItem)>();
     private static string tempExtractPath  = "Temp/DiNePatcher_Extract";
     private static string tempCachePath    = "Temp/DiNePatcher_Cache";
+    private bool reloadAssembliesLocked = false;
 
     private static readonly Color ColMint   = new Color(0.30f, 0.82f, 0.76f);
     private static readonly Color ColZip    = new Color(0.40f, 0.75f, 1.00f);
@@ -126,18 +397,45 @@ public class DiNePackagePatcher : EditorWindow
 
     void OnEnable()
     {
+        s_window   = this;
         windowIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
         tabIcon    = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe_Icon.png");
         titleFont  = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
         SetLanguage(language);
-        isImporting   = false;
-        statusMessage = "";
+        if (!HasPendingBatch()) statusMessage = "";
     }
 
-    void OnDisable() { CleanTempFolder(); }
+    void OnDisable()
+    {
+        // OnDisable 은 창을 닫을 때뿐 아니라 어셈블리 리로드 때도 호출된다.
+        // 여기서 큐를 버리거나 임시 파일을 지우면 스크립트가 든 패키지를
+        // 임포트할 때마다 배치가 중간에 끊긴다. 정리는 OnDestroy 에서만 한다.
+        if (s_window == this) s_window = null;
+        ReleaseAssemblyReloadLock();
+    }
+
+    void OnDestroy()
+    {
+        ReleaseAssemblyReloadLock();
+
+        // 배치가 아직 진행 중이면 정적 드라이버가 계속 끝까지 처리한다.
+        // 임시 패키지 파일은 드라이버가 끝난 뒤에 지운다.
+        if (HasPendingBatch())
+        {
+            Debug.Log("[DiNe] 창을 닫았지만 남은 패키지 임포트는 백그라운드에서 계속 진행됩니다.");
+            return;
+        }
+
+        CleanTempFolder();
+    }
 
     void OnGUI()
     {
+        bool isImporting = HasPendingBatch();
+        var  st          = isImporting ? LoadState() : null;
+        int  doneCount   = st?.done  ?? 0;
+        int  totalCount  = st?.total ?? 0;
+
         GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
 
         // ── 타이틀 바 ──
@@ -189,7 +487,7 @@ public class DiNePackagePatcher : EditorWindow
         GUI.backgroundColor = new Color(0.28f, 0.42f, 0.55f);
         if (GUILayout.Button(UI_TEXT[20], GUILayout.Height(26)))
         {
-            string picked = EditorUtility.OpenFilePanel(UI_TEXT[20], "", "unitypackage,zip");
+            string picked = EditorUtility.OpenFilePanel(UI_TEXT[20], "", "unitypackage,zip,rar,7z");
             if (!string.IsNullOrEmpty(picked))
             {
                 ProcessFile(picked);
@@ -261,6 +559,7 @@ public class DiNePackagePatcher : EditorWindow
         }
         else
         {
+            string inFlightId = st?.inFlightId ?? "";
             int removeIndex = -1;
             for (int i = 0; i < foundPackages.Count; i++)
             {
@@ -277,7 +576,7 @@ public class DiNePackagePatcher : EditorWindow
                 GUILayout.Space(2);
 
                 // 타입 뱃지
-                string badgeText  = item.IsDone ? "✓" : item.IsFailed ? "✗" : item.IsFromZip ? "ZIP" : "PKG";
+                string badgeText  = item.IsDone ? "✓" : item.IsFailed ? "✗" : item.IsFromZip ? item.ArchiveLabel : "PKG";
                 Color  badgeColor = item.IsDone ? ColDone : item.IsFailed ? ColFail : item.IsFromZip ? ColZip : ColPkg;
                 GUILayout.Label(badgeText, new GUIStyle(EditorStyles.miniLabel)
                     { fontStyle = FontStyle.Bold, fontSize = 9, alignment = TextAnchor.MiddleCenter,
@@ -292,7 +591,7 @@ public class DiNePackagePatcher : EditorWindow
                     GUILayout.ExpandWidth(true));
 
                 // 진행 중 표시
-                if (isImporting && item == _currentItem)
+                if (isImporting && item.Id == inFlightId)
                     GUILayout.Label("…", new GUIStyle(EditorStyles.miniLabel)
                         { normal = { textColor = ColMint } }, GUILayout.Width(14));
                 else
@@ -315,7 +614,7 @@ public class DiNePackagePatcher : EditorWindow
                 EditorGUILayout.EndVertical();
                 GUILayout.Space(1);
             }
-            if (removeIndex != -1) { foundPackages.RemoveAt(removeIndex); Repaint(); }
+            if (removeIndex != -1 && !isImporting) { foundPackages.RemoveAt(removeIndex); Repaint(); }
         }
         EditorGUILayout.EndScrollView();
         EditorGUILayout.EndVertical();
@@ -323,18 +622,18 @@ public class DiNePackagePatcher : EditorWindow
         GUILayout.Space(3);
 
         // ── 진행 바 ──
-        if (isImporting && totalPackagesToImport > 0)
+        if (isImporting && totalCount > 0)
         {
             Rect barBg = GUILayoutUtility.GetRect(0f, 5f, GUILayout.ExpandWidth(true));
             EditorGUI.DrawRect(barBg, new Color(0.15f, 0.15f, 0.15f));
-            float ratio = (float)currentlyProcessedPackages / totalPackagesToImport;
+            float ratio = (float)doneCount / totalCount;
             EditorGUI.DrawRect(new Rect(barBg.x, barBg.y, barBg.width * ratio, barBg.height), ColMint);
             GUILayout.Space(3);
         }
 
         // ── 상태 메시지 ──
         if (isImporting)
-            statusMessage = $"{UI_TEXT[9]}  ({currentlyProcessedPackages} / {totalPackagesToImport})";
+            statusMessage = $"{UI_TEXT[9]}  ({doneCount} / {totalCount})";
 
         if (!string.IsNullOrEmpty(statusMessage))
             EditorGUILayout.HelpBox(statusMessage, MessageType.Info);
@@ -346,7 +645,7 @@ public class DiNePackagePatcher : EditorWindow
         var prevBgBtn = GUI.backgroundColor;
         GUI.backgroundColor = (!isImporting && selCount > 0) ? ColMint : Color.gray;
         string btnLabel = isImporting
-            ? $"⏳  {currentlyProcessedPackages} / {totalPackagesToImport}"
+            ? $"⏳  {doneCount} / {totalCount}"
             : $"{UI_TEXT[10]}  ({selCount})";
         if (GUILayout.Button(btnLabel, new GUIStyle(GUI.skin.button)
             { fontSize = 13, fontStyle = FontStyle.Bold,
@@ -355,6 +654,9 @@ public class DiNePackagePatcher : EditorWindow
             StartImport();
         GUI.backgroundColor = prevBgBtn;
         EditorGUI.EndDisabledGroup();
+
+        // 백그라운드 진행 중에는 창이 스스로 갱신되도록 한다.
+        if (isImporting) Repaint();
     }
 
     // ════════════════════════════════════════════════════════════
@@ -363,8 +665,27 @@ public class DiNePackagePatcher : EditorWindow
     {
         if (string.IsNullOrWhiteSpace(folderName)) return "_1_Patch";
         char[] invalidChars = Path.GetInvalidFileNameChars();
-        string clean = new string(folderName.Where(c => !invalidChars.Contains(c)).ToArray());
-        return string.IsNullOrWhiteSpace(clean) ? "_1_Patch" : clean;
+        string clean = new string(folderName
+            .Where(c => !invalidChars.Contains(c) && c != '/' && c != '\\' && c != ':')
+            .ToArray())
+            .Trim()
+            .TrimEnd('.');
+
+        if (string.IsNullOrWhiteSpace(clean) || clean == "." || clean == "..")
+            return "_1_Patch";
+
+        // Windows 예약 장치명은 확장자가 붙어도 폴더로 만들 수 없다.
+        string stem = clean.Split('.')[0];
+        string[] reservedNames =
+        {
+            "CON", "PRN", "AUX", "NUL",
+            "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+            "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
+        };
+        if (reservedNames.Contains(stem, StringComparer.OrdinalIgnoreCase))
+            clean = "_" + clean;
+
+        return clean;
     }
 
     private static void DrawBorder(Rect r, Color c, float t)
@@ -393,11 +714,11 @@ public class DiNePackagePatcher : EditorWindow
                         string fullPath;
                         try { fullPath = Path.GetFullPath(path); }
                         catch { fullPath = path; }
-                        
+
                         if (!Directory.Exists(fullPath) && !File.Exists(fullPath))
                             if (Directory.Exists(path) || File.Exists(path))
                                 fullPath = path;
-                                
+
                         if (Directory.Exists(fullPath)) AddFromPath(fullPath, true);
                         else ProcessFile(fullPath);
                     }
@@ -413,15 +734,23 @@ public class DiNePackagePatcher : EditorWindow
         if (isFolder)
         {
             var files = Directory.GetFiles(path, "*.*", SearchOption.AllDirectories)
-                .Where(s => s.EndsWith(".unitypackage") || s.EndsWith(".zip"));
+                .Where(s => SupportedExtensions.Contains(Path.GetExtension(s).ToLower()));
             foreach (var file in files) ProcessFile(file);
         }
         else ProcessFile(path);
     }
 
+    private static readonly HashSet<string> SupportedExtensions =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".unitypackage", ".zip", ".rar", ".7z" };
+
     private void ProcessFile(string path)
     {
         string ext = Path.GetExtension(path).ToLower();
+        if (DiNeArchiveTools.NeedsExternalTool(ext))
+        {
+            ProcessExternalArchive(path, ext == ".rar" ? "RAR" : "7Z");
+            return;
+        }
         if (ext == ".zip")
         {
             List<Encoding> encodings = new List<Encoding> { Encoding.UTF8 };
@@ -434,24 +763,32 @@ public class DiNePackagePatcher : EditorWindow
                 {
                     using (var archive = ZipFile.Open(path, ZipArchiveMode.Read, enc))
                     {
-                        foreach (var entry in archive.Entries)
+                        var entries = archive.Entries
+                            .Where(e => e.FullName.ToLower().EndsWith(".unitypackage"))
+                            .ToList();
+
+                        for (int i = 0; i < entries.Count; i++)
                         {
-                            if (entry.FullName.ToLower().EndsWith(".unitypackage"))
-                            {
-                                if (!foundPackages.Any(p => p.SourcePath == path && p.PackagePathInZip == entry.FullName))
-                                {
-                                    // ZIP 원본이 반디집 등 임시 경로에 있을 수 있으므로 즉시 캐시에 추출
-                                    string cached = TryCacheZipEntry(entry, path);
-                                    var item = new PackageItem(path, entry.FullName, true, entry.FullName);
-                                    item.CachedTempPath = cached;
-                                    foundPackages.Add(item);
-                                }
-                            }
+                            var entry = entries[i];
+                            if (foundPackages.Any(p => p.SourcePath == path && p.PackagePathInZip == entry.FullName))
+                                continue;
+
+                            // 대용량 ZIP 은 추출에 시간이 걸리므로 진행률을 보여준다.
+                            EditorUtility.DisplayProgressBar("Package Patcher",
+                                $"{Path.GetFileName(path)} → {Path.GetFileName(entry.FullName)}",
+                                entries.Count > 0 ? (float)i / entries.Count : 0f);
+
+                            // ZIP 원본이 반디집 등 임시 경로에 있을 수 있으므로 즉시 캐시에 추출
+                            string cached = TryCacheZipEntry(entry, path);
+                            var item = new PackageItem(path, entry.FullName, true, entry.FullName);
+                            item.CachedTempPath = cached;
+                            foundPackages.Add(item);
                         }
                         return;
                     }
                 }
-                catch { continue; } 
+                catch { continue; }
+                finally { EditorUtility.ClearProgressBar(); }
             }
         }
         else if (ext == ".unitypackage")
@@ -463,197 +800,231 @@ public class DiNePackagePatcher : EditorWindow
         }
     }
 
+    /// <summary>
+    /// .rar / .7z 는 .NET 이 열지 못하므로 외부 도구로 .unitypackage 만 캐시 폴더에
+    /// 미리 추출한다. 추출 결과가 곧 임포트용 파일이 된다.
+    /// </summary>
+    private void ProcessExternalArchive(string path, string label)
+    {
+        if (foundPackages.Any(p => p.SourcePath == path && p.IsExternalArchive)) return;
+
+        if (!DiNeArchiveTools.HasAnyTool())
+        {
+            statusMessage = UI_TEXT[22];
+            Debug.LogError($"[DiNe] {UI_TEXT[22]} | {Path.GetFileName(path)}");
+            return;
+        }
+
+        string destRoot = Path.Combine(tempCachePath, "Ext_" + Guid.NewGuid().ToString("N").Substring(0, 8));
+        List<string> extracted;
+        string error;
+        try
+        {
+            EditorUtility.DisplayProgressBar("Package Patcher",
+                $"{label}: {Path.GetFileName(path)}", 0.5f);
+            Directory.CreateDirectory(destRoot);
+            extracted = DiNeArchiveTools.ExtractUnityPackages(path, destRoot, out error);
+        }
+        finally { EditorUtility.ClearProgressBar(); }
+
+        if (extracted.Count == 0)
+        {
+            try { Directory.Delete(destRoot, true); } catch { }
+            statusMessage = UI_TEXT[23];
+            Debug.LogError($"[DiNe] {label} 안에서 .unitypackage 를 찾지 못했습니다: {Path.GetFileName(path)}\n{error}");
+            return;
+        }
+
+        foreach (var file in extracted)
+        {
+            string rel;
+            try { rel = file.Substring(destRoot.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar); }
+            catch { rel = Path.GetFileName(file); }
+            // 도구별 임시 하위 폴더(GUID) 한 겹은 표시에서 걷어낸다.
+            int slash = rel.IndexOfAny(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar });
+            if (slash >= 0) rel = rel.Substring(slash + 1);
+
+            var item = new PackageItem(path, Path.GetFileName(file), true, rel)
+            {
+                CachedTempPath    = file,
+                ArchiveLabel      = label,
+                IsExternalArchive = true,
+            };
+            foundPackages.Add(item);
+        }
+    }
+
     private void StartImport()
     {
+        if (HasPendingBatch())
+        {
+            Debug.LogWarning("[DiNe] 이미 임포트가 진행 중입니다.");
+            return;
+        }
+
         var targets = foundPackages.Where(p => p.IsSelected).ToList();
         if (targets.Count == 0) return;
 
         foreach (var p in foundPackages) { p.IsDone = false; p.IsFailed = false; }
 
-        isImporting   = true;
         statusMessage = UI_TEXT[9];
         // 이전 임포트 임시 파일만 정리 (캐시 폴더는 유지 - ProcessFile에서 미리 추출한 파일 보존)
         try { if (Directory.Exists(tempExtractPath)) Directory.Delete(tempExtractPath, true); } catch { }
-        importQueue.Clear();
-
         if (!Directory.Exists(tempExtractPath)) Directory.CreateDirectory(tempExtractPath);
-        predictedRootFolders.Clear();
 
-        pendingTargetFolderName = GetSafeFolderName(targetFolderName);
+        // 준비 단계(추출/복사/파싱)만 리로드를 잠근다. 실제 임포트 중에는 잠그지
+        // 않는다 — 스크립트가 컴파일되지 않은 상태로 뒤 패키지를 임포트하면
+        // 커스텀 임포터·셰이더가 필요한 에셋이 반쪽만 들어온다.
+        AcquireAssemblyReloadLock();
 
-        foreach (var item in targets)
+        var state = new PendingState
         {
-            string safeFileName = $"SafeImport_{System.Guid.NewGuid().ToString().Substring(0, 8)}.unitypackage";
-            string safeTempPath = Path.Combine(tempExtractPath, safeFileName);
+            target = GetSafeFolderName(targetFolderName),
+            before = EnumerateTopLevelAssets(),
+        };
+        var predictedRoots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            if (item.IsFromZip)
+        try
+        {
+            for (int i = 0; i < targets.Count; i++)
             {
-                // 이미 ProcessFile 시점에 캐시된 파일이 있으면 그걸 사용
-                if (!string.IsNullOrEmpty(item.CachedTempPath) && File.Exists(item.CachedTempPath))
-                {
-                    try
-                    {
-                        File.Copy(item.CachedTempPath, safeTempPath, true);
-                        importQueue.Enqueue((Path.GetFullPath(safeTempPath), item));
-                        foreach (var r in GetPackageRootFolders(safeTempPath)) predictedRootFolders.Add(r);
-                    }
-                    catch (System.Exception e)
-                    {
-                        Debug.LogError($"[DiNe] 캐시 복사 실패: {item.DisplayName}\n{e.Message}");
-                        item.IsFailed = true;
-                    }
-                }
-                else
-                {
-                    // 캐시 없음: 원본 ZIP에서 직접 추출 시도 (원본이 아직 존재하는 경우)
-                    try
-                    {
-                        using (var archive = ZipFile.OpenRead(item.SourcePath))
-                        {
-                            var entry = archive.GetEntry(item.PackagePathInZip);
-                            if (entry != null)
-                            {
-                                entry.ExtractToFile(safeTempPath, true);
-                                importQueue.Enqueue((Path.GetFullPath(safeTempPath), item));
-                                foreach (var r in GetPackageRootFolders(safeTempPath)) predictedRootFolders.Add(r);
-                            }
-                            else
-                            {
-                                Debug.LogError($"[DiNe] ZIP 내 파일을 찾을 수 없음: {item.PackagePathInZip}");
-                                item.IsFailed = true;
-                            }
-                        }
-                    }
-                    catch (System.Exception e)
-                    {
-                        Debug.LogError($"[DiNe] ZIP 추출 실패: {item.DisplayName}\n{e.Message}");
-                        item.IsFailed = true;
-                    }
-                }
-            }
-            else
-            {
-                string fullPath;
-                try { fullPath = Path.GetFullPath(item.SourcePath); }
-                catch { fullPath = item.SourcePath; }
-                if (!File.Exists(fullPath) && File.Exists(item.SourcePath)) fullPath = item.SourcePath;
+                var item = targets[i];
+                EditorUtility.DisplayProgressBar("Package Patcher",
+                    $"준비 중: {Path.GetFileName(item.DisplayName)}", (float)i / targets.Count);
 
-                if (File.Exists(fullPath))
-                {
-                    try
-                    {
-                        File.Copy(fullPath, safeTempPath, true);
-                        importQueue.Enqueue((Path.GetFullPath(safeTempPath), item));
-                        foreach (var r in GetPackageRootFolders(safeTempPath)) predictedRootFolders.Add(r);
-                    }
-                    catch (System.Exception e)
-                    {
-                        Debug.LogError($"[DiNe] 안전 복사 실패: {item.DisplayName} | {fullPath}\n{e.Message}");
-                        item.IsFailed = true;
-                    }
-                }
-                else
-                {
-                    Debug.LogError($"[DiNe] 파일을 찾을 수 없습니다: {item.DisplayName} | {fullPath}");
-                    item.IsFailed = true;
-                }
+                string prepared = PreparePackageFile(item);
+                if (string.IsNullOrEmpty(prepared)) { item.IsFailed = true; continue; }
+
+                state.queue.Add(prepared);
+                state.queueId.Add(item.Id);
+                foreach (var r in GetPackageRootFolders(prepared)) predictedRoots.Add(r);
             }
         }
-
-        totalPackagesToImport      = importQueue.Count;
-        currentlyProcessedPackages = 0;
-
-        if (totalPackagesToImport == 0)
+        finally
         {
-            isImporting   = false;
+            EditorUtility.ClearProgressBar();
+            ReleaseAssemblyReloadLock();
+        }
+
+        state.roots.AddRange(predictedRoots);
+        state.total = state.queue.Count;
+
+        if (state.total == 0)
+        {
             statusMessage = UI_TEXT[19];
             return;
         }
 
-        // 도메인 리로드 대비 SessionState에 저장 (스크립트 포함 패키지 대응)
-        SavePendingOrganization(pendingTargetFolderName, predictedRootFolders);
-        Debug.Log($"[DiNe] StartImport: {totalPackagesToImport}개 큐, 예측 폴더=[{string.Join(", ", predictedRootFolders)}]");
-
-        AssetDatabase.importPackageCompleted -= OnPackageProcessed;
-        AssetDatabase.importPackageFailed    -= OnPackageFailed;
-        AssetDatabase.importPackageCancelled -= OnPackageProcessed;
-        AssetDatabase.importPackageCompleted += OnPackageProcessed;
-        AssetDatabase.importPackageFailed    += OnPackageFailed;
-        AssetDatabase.importPackageCancelled += OnPackageProcessed;
-
-        ImportNextPackageInQueue();
+        SaveState(state);
+        Debug.Log($"[DiNe] StartImport: {state.total}개 큐, 예측 폴더=[{string.Join(", ", predictedRoots)}]");
+        StartDriver();
     }
 
-    private void ImportNextPackageInQueue()
+    /// <summary>선택 항목을 ASCII 임시 경로의 .unitypackage 로 준비한다. 실패 시 null.</summary>
+    private string PreparePackageFile(PackageItem item)
     {
-        if (importQueue.Count > 0)
+        string safeTempPath = Path.Combine(tempExtractPath,
+            $"SafeImport_{Guid.NewGuid().ToString("N").Substring(0, 8)}.unitypackage");
+
+        if (item.IsFromZip)
         {
-            var (path, item) = importQueue.Dequeue();
-            _currentItem = item;
-            
-            // 핵심 수정: 'false'를 강제 입력하여 임포트 창이 절대 뜨지 않고 백그라운드에서 실행되도록 수정!
-            AssetDatabase.ImportPackage(path, false);
-        }
-        else CheckIfAllFinished();
-    }
-
-    private void OnPackageProcessed(string name)
-    {
-        Debug.Log($"[DiNe] importPackageCompleted: {name}");
-        if (_currentItem != null) { _currentItem.IsDone = true; _currentItem = null; }
-        currentlyProcessedPackages++;
-        Repaint();
-        ImportNextPackageInQueue();
-    }
-
-    private void OnPackageFailed(string name, string err)
-    {
-        Debug.LogError($"[DiNe] 임포트 실패: {name} ({err})");
-        if (_currentItem != null) { _currentItem.IsFailed = true; _currentItem = null; }
-        currentlyProcessedPackages++;
-        Repaint();
-        ImportNextPackageInQueue();
-    }
-
-    private void CheckIfAllFinished()
-    {
-        Debug.Log($"[DiNe] CheckIfAllFinished: {currentlyProcessedPackages}/{totalPackagesToImport}, queue={importQueue.Count}");
-        if (currentlyProcessedPackages >= totalPackagesToImport || importQueue.Count == 0)
-        {
-            AssetDatabase.importPackageCompleted -= OnPackageProcessed;
-            AssetDatabase.importPackageFailed    -= OnPackageFailed;
-            AssetDatabase.importPackageCancelled -= OnPackageProcessed;
-
-            // importPackageCompleted 직후에는 AssetDatabase가 아직 새 폴더를 반영하지 않은 경우가 있음
-            // 첫 번째 delayCall에서 Refresh → 두 번째 delayCall에서 완전히 갱신된 DB로 폴더 이동
-            EditorApplication.delayCall += () =>
+            // ProcessFile 시점에 캐시된 파일이 있으면 재복사 없이 그대로 쓴다.
+            if (!string.IsNullOrEmpty(item.CachedTempPath) && File.Exists(item.CachedTempPath))
             {
-                AssetDatabase.Refresh();
-                EditorApplication.delayCall += () =>
+                try { return Path.GetFullPath(item.CachedTempPath); }
+                catch (Exception e)
                 {
-                    MoveNewFolders();
-                    CleanTempFolder();
-                    isImporting   = false;
-                    statusMessage = UI_TEXT[11];
-                    Repaint();
-                };
-            };
+                    Debug.LogError($"[DiNe] 캐시 경로 확인 실패: {item.DisplayName}\n{e.Message}");
+                    return null;
+                }
+            }
+
+            if (item.IsExternalArchive)
+            {
+                // 캐시가 지워졌으면 외부 도구로 다시 푼다.
+                string destRoot = Path.Combine(tempCachePath, "Ext_" + Guid.NewGuid().ToString("N").Substring(0, 8));
+                try
+                {
+                    Directory.CreateDirectory(destRoot);
+                    string err;
+                    var files = DiNeArchiveTools.ExtractUnityPackages(item.SourcePath, destRoot, out err);
+                    string wanted = Path.GetFileName(item.PackagePathInZip ?? item.DisplayName);
+                    string hit = files.FirstOrDefault(f =>
+                                     Path.GetFileName(f).Equals(wanted, StringComparison.OrdinalIgnoreCase))
+                                 ?? files.FirstOrDefault();
+                    if (hit == null)
+                    {
+                        Debug.LogError($"[DiNe] {item.ArchiveLabel} 재추출 실패: {item.DisplayName}\n{err}");
+                        return null;
+                    }
+                    item.CachedTempPath = hit;
+                    return Path.GetFullPath(hit);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError($"[DiNe] {item.ArchiveLabel} 재추출 실패: {item.DisplayName}\n{e.Message}");
+                    return null;
+                }
+            }
+
+            try
+            {
+                using (var archive = ZipFile.OpenRead(item.SourcePath))
+                {
+                    var entry = archive.GetEntry(item.PackagePathInZip)
+                        ?? archive.Entries.FirstOrDefault(e =>
+                               e.FullName.Equals(item.PackagePathInZip, StringComparison.OrdinalIgnoreCase));
+                    if (entry == null)
+                    {
+                        Debug.LogError($"[DiNe] ZIP 내 파일을 찾을 수 없음: {item.PackagePathInZip}");
+                        return null;
+                    }
+                    entry.ExtractToFile(safeTempPath, true);
+                    return Path.GetFullPath(safeTempPath);
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[DiNe] ZIP 추출 실패: {item.DisplayName}\n{e.Message}");
+                return null;
+            }
+        }
+
+        string fullPath;
+        try { fullPath = Path.GetFullPath(item.SourcePath); }
+        catch { fullPath = item.SourcePath; }
+        if (!File.Exists(fullPath) && File.Exists(item.SourcePath)) fullPath = item.SourcePath;
+
+        if (!File.Exists(fullPath))
+        {
+            Debug.LogError($"[DiNe] 파일을 찾을 수 없습니다: {item.DisplayName} | {fullPath}");
+            return null;
+        }
+
+        try
+        {
+            File.Copy(fullPath, safeTempPath, true);
+            return Path.GetFullPath(safeTempPath);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[DiNe] 안전 복사 실패: {item.DisplayName} | {fullPath}\n{e.Message}");
+            return null;
         }
     }
 
-    private void MoveNewFolders()
+    private void AcquireAssemblyReloadLock()
     {
-        // 정상 경로(콜백)로 실행됨 → 리로드 후 재실행 방지
-        ClearPendingOrganization();
-        Debug.Log($"[DiNe] MoveNewFolders: 예측 폴더 수={predictedRootFolders.Count} / {string.Join(", ", predictedRootFolders)}");
+        if (reloadAssembliesLocked) return;
+        EditorApplication.LockReloadAssemblies();
+        reloadAssembliesLocked = true;
+    }
 
-        if (predictedRootFolders.Count == 0)
-            Debug.LogWarning("[DiNe] MoveNewFolders: 이동 대상 없음 — 패키지 파싱 실패 또는 pathname 엔트리 없음");
-
-        foreach (var root in predictedRootFolders)
-            OrganizeRootFolder(root, pendingTargetFolderName);
-
-        BadgeOrganizedFolders(predictedRootFolders, pendingTargetFolderName);
+    private void ReleaseAssemblyReloadLock()
+    {
+        if (!reloadAssembliesLocked) return;
+        reloadAssembliesLocked = false;
+        EditorApplication.UnlockReloadAssemblies();
     }
 
     /// <summary>
@@ -661,31 +1032,28 @@ public class DiNePackagePatcher : EditorWindow
     /// NEW 뱃지를 단다. 이동은 guid 가 보존되지만 병합 시 원본이 삭제되므로
     /// 최종 위치를 명시적으로 등록해 "넣은 패키지가 안 뜨는" 문제를 막는다.
     /// </summary>
-    private static void BadgeOrganizedFolders(IEnumerable<string> roots, string targetFolderName)
+    private static void BadgeFolders(IEnumerable<string> folders)
     {
-        string targetPath = "Assets/" + targetFolderName;
-        var finals = new List<string>();
-        foreach (var root in roots)
-        {
-            string dest = targetPath + "/" + Path.GetFileName(root);
-            if (AssetDatabase.IsValidFolder(dest)) finals.Add(dest);
-        }
+        var finals = folders.Where(AssetDatabase.IsValidFolder).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         if (finals.Count > 0) DiNeNewAssetBadge.MarkFolders(finals);
     }
 
     /// <summary>
-    /// 임포트된 루트 폴더(root)를 정리 폴더(Assets/targetFolderName) 안으로 옮긴다.
+    /// 임포트된 루트(root)를 정리 폴더(Assets/targetFolderName) 안으로 옮긴다.
     /// 목적지에 같은 이름의 폴더가 이미 있으면 이동 대신 내용을 병합한다(재귀).
     /// </summary>
-    private static void OrganizeRootFolder(string root, string targetFolderName)
+    private static string OrganizeRootFolder(string root, string targetFolderName)
     {
         string targetPath = "Assets/" + targetFolderName;
-        if (root.Equals(targetPath, StringComparison.OrdinalIgnoreCase)) return;
+        if (root.Equals(targetPath, StringComparison.OrdinalIgnoreCase)) return targetPath;
 
-        if (!AssetDatabase.IsValidFolder(root))
+        bool isFolder = AssetDatabase.IsValidFolder(root);
+        bool isFile   = !isFolder && !string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID(root));
+
+        if (!isFolder && !isFile)
         {
-            Debug.LogWarning($"[DiNe] '{root}' 폴더 없음 (임포트 후에도 미생성) → 스킵");
-            return;
+            Debug.LogWarning($"[DiNe] '{root}' 없음 (임포트 후에도 미생성) → 스킵");
+            return null;
         }
 
         if (!AssetDatabase.IsValidFolder(targetPath))
@@ -693,26 +1061,62 @@ public class DiNePackagePatcher : EditorWindow
 
         string dest = targetPath + "/" + Path.GetFileName(root);
 
+        // Assets 바로 아래에 놓인 단일 파일도 정리 폴더로 함께 옮긴다.
+        if (isFile)
+        {
+            SafeMoveAsset(root, dest);
+            return null;
+        }
+
         // 목적지에 같은 이름 폴더가 이미 있으면 → 내용 병합 (재귀)
         if (AssetDatabase.IsValidFolder(dest))
         {
+            string sourceGuid = AssetDatabase.AssetPathToGUID(root);
+            string destGuid   = AssetDatabase.AssetPathToGUID(dest);
+
+            // Two unrelated packages can use the same top-level folder name. Merging
+            // those folders and overwriting collisions destroys one side's GUIDs.
+            // Keep both folder trees when their folder GUIDs identify different assets.
+            if (!string.IsNullOrEmpty(sourceGuid) && !string.IsNullOrEmpty(destGuid) &&
+                !sourceGuid.Equals(destGuid, StringComparison.OrdinalIgnoreCase))
+            {
+                string uniqueDest = AssetDatabase.GenerateUniqueAssetPath(dest);
+                string uniqueErr  = AssetDatabase.MoveAsset(root, uniqueDest);
+                if (!string.IsNullOrEmpty(uniqueErr))
+                {
+                    Debug.LogWarning($"[DiNe] GUID 보존 이동 실패: {root} → {uniqueDest}\n{uniqueErr}");
+                    return null;
+                }
+
+                Debug.LogWarning($"[DiNe] 같은 이름의 서로 다른 패키지 폴더를 발견하여 GUID 보존을 위해 분리했습니다: " +
+                                 $"{root} → {uniqueDest}");
+                return uniqueDest;
+            }
+
             Debug.Log($"[DiNe] '{dest}' 이미 존재 → 내용 병합");
             MergeFolderInto(root, dest);
-            return;
+            return dest;
         }
 
         string err = AssetDatabase.MoveAsset(root, dest);
         if (!string.IsNullOrEmpty(err))
-            Debug.LogWarning($"[DiNe] 폴더 이동 실패: {root} → {dest}\n{err}");
-        else
-            Debug.Log($"[DiNe] 폴더 이동 완료: {root} → {dest}");
+        {
+            // 이동이 거부되는 흔한 이유(파일 잠금, 임포트 미완료)를 함께 남긴다.
+            string validate = AssetDatabase.ValidateMoveAsset(root, dest);
+            Debug.LogWarning($"[DiNe] 폴더 이동 실패: {root} → {dest}\n{err}" +
+                             (string.IsNullOrEmpty(validate) ? "" : $"\n(validate: {validate})"));
+            return null;
+        }
+
+        Debug.Log($"[DiNe] 폴더 이동 완료: {root} → {dest}");
+        return dest;
     }
 
     /// <summary>
     /// source 폴더의 내용을 (이미 존재하는) dest 폴더 안으로 합친다.
     /// - 같은 이름의 하위 폴더가 dest에도 있으면 재귀적으로 병합
     /// - 충돌하지 않는 폴더/파일은 그대로 이동
-    /// - 같은 이름의 파일이 있으면 기존 것을 지우고 덮어쓴다
+    /// - 같은 GUID의 파일은 업데이트하고, 다른 GUID의 동명 파일은 고유 경로로 분리한다
     /// 병합이 끝나면 비워진 source 폴더를 삭제한다.
     /// </summary>
     private static void MergeFolderInto(string source, string dest)
@@ -722,7 +1126,15 @@ public class DiNePackagePatcher : EditorWindow
         {
             string childDest = dest + "/" + Path.GetFileName(sub);
             if (AssetDatabase.IsValidFolder(childDest))
-                MergeFolderInto(sub, childDest);           // 같은 이름 폴더 → 재귀 병합
+            {
+                string sourceGuid = AssetDatabase.AssetPathToGUID(sub);
+                string destGuid   = AssetDatabase.AssetPathToGUID(childDest);
+                if (!string.IsNullOrEmpty(sourceGuid) &&
+                    sourceGuid.Equals(destGuid, StringComparison.OrdinalIgnoreCase))
+                    MergeFolderInto(sub, childDest);       // 같은 폴더 에셋 → 재귀 병합
+                else
+                    SafeMoveAsset(sub, childDest);         // 이름만 같은 폴더 → 둘 다 보존
+            }
             else
                 SafeMoveAsset(sub, childDest);             // 새 폴더 → 통째로 이동
         }
@@ -736,19 +1148,56 @@ public class DiNePackagePatcher : EditorWindow
             SafeMoveAsset(assetSrc, fileDest);
         }
 
-        // 비워진 source 폴더 삭제
-        AssetDatabase.DeleteAsset(source);
+        // 이동 실패가 하나라도 있었다면 source를 지우지 않는다. 실패한 에셋을
+        // 함께 삭제하는 것보다 정리되지 않은 폴더를 남기는 편이 안전하다.
+        bool hasSubFolders = AssetDatabase.GetSubFolders(source).Length > 0;
+        bool hasAssetFiles = Directory.GetFiles(source)
+            .Any(file => !file.EndsWith(".meta", StringComparison.OrdinalIgnoreCase));
+        if (!hasSubFolders && !hasAssetFiles)
+            AssetDatabase.DeleteAsset(source);
+        else
+            Debug.LogWarning($"[DiNe] 일부 에셋을 이동하지 못해 원본 폴더를 보존합니다: {source}");
     }
 
     /// <summary>
-    /// src 에셋을 dest 로 이동. dest 에 같은 이름의 에셋(파일)이 있으면 지우고 덮어쓴다.
+    /// src 에셋을 dest 로 이동. 충돌 시 GUID가 같으면 업데이트하고, 다르면 둘 다 보존한다.
     /// </summary>
     private static void SafeMoveAsset(string src, string dest)
     {
-        if (AssetDatabase.IsValidFolder(dest)
-            || AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(dest) != null)
+        bool destinationExists = AssetDatabase.IsValidFolder(dest)
+            || !string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID(dest))
+            || File.Exists(dest)
+            || Directory.Exists(dest);
+
+        if (destinationExists)
         {
-            AssetDatabase.DeleteAsset(dest);
+            string sourceGuid = AssetDatabase.AssetPathToGUID(src);
+            string destGuid   = AssetDatabase.AssetPathToGUID(dest);
+
+            if (!string.IsNullOrEmpty(sourceGuid) &&
+                sourceGuid.Equals(destGuid, StringComparison.OrdinalIgnoreCase))
+            {
+                // Same logical asset (for example a package update): replacing it keeps
+                // the GUID stable for references on both sides.
+                if (!AssetDatabase.DeleteAsset(dest))
+                {
+                    Debug.LogWarning($"[DiNe] 기존 에셋 삭제 실패: {dest}");
+                    return;
+                }
+            }
+            else
+            {
+                // Different assets with the same filename must coexist. Moving the new
+                // one to a unique path preserves both GUIDs and therefore prefab,
+                // material, texture, animation, and script references.
+                string uniqueDest = AssetDatabase.GenerateUniqueAssetPath(dest);
+                string uniqueErr = AssetDatabase.MoveAsset(src, uniqueDest);
+                if (!string.IsNullOrEmpty(uniqueErr))
+                    Debug.LogWarning($"[DiNe] GUID 보존 병합 이동 실패: {src} → {uniqueDest}\n{uniqueErr}");
+                else
+                    Debug.LogWarning($"[DiNe] 파일명 충돌을 GUID 손실 없이 분리했습니다: {dest} → {uniqueDest}");
+                return;
+            }
         }
 
         string err = AssetDatabase.MoveAsset(src, dest);
@@ -757,7 +1206,7 @@ public class DiNePackagePatcher : EditorWindow
     }
 
     /// <summary>
-    /// .unitypackage(= tgz) 파일을 파싱해 설치될 Assets 루트 폴더 이름 목록 반환.
+    /// .unitypackage(= tgz) 파일을 파싱해 설치될 Assets 루트 경로 목록 반환.
     /// 임포트 전에 호출하여 정확한 이동 대상을 미리 파악한다.
     /// </summary>
     private static IEnumerable<string> GetPackageRootFolders(string packagePath)
@@ -768,7 +1217,7 @@ public class DiNePackagePatcher : EditorWindow
             using var fs  = File.OpenRead(packagePath);
             using var gz  = new GZipStream(fs, CompressionMode.Decompress);
             var hdr      = new byte[512];
-            var skipBuf  = new byte[4096];
+            var skipBuf  = new byte[64 * 1024];
 
             while (TarReadExact(gz, hdr, 512) == 512)
             {
@@ -782,14 +1231,27 @@ public class DiNePackagePatcher : EditorWindow
                 long   size      = 0;
                 if (!string.IsNullOrEmpty(sizeOctal))
                     try { size = Convert.ToInt64(sizeOctal, 8); } catch { }
+                if (size < 0) throw new InvalidDataException($"잘못된 TAR 엔트리 크기: {size}");
                 long paddedSize = (size + 511L) / 512 * 512;
 
                 // GUID/pathname 엔트리에서 에셋 경로 읽기
                 if (entryName.EndsWith("/pathname") || entryName.EndsWith("\\pathname"))
                 {
+                    if (size > int.MaxValue)
+                    {
+                        // pathname is normally only a few bytes. Guarding the cast also
+                        // keeps malformed or very large archives from overflowing.
+                        TarSkipBytes(gz, paddedSize, skipBuf);
+                        continue;
+                    }
+
                     var content = new byte[(int)size];
-                    TarReadExact(gz, content, (int)size);
-                    string assetPath = Encoding.UTF8.GetString(content).Trim('\0', '\r', '\n', ' ');
+                    if (TarReadExact(gz, content, (int)size) != (int)size)
+                        throw new EndOfStreamException("pathname 엔트리가 중간에 끝났습니다.");
+
+                    // pathname 은 두 줄(신규 경로 / 원본 경로)일 수 있으므로 첫 줄만 쓴다.
+                    string raw = Encoding.UTF8.GetString(content);
+                    string assetPath = raw.Split('\n')[0].Trim('\0', '\r', '\n', ' ');
                     if (assetPath.StartsWith("Assets/"))
                     {
                         var rel  = assetPath.Substring("Assets/".Length);
@@ -798,17 +1260,19 @@ public class DiNePackagePatcher : EditorWindow
                         if (!string.IsNullOrEmpty(root)) roots.Add("Assets/" + root);
                     }
                     long pad = paddedSize - size;
-                    if (pad > 0) TarSkipBytes(gz, (int)pad, skipBuf);
+                    if (pad > 0) TarSkipBytes(gz, pad, skipBuf);
                 }
                 else
                 {
-                    TarSkipBytes(gz, (int)paddedSize, skipBuf);
+                    TarSkipBytes(gz, paddedSize, skipBuf);
                 }
             }
         }
         catch (Exception e)
         {
-            Debug.LogWarning($"[DiNe] 패키지 파싱 실패 (자동 정리 불가): {Path.GetFileName(packagePath)}\n{e.Message}");
+            // 파싱이 실패해도 임포트 후 새 폴더 스캔이 정리를 대신 처리한다.
+            Debug.LogWarning($"[DiNe] 패키지 파싱 실패 (임포트 후 새 폴더 스캔으로 대체): " +
+                             $"{Path.GetFileName(packagePath)}\n{e.Message}");
         }
         return roots;
     }
@@ -825,13 +1289,14 @@ public class DiNePackagePatcher : EditorWindow
         return total;
     }
 
-    private static void TarSkipBytes(Stream s, int count, byte[] tmp)
+    private static void TarSkipBytes(Stream s, long count, byte[] tmp)
     {
-        int rem = count;
+        long rem = count;
         while (rem > 0)
         {
-            int r = s.Read(tmp, 0, Math.Min(rem, tmp.Length));
-            if (r <= 0) break;
+            int request = (int)Math.Min(rem, tmp.Length);
+            int r = s.Read(tmp, 0, request);
+            if (r <= 0) throw new EndOfStreamException("TAR 엔트리가 중간에 끝났습니다.");
             rem -= r;
         }
     }
@@ -859,6 +1324,8 @@ public class DiNePackagePatcher : EditorWindow
 
     private static void CleanTempFolder()
     {
+        // 진행 중인 배치의 임시 패키지를 지우면 남은 임포트가 전부 실패한다.
+        if (HasPendingBatch()) return;
         try { if (Directory.Exists(tempExtractPath)) Directory.Delete(tempExtractPath, true); } catch { }
         try { if (Directory.Exists(tempCachePath))   Directory.Delete(tempCachePath,   true); } catch { }
     }
@@ -883,13 +1350,15 @@ public class DiNePackagePatcher : EditorWindow
                     /* 12 */ "",
                     /* 13 */ "패키지 파일을 드래그하여 설치하고, 한 폴더에 정리하세요.",
                     /* 14 */ "임포트 창 강제 표시 (에러 시 체크)", // UI에선 지웠지만 배열 인덱스 유지를 위해 남겨둠
-                    /* 15 */ ".unitypackage · .zip · 폴더 지원",
+                    /* 15 */ ".unitypackage · .zip · .rar · .7z · 폴더 지원",
                     /* 16 */ "전체",
                     /* 17 */ "없음",
                     /* 18 */ "Clear",
                     /* 19 */ "임포트할 파일을 찾을 수 없습니다. (콘솔 창 확인)",
                     /* 20 */ "📄  파일 직접 선택",
                     /* 21 */ "📁  폴더 직접 선택",
+                    /* 22 */ ".rar · .7z 를 열려면 7-Zip / WinRAR / Bandizip 이 필요합니다.",
+                    /* 23 */ "압축 파일 안에서 .unitypackage 를 찾지 못했습니다. (콘솔 창 확인)",
                 };
                 break;
             case LanguagePreset.Japanese:
@@ -908,13 +1377,15 @@ public class DiNePackagePatcher : EditorWindow
                     /* 12 */ "",
                     /* 13 */ "パッケージファイルをドラッグしてインストールし、一つのフォルダにまとめます。",
                     /* 14 */ "インポートダイアログを強制表示 (エラー時にチェック)",
-                    /* 15 */ ".unitypackage · .zip · フォルダ対応",
+                    /* 15 */ ".unitypackage · .zip · .rar · .7z · フォルダ対応",
                     /* 16 */ "全選択",
                     /* 17 */ "解除",
                     /* 18 */ "Clear",
                     /* 19 */ "インポートするファイルが見つかりません。(コンソール確認)",
                     /* 20 */ "📄  ファイルを直接選択",
                     /* 21 */ "📁  フォルダを直接選択",
+                    /* 22 */ ".rar · .7z を開くには 7-Zip / WinRAR / Bandizip が必要です。",
+                    /* 23 */ "圧縮ファイル内に .unitypackage が見つかりません。(コンソール確認)",
                 };
                 break;
             default:
@@ -933,13 +1404,15 @@ public class DiNePackagePatcher : EditorWindow
                     /* 12 */ "",
                     /* 13 */ "Drag and drop packages to install and organize them.",
                     /* 14 */ "Force Import Dialog (check on error)",
-                    /* 15 */ ".unitypackage · .zip · folder supported",
+                    /* 15 */ ".unitypackage · .zip · .rar · .7z · folder supported",
                     /* 16 */ "All",
                     /* 17 */ "None",
                     /* 18 */ "Clear",
                     /* 19 */ "No files to import. (Check Console)",
                     /* 20 */ "📄  Browse File",
                     /* 21 */ "📁  Browse Folder",
+                    /* 22 */ "7-Zip / WinRAR / Bandizip is required to open .rar · .7z files.",
+                    /* 23 */ "No .unitypackage found inside the archive. (Check Console)",
                 };
                 break;
         }

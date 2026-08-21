@@ -29,6 +29,7 @@ public sealed class DiNeSmartToggle : MonoBehaviour
     [SerializeField, HideInInspector] private float iconForbiddenOpacity = 1f;
     [SerializeField, HideInInspector] private float iconForbiddenScale = 0.85f;
     [SerializeField, HideInInspector] private bool iconForbiddenBehindObject = true;
+    [SerializeField, HideInInspector] private bool iconIdlePose;
 
     public string DisplayName { get => displayName; set => displayName = value; }
     public string ParameterName { get => parameterName; set => parameterName = value; }
@@ -47,6 +48,7 @@ public sealed class DiNeSmartToggle : MonoBehaviour
     public float IconForbiddenOpacity { get => iconForbiddenOpacity; set => iconForbiddenOpacity = value; }
     public float IconForbiddenScale { get => iconForbiddenScale; set => iconForbiddenScale = value; }
     public bool IconForbiddenBehindObject { get => iconForbiddenBehindObject; set => iconForbiddenBehindObject = value; }
+    public bool IconIdlePose { get => iconIdlePose; set => iconIdlePose = value; }
 
     private void Reset()
     {

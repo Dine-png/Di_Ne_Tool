@@ -4,7 +4,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using Object = UnityEngine.Object;
 
 /// <summary>
@@ -262,11 +264,16 @@ public static class DiNeIconMaker
         GameObject cameraObject = null;
         RenderTexture renderTexture = null;
         RenderTexture previousActive = RenderTexture.active;
+        Scene previewScene = default;
+        bool usePreviewScene = true;
 
         try
         {
             int captureLayer = FindAvailableCaptureLayer();
+            previewScene = TryCreatePreviewScene();
             root = new GameObject("DiNe_IconRoot") { hideFlags = HideFlags.HideAndDontSave };
+            if (!MoveToPreviewScene(root, previewScene))
+                usePreviewScene = false;
             AddClone(target, root.transform);
 
             if (linkedObjects != null)
@@ -275,6 +282,7 @@ public static class DiNeIconMaker
                     AddClone(linked, root.transform);
             }
 
+            HideFromSceneViewIfNotPreviewScene(root);
             ChangeLayerRecursively(root, captureLayer);
 
             Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true)
@@ -295,7 +303,15 @@ public static class DiNeIconMaker
 
             float radius = Mathf.Max(bounds.extents.magnitude, 0.001f);
             cameraObject = new GameObject("DiNe_IconCamera") { hideFlags = HideFlags.HideAndDontSave };
+            if (usePreviewScene && !MoveToPreviewScene(cameraObject, previewScene))
+                usePreviewScene = false;
             Camera camera = cameraObject.AddComponent<Camera>();
+            // 프리뷰 씬에 있는 클론을 렌더하려면 카메라도 같은 씬을 바라봐야 한다.
+            if (usePreviewScene)
+            {
+                camera.scene = previewScene;
+                AddPreviewLight(cameraObject.transform);
+            }
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = Color.clear;
             camera.cullingMask = 1 << captureLayer;
@@ -332,6 +348,8 @@ public static class DiNeIconMaker
                 Object.DestroyImmediate(cameraObject);
             if (root != null)
                 Object.DestroyImmediate(root);
+            if (previewScene.IsValid())
+                EditorSceneManager.ClosePreviewScene(previewScene);
         }
     }
 
@@ -340,6 +358,62 @@ public static class DiNeIconMaker
         GameObject clone = Object.Instantiate(source, parent, true);
         clone.hideFlags = HideFlags.HideAndDontSave;
         clone.SetActive(true);
+    }
+
+    private static Scene TryCreatePreviewScene()
+    {
+        try
+        {
+            return EditorSceneManager.NewPreviewScene();
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[DiNe] 프리뷰 씬을 만들지 못해 현재 씬에서 캡처합니다: {e.Message}");
+            return default;
+        }
+    }
+
+    private static bool MoveToPreviewScene(GameObject go, Scene previewScene)
+    {
+        if (go == null || !previewScene.IsValid())
+            return false;
+
+        try
+        {
+            SceneManager.MoveGameObjectToScene(go, previewScene);
+            return go.scene == previewScene;
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[DiNe] 프리뷰 씬으로 옮기지 못해 현재 씬에서 캡처합니다: {e.Message}");
+            return false;
+        }
+    }
+
+    // 프리뷰 씬에는 씬 조명이 없으므로 캡처가 새까맣게 나오지 않도록 카메라에 조명을 붙인다.
+    private static void AddPreviewLight(Transform cameraTransform)
+    {
+        var lightObject = new GameObject("DiNe_IconLight") { hideFlags = HideFlags.HideAndDontSave };
+        lightObject.transform.SetParent(cameraTransform, false);
+        lightObject.transform.localRotation = Quaternion.Euler(25f, -20f, 0f);
+
+        Light light = lightObject.AddComponent<Light>();
+        light.type = LightType.Directional;
+        light.intensity = 1f;
+        light.color = Color.white;
+        light.shadows = LightShadows.None;
+        light.cullingMask = ~0;
+    }
+
+    // 프리뷰 씬 생성이 실패해 일반 씬에 남는 경우에도 씬 뷰에 보이지 않도록 한다.
+    private static void HideFromSceneViewIfNotPreviewScene(GameObject root)
+    {
+        if (root == null) return;
+        Scene scene = root.scene;
+        if (!scene.IsValid() || EditorSceneManager.IsPreviewScene(scene)) return;
+
+        SceneVisibilityManager.instance.Hide(root, true);
+        SceneVisibilityManager.instance.DisablePicking(root, true);
     }
 
     private static Texture2D CropAndFit(Texture2D source, Settings settings)

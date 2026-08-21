@@ -19,7 +19,25 @@ public class DiNeMultiSupporter : Editor
     private int previewLayerIndex  = -1;
     private int previewButtonIndex = -1;
     private readonly List<System.Action> previewRestoreActions = new List<System.Action>();
+    private readonly Dictionary<GameObject, bool> previewOriginalObjectStates = new Dictionary<GameObject, bool>();
+    private readonly Dictionary<SkinnedMeshRenderer, Dictionary<int, float>> previewOriginalShapeWeights =
+        new Dictionary<SkinnedMeshRenderer, Dictionary<int, float>>();
     private readonly Dictionary<Renderer, Material[]> previewBaseMaterials = new Dictionary<Renderer, Material[]>();
+    private string activeSkSessionKey;
+    private string activeGoSessionKey;
+    private string activeMatSessionKey;
+    private int activePreviewOwnerId;
+
+    private const string PreviewSessionOwnersKey = "DiNe.MultiDresser.PreviewOwners";
+    private static readonly List<DiNeMultiSupporter> ActivePreviewEditors = new List<DiNeMultiSupporter>();
+    private static bool previewCleanupHooksInitialized;
+    private static bool restoringOrphanedPreviewSessions;
+
+    private static bool ndmfPreviewReflectionInitialized;
+    private static System.Reflection.MethodInfo invalidateNdmfPropCachesMethod;
+    private static System.Reflection.MethodInfo flushNdmfInvalidatesMethod;
+    private static object ndmfShadowHierarchy;
+    private static System.Reflection.MethodInfo ndmfFireObjectChangeMethod;
 
     private static Material[] CloneMaterials(Material[] materials)
     {
@@ -181,6 +199,72 @@ public class DiNeMultiSupporter : Editor
 
     private string SkSessionKey => $"DiNe_SKWas_{target.GetInstanceID()}";
     private string GoSessionKey => $"DiNe_GOWas_{target.GetInstanceID()}";
+    private string MatSessionKey => $"DiNe_MatWas_{target.GetInstanceID()}";
+
+    [InitializeOnLoadMethod]
+    private static void InitializePreviewCleanupHooks()
+    {
+        if (previewCleanupHooksInitialized) return;
+        previewCleanupHooksInitialized = true;
+
+        Selection.selectionChanged -= ClearAllActivePreviews;
+        Selection.selectionChanged += ClearAllActivePreviews;
+
+        AssemblyReloadEvents.beforeAssemblyReload -= ClearAllActivePreviews;
+        AssemblyReloadEvents.beforeAssemblyReload += ClearAllActivePreviews;
+
+        EditorApplication.quitting -= ClearAllActivePreviews;
+        EditorApplication.quitting += ClearAllActivePreviews;
+
+        EditorApplication.playModeStateChanged -= OnPreviewPlayModeStateChanged;
+        EditorApplication.playModeStateChanged += OnPreviewPlayModeStateChanged;
+
+        // 이전 도메인이 비정상적으로 종료되어 인스턴스 복원 액션이 사라진 경우에도
+        // SessionState에 남은 스냅샷으로 씬 값을 되돌린다.
+        EditorApplication.delayCall += RestoreAllOrphanedPreviewSessions;
+    }
+
+    private static void OnPreviewPlayModeStateChanged(PlayModeStateChange state)
+    {
+        if (state == PlayModeStateChange.ExitingEditMode)
+            ClearAllActivePreviews();
+    }
+
+    private static void RegisterActivePreviewEditor(DiNeMultiSupporter editor)
+    {
+        for (int i = 0; i < ActivePreviewEditors.Count; i++)
+        {
+            if (ReferenceEquals(ActivePreviewEditors[i], editor)) return;
+        }
+
+        ActivePreviewEditors.Add(editor);
+    }
+
+    private static void UnregisterActivePreviewEditor(DiNeMultiSupporter editor)
+    {
+        for (int i = ActivePreviewEditors.Count - 1; i >= 0; i--)
+        {
+            if (ReferenceEquals(ActivePreviewEditors[i], editor))
+                ActivePreviewEditors.RemoveAt(i);
+        }
+    }
+
+    private static void ClearAllActivePreviews()
+    {
+        var editors = ActivePreviewEditors.ToArray();
+        ActivePreviewEditors.Clear();
+
+        for (int i = editors.Length - 1; i >= 0; i--)
+        {
+            var editor = editors[i];
+            if (ReferenceEquals(editor, null)) continue;
+
+            try { editor.ClearPreview(); }
+            catch (System.Exception) { /* 파괴 중인 Inspector여도 나머지 세션은 계속 복원 */ }
+        }
+
+        RestoreAllOrphanedPreviewSessions();
+    }
 
     private void OnDisable()
     {
@@ -189,6 +273,7 @@ public class DiNeMultiSupporter : Editor
 
     private void OnEnable()
     {
+        InitializePreviewCleanupHooks();
         windowIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
         dresserPresetIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/MultiDresser/DNDresser.png");
         hairPresetIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/MultiDresser/DNHair.png");
@@ -197,8 +282,15 @@ public class DiNeMultiSupporter : Editor
         DiNeMultiDresser gen = (DiNeMultiDresser)target;
         if(gen.rootTransform == null) gen.TryAutoAssignFXController();
 
-        RestoreOrphanedObjectPreview();
-        RestoreOrphanedShapeKeyPreview();
+        int ownerId = target.GetInstanceID();
+        if (!IsPreviewOwnerActive(ownerId))
+        {
+            bool restoredPreview = RestoreMaterialPreview(MatSessionKey);
+            restoredPreview |= RestoreShapeKeyPreview(SkSessionKey);
+            restoredPreview |= RestoreObjectPreview(GoSessionKey);
+            UnregisterPreviewSessionOwner(ownerId);
+            if (restoredPreview) ForcePreviewRepaint();
+        }
     }
 
     public override void OnInspectorGUI()
@@ -810,23 +902,33 @@ public class DiNeMultiSupporter : Editor
 
     private void ApplyPreview(DiNeMultiDresser gen, DiNeMultiDresser.DresserLayer layerData, int buttonIdx, int layerIdx)
     {
+        // 잠긴 Inspector가 여러 개여도 씬에는 하나의 Multi Dresser 미리보기만 유지한다.
+        ClearAllActivePreviews();
+
         previewLayerIndex  = layerIdx;
         previewButtonIndex = buttonIdx;
         previewRestoreActions.Clear();
+        previewOriginalObjectStates.Clear();
+        previewOriginalShapeWeights.Clear();
         previewBaseMaterials.Clear();
-        SessionState.EraseString(SkSessionKey);
-        SessionState.EraseString(GoSessionKey);
+
+        activePreviewOwnerId = target.GetInstanceID();
+        activeSkSessionKey = $"DiNe_SKWas_{activePreviewOwnerId}";
+        activeGoSessionKey = $"DiNe_GOWas_{activePreviewOwnerId}";
+        activeMatSessionKey = $"DiNe_MatWas_{activePreviewOwnerId}";
+        SessionState.EraseString(activeSkSessionKey);
+        SessionState.EraseString(activeGoSessionKey);
+        SessionState.EraseString(activeMatSessionKey);
+        RegisterPreviewSessionOwner(activePreviewOwnerId);
+        RegisterActivePreviewEditor(this);
 
         // ── 메인 타겟 오브젝트 ──
         for (int j = 0; j < layerData.targets.Count; j++)
         {
             var go = layerData.targets[j];
             if (go == null) continue;
-            bool was  = go.activeSelf;
             bool next = (j == buttonIdx);
-            previewRestoreActions.Add(() => { if (go != null) SafeSetActive(go, was); });
-            string prevGO = SessionState.GetString(GoSessionKey, "");
-            SessionState.SetString(GoSessionKey, prevGO + $"{go.GetInstanceID()}:{(was ? 1 : 0)};");
+            CapturePreviewObjectState(go);
             SafeSetActive(go, next);
         }
 
@@ -845,11 +947,8 @@ public class DiNeMultiSupporter : Editor
         foreach (var kvp in linkedMap)
         {
             var go    = kvp.Key;
-            bool was  = go.activeSelf;
             bool next = kvp.Value;
-            previewRestoreActions.Add(() => { if (go != null) SafeSetActive(go, was); });
-            string prevGO = SessionState.GetString(GoSessionKey, "");
-            SessionState.SetString(GoSessionKey, prevGO + $"{go.GetInstanceID()}:{(was ? 1 : 0)};");
+            CapturePreviewObjectState(go);
             SafeSetActive(go, next);
         }
 
@@ -884,13 +983,7 @@ public class DiNeMultiSupporter : Editor
                 int skIdx = smr.sharedMesh.GetBlendShapeIndex(skName);
                 if (skIdx < 0) continue;
 
-                var   capturedSmr = smr;
-                int   capturedIdx = skIdx;
-                float was         = smr.GetBlendShapeWeight(skIdx);
-                previewRestoreActions.Add(() => { if (capturedSmr != null) capturedSmr.SetBlendShapeWeight(capturedIdx, was); });
-                string prev = SessionState.GetString(SkSessionKey, "");
-                SessionState.SetString(SkSessionKey,
-                    prev + $"{smr.GetInstanceID()}:{skIdx}:{was.ToString(System.Globalization.CultureInfo.InvariantCulture)};");
+                CapturePreviewShapeKeyState(smr, skIdx);
 
                 // 현재 버튼에서 이 키가 everRecorded면 그 값, 아니면 0
                 float targetValue = 0f;
@@ -911,14 +1004,7 @@ public class DiNeMultiSupporter : Editor
             {
                 var rend = entry.renderer;
                 if (rend == null) continue;
-                if (!previewBaseMaterials.ContainsKey(rend))
-                {
-                    var capturedRend = rend;
-                    var baseMats = BuildPreviewBaseMaterials(layerData, rend);
-                    previewBaseMaterials[rend] = baseMats;
-                    previewRestoreActions.Add(() => { if (capturedRend != null) capturedRend.sharedMaterials = CloneMaterials(baseMats); });
-                }
-                var wasMats = CloneMaterials(previewBaseMaterials[rend]);
+                var wasMats = CloneMaterials(GetOrCapturePreviewBaseMaterials(layerData, rend));
 
                 // entry.materials 슬롯 수만큼 교체 (나머지 슬롯은 원본 유지)
                 var newMats = (Material[])wasMats.Clone();
@@ -930,6 +1016,77 @@ public class DiNeMultiSupporter : Editor
                 rend.sharedMaterials = newMats;
             }
         }
+
+        ForcePreviewRepaint();
+    }
+
+    private void CapturePreviewObjectState(GameObject go)
+    {
+        if (go == null || previewOriginalObjectStates.ContainsKey(go)) return;
+
+        var capturedObject = go;
+        bool originalActive = go.activeSelf;
+        previewOriginalObjectStates[go] = originalActive;
+        previewRestoreActions.Add(() =>
+        {
+            if (capturedObject != null) SafeSetActive(capturedObject, originalActive);
+        });
+
+        string previous = SessionState.GetString(activeGoSessionKey, "");
+        SessionState.SetString(activeGoSessionKey,
+            previous + $"{go.GetInstanceID()}:{(originalActive ? 1 : 0)};");
+    }
+
+    private void CapturePreviewShapeKeyState(SkinnedMeshRenderer smr, int shapeIndex)
+    {
+        if (smr == null || shapeIndex < 0) return;
+
+        if (!previewOriginalShapeWeights.TryGetValue(smr, out var rendererWeights))
+        {
+            rendererWeights = new Dictionary<int, float>();
+            previewOriginalShapeWeights[smr] = rendererWeights;
+        }
+        if (rendererWeights.ContainsKey(shapeIndex)) return;
+
+        var capturedRenderer = smr;
+        int capturedIndex = shapeIndex;
+        float originalWeight = smr.GetBlendShapeWeight(shapeIndex);
+        rendererWeights[shapeIndex] = originalWeight;
+        previewRestoreActions.Add(() =>
+        {
+            if (capturedRenderer != null && capturedRenderer.sharedMesh != null &&
+                capturedIndex < capturedRenderer.sharedMesh.blendShapeCount)
+            {
+                capturedRenderer.SetBlendShapeWeight(capturedIndex, originalWeight);
+            }
+        });
+
+        string previous = SessionState.GetString(activeSkSessionKey, "");
+        SessionState.SetString(activeSkSessionKey,
+            previous + $"{smr.GetInstanceID()}:{shapeIndex}:" +
+            originalWeight.ToString(System.Globalization.CultureInfo.InvariantCulture) + ";");
+    }
+
+    private Material[] GetOrCapturePreviewBaseMaterials(
+        DiNeMultiDresser.DresserLayer layerData,
+        Renderer renderer)
+    {
+        if (previewBaseMaterials.TryGetValue(renderer, out var baseMaterials))
+            return baseMaterials;
+
+        var capturedRenderer = renderer;
+        var originalMaterials = CloneMaterials(renderer.sharedMaterials);
+        baseMaterials = BuildPreviewBaseMaterials(layerData, renderer);
+
+        previewBaseMaterials[renderer] = baseMaterials;
+        previewRestoreActions.Add(() =>
+        {
+            if (capturedRenderer != null)
+                capturedRenderer.sharedMaterials = CloneMaterials(originalMaterials);
+        });
+
+        AppendMaterialPreviewSnapshot(activeMatSessionKey, renderer, originalMaterials);
+        return baseMaterials;
     }
 
     // VRC SDK가 에디터에서 SetActive 시 뱉는 MissingReferenceException 억제
@@ -937,22 +1094,59 @@ public class DiNeMultiSupporter : Editor
     {
         try { go.SetActive(active); }
         catch (System.Exception) { /* VRC 내부 stale 참조 — 무시 */ }
+
+        // Undo를 거치지 않은 SetActive는 Unity의 ObjectChangeEvents를 발생시키지 않는다.
+        // NDMF는 GameObject 관찰에 폴링을 쓰지 않고 이 이벤트에만 의존하므로, 직접
+        // 알려주지 않으면 MA Shape Changer / Mesh Cutter가 옷이 꺼진 걸 모른 채 계속
+        // 적용된다. Unity가 보냈을 알림을 동일하게 대신 발생시킨다.
+        NotifyNdmfObjectChanged(go);
+    }
+
+    // NDMF ShadowHierarchy에 "이 오브젝트의 프로퍼티가 바뀌었다"고 알린다.
+    // (Unity가 ObjectChangeKind.ChangeGameObjectOrComponentProperties에 대해 하는 것과 동일)
+    private static void NotifyNdmfObjectChanged(Object obj)
+    {
+        if (obj == null) return;
+
+        InitializeNdmfPreviewReflection();
+        if (ndmfShadowHierarchy == null || ndmfFireObjectChangeMethod == null) return;
+
+        try
+        {
+            ndmfFireObjectChangeMethod.Invoke(ndmfShadowHierarchy, new object[] { obj.GetInstanceID() });
+        }
+        catch (System.Exception)
+        {
+            // NDMF 내부 API가 바뀐 구/신 버전에서도 미리보기 자체는 계속 동작해야 한다.
+        }
     }
 
     private void ClearPreview()
     {
-        // 한 복원 액션이 예외를 던져도 나머지(특히 쉐이프키 복원)가 끊기지 않도록 개별 보호
-        foreach (var action in previewRestoreActions)
+        // 같은 오브젝트가 메인/링크 목록 등에 중복돼도 최초 상태까지 되감기도록
+        // 적용의 역순으로 복원한다. 한 액션이 실패해도 나머지 복원은 계속한다.
+        for (int i = previewRestoreActions.Count - 1; i >= 0; i--)
         {
-            try { action?.Invoke(); }
+            try { previewRestoreActions[i]?.Invoke(); }
             catch (System.Exception) { /* stale 참조 등 — 무시하고 계속 복원 */ }
         }
         previewRestoreActions.Clear();
+        previewOriginalObjectStates.Clear();
+        previewOriginalShapeWeights.Clear();
         previewBaseMaterials.Clear();
         previewLayerIndex  = -1;
         previewButtonIndex = -1;
-        SessionState.EraseString(SkSessionKey);
-        SessionState.EraseString(GoSessionKey);
+
+        if (!string.IsNullOrEmpty(activeMatSessionKey)) SessionState.EraseString(activeMatSessionKey);
+        if (!string.IsNullOrEmpty(activeSkSessionKey)) SessionState.EraseString(activeSkSessionKey);
+        if (!string.IsNullOrEmpty(activeGoSessionKey)) SessionState.EraseString(activeGoSessionKey);
+        if (activePreviewOwnerId != 0) UnregisterPreviewSessionOwner(activePreviewOwnerId);
+
+        activeMatSessionKey = null;
+        activeSkSessionKey = null;
+        activeGoSessionKey = null;
+        activePreviewOwnerId = 0;
+        UnregisterActivePreviewEditor(this);
 
         // SetBlendShapeWeight로 되돌린 값이 화면에 반영되도록 강제 재-bake.
         // (선택 해제로 OnDisable이 호출될 땐 인스펙터가 더 이상 안 그려져
@@ -960,45 +1154,231 @@ public class DiNeMultiSupporter : Editor
         ForcePreviewRepaint();
     }
 
-    // SkinnedMeshRenderer는 SceneView가 다시 그려질 때 현재 blendShape 값으로 재-bake된다.
-    // 미리보기 복원 직후 명시적으로 리페인트를 걸어 변형이 화면에 남지 않게 한다.
+    // Multi Dresser 미리보기는 Undo를 거치지 않고 오브젝트 상태를 바꾼다. NDMF의
+    // ComputeContext는 일반적으로 Undo에 기록된 변경만 자동 감지하므로, 캐시를 직접
+    // 무효화하지 않으면 MA Shape Changer / Mesh Cutter 프록시가 이전 상태에 머문다.
+    // 리페인트 전에 캐시와 보류 중인 invalidation을 비워 실제 활성 상태로 다시 계산한다.
     private static void ForcePreviewRepaint()
     {
+        InvalidateNdmfPreviewCaches();
+        EditorApplication.QueuePlayerLoopUpdate();
         SceneView.RepaintAll();
         UnityEditorInternal.InternalEditorUtility.RepaintAllViews();
     }
 
-    private void RestoreOrphanedObjectPreview()
+    private static void InvalidateNdmfPreviewCaches()
     {
-        string data = SessionState.GetString(GoSessionKey, "");
-        if (string.IsNullOrEmpty(data)) return;
+        InitializeNdmfPreviewReflection();
 
-        foreach (var entry in data.TrimEnd(';').Split(';'))
+        try
         {
-            if (string.IsNullOrEmpty(entry)) continue;
-            var parts = entry.Split(':');
-            if (parts.Length != 2) continue;
-            if (!int.TryParse(parts[0], out int instanceID)) continue;
-            if (!int.TryParse(parts[1], out int wasInt)) continue;
-
-            var go = EditorUtility.InstanceIDToObject(instanceID) as GameObject;
-            if (go != null)
-                SafeSetActive(go, wasInt == 1);
+            invalidateNdmfPropCachesMethod?.Invoke(null, null);
+            flushNdmfInvalidatesMethod?.Invoke(null, null);
         }
-
-        SessionState.EraseString(GoSessionKey);
-        ForcePreviewRepaint();
+        catch (System.Exception)
+        {
+            // Modular Avatar/NDMF의 미리보기 API가 없는 구버전에서도
+            // Multi Dresser 자체 미리보기는 계속 동작해야 한다.
+        }
     }
 
-    private void RestoreOrphanedShapeKeyPreview()
+    private static void InitializeNdmfPreviewReflection()
     {
-        string data = SessionState.GetString(SkSessionKey, "");
-        if (string.IsNullOrEmpty(data)) return;
+        if (ndmfPreviewReflectionInitialized) return;
+        ndmfPreviewReflectionInitialized = true;
 
+        const System.Reflection.BindingFlags staticFlags =
+            System.Reflection.BindingFlags.Public |
+            System.Reflection.BindingFlags.NonPublic |
+            System.Reflection.BindingFlags.Static;
+
+        var propCacheDebugType = FindLoadedType("nadena.dev.ndmf.preview.PropCacheDebug");
+        invalidateNdmfPropCachesMethod = propCacheDebugType?.GetMethod(
+            "InvalidateAllCaches",
+            staticFlags,
+            null,
+            System.Type.EmptyTypes,
+            null);
+
+        var computeContextType = FindLoadedType("nadena.dev.ndmf.preview.ComputeContext");
+        flushNdmfInvalidatesMethod = computeContextType?.GetMethod(
+            "FlushInvalidates",
+            staticFlags,
+            null,
+            System.Type.EmptyTypes,
+            null);
+
+        const System.Reflection.BindingFlags instanceFlags =
+            System.Reflection.BindingFlags.Public |
+            System.Reflection.BindingFlags.NonPublic |
+            System.Reflection.BindingFlags.Instance;
+
+        // ObjectWatcher.Instance.Hierarchy.FireObjectChangeNotification(instanceId)
+        var objectWatcherType = FindLoadedType("nadena.dev.ndmf.cs.ObjectWatcher");
+        var watcherInstance = objectWatcherType?
+            .GetProperty("Instance", staticFlags)?.GetValue(null);
+        ndmfShadowHierarchy = watcherInstance != null
+            ? objectWatcherType.GetField("Hierarchy", instanceFlags)?.GetValue(watcherInstance)
+            : null;
+
+        ndmfFireObjectChangeMethod = ndmfShadowHierarchy?.GetType().GetMethod(
+            "FireObjectChangeNotification",
+            instanceFlags,
+            null,
+            new[] { typeof(int) },
+            null);
+    }
+
+    private static System.Type FindLoadedType(string fullName)
+    {
+        foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
+        {
+            var type = assembly.GetType(fullName, false);
+            if (type != null) return type;
+        }
+
+        return null;
+    }
+
+    private static void RegisterPreviewSessionOwner(int ownerId)
+    {
+        if (ownerId == 0) return;
+
+        string data = SessionState.GetString(PreviewSessionOwnersKey, "");
         foreach (var entry in data.TrimEnd(';').Split(';'))
         {
-            if (string.IsNullOrEmpty(entry)) continue;
-            var parts = entry.Split(':');
+            if (int.TryParse(entry, out int existingId) && existingId == ownerId)
+                return;
+        }
+
+        SessionState.SetString(PreviewSessionOwnersKey, data + ownerId + ";");
+    }
+
+    private static void UnregisterPreviewSessionOwner(int ownerId)
+    {
+        if (ownerId == 0) return;
+
+        string data = SessionState.GetString(PreviewSessionOwnersKey, "");
+        if (string.IsNullOrEmpty(data)) return;
+
+        var remaining = new System.Text.StringBuilder();
+        foreach (var entry in data.TrimEnd(';').Split(';'))
+        {
+            if (!int.TryParse(entry, out int existingId) || existingId == ownerId) continue;
+            remaining.Append(existingId).Append(';');
+        }
+
+        if (remaining.Length == 0) SessionState.EraseString(PreviewSessionOwnersKey);
+        else SessionState.SetString(PreviewSessionOwnersKey, remaining.ToString());
+    }
+
+    private static bool IsPreviewOwnerActive(int ownerId)
+    {
+        foreach (var editor in ActivePreviewEditors)
+        {
+            if (!ReferenceEquals(editor, null) && editor.activePreviewOwnerId == ownerId)
+                return true;
+        }
+
+        return false;
+    }
+
+    private static void RestoreAllOrphanedPreviewSessions()
+    {
+        if (restoringOrphanedPreviewSessions) return;
+        restoringOrphanedPreviewSessions = true;
+
+        bool restoredAny = false;
+        try
+        {
+            string data = SessionState.GetString(PreviewSessionOwnersKey, "");
+            if (string.IsNullOrEmpty(data)) return;
+
+            var remaining = new System.Text.StringBuilder();
+            var ownerEntries = data.TrimEnd(';').Split(';');
+            for (int entryIndex = ownerEntries.Length - 1; entryIndex >= 0; entryIndex--)
+            {
+                var entry = ownerEntries[entryIndex];
+                if (!int.TryParse(entry, out int ownerId)) continue;
+                if (IsPreviewOwnerActive(ownerId))
+                {
+                    remaining.Append(ownerId).Append(';');
+                    continue;
+                }
+
+                // 적용 순서(GameObject -> ShapeKey -> Material)의 반대로 복원한다.
+                restoredAny |= RestoreMaterialPreview($"DiNe_MatWas_{ownerId}");
+                restoredAny |= RestoreShapeKeyPreview($"DiNe_SKWas_{ownerId}");
+                restoredAny |= RestoreObjectPreview($"DiNe_GOWas_{ownerId}");
+            }
+
+            if (remaining.Length == 0) SessionState.EraseString(PreviewSessionOwnersKey);
+            else SessionState.SetString(PreviewSessionOwnersKey, remaining.ToString());
+        }
+        finally
+        {
+            restoringOrphanedPreviewSessions = false;
+            if (restoredAny) ForcePreviewRepaint();
+        }
+    }
+
+    private static void AppendMaterialPreviewSnapshot(string sessionKey, Renderer renderer, Material[] materials)
+    {
+        if (string.IsNullOrEmpty(sessionKey) || renderer == null) return;
+
+        var entry = new System.Text.StringBuilder();
+        entry.Append(renderer.GetInstanceID()).Append(':').Append(materials.Length).Append(':');
+        for (int i = 0; i < materials.Length; i++)
+        {
+            if (i > 0) entry.Append(',');
+            entry.Append(materials[i] != null ? materials[i].GetInstanceID() : 0);
+        }
+        entry.Append(';');
+
+        SessionState.SetString(sessionKey, SessionState.GetString(sessionKey, "") + entry.ToString());
+    }
+
+    private static bool RestoreMaterialPreview(string sessionKey)
+    {
+        string data = SessionState.GetString(sessionKey, "");
+        if (string.IsNullOrEmpty(data)) return false;
+
+        var entries = data.TrimEnd(';').Split(';');
+        for (int entryIndex = entries.Length - 1; entryIndex >= 0; entryIndex--)
+        {
+            var parts = entries[entryIndex].Split(':');
+            if (parts.Length != 3) continue;
+            if (!int.TryParse(parts[0], out int rendererId)) continue;
+            if (!int.TryParse(parts[1], out int materialCount) || materialCount < 0) continue;
+
+            var renderer = EditorUtility.InstanceIDToObject(rendererId) as Renderer;
+            if (renderer == null) continue;
+
+            var materialIds = string.IsNullOrEmpty(parts[2]) ? new string[0] : parts[2].Split(',');
+            var materials = new Material[materialCount];
+            for (int i = 0; i < materialCount && i < materialIds.Length; i++)
+            {
+                if (int.TryParse(materialIds[i], out int materialId) && materialId != 0)
+                    materials[i] = EditorUtility.InstanceIDToObject(materialId) as Material;
+            }
+
+            try { renderer.sharedMaterials = materials; }
+            catch (System.Exception) { /* stale renderer — 나머지 스냅샷은 계속 복원 */ }
+        }
+
+        SessionState.EraseString(sessionKey);
+        return true;
+    }
+
+    private static bool RestoreShapeKeyPreview(string sessionKey)
+    {
+        string data = SessionState.GetString(sessionKey, "");
+        if (string.IsNullOrEmpty(data)) return false;
+
+        var entries = data.TrimEnd(';').Split(';');
+        for (int entryIndex = entries.Length - 1; entryIndex >= 0; entryIndex--)
+        {
+            var parts = entries[entryIndex].Split(':');
             if (parts.Length != 3) continue;
             if (!int.TryParse(parts[0], out int instanceID)) continue;
             if (!int.TryParse(parts[1], out int skIdx)) continue;
@@ -1006,12 +1386,36 @@ public class DiNeMultiSupporter : Editor
                 System.Globalization.CultureInfo.InvariantCulture, out float wasVal)) continue;
 
             var smr = EditorUtility.InstanceIDToObject(instanceID) as SkinnedMeshRenderer;
-            if (smr != null)
-                smr.SetBlendShapeWeight(skIdx, wasVal);
+            if (smr != null && skIdx >= 0 && smr.sharedMesh != null && skIdx < smr.sharedMesh.blendShapeCount)
+            {
+                try { smr.SetBlendShapeWeight(skIdx, wasVal); }
+                catch (System.Exception) { /* stale renderer — 나머지 스냅샷은 계속 복원 */ }
+            }
         }
 
-        SessionState.EraseString(SkSessionKey);
-        ForcePreviewRepaint();
+        SessionState.EraseString(sessionKey);
+        return true;
+    }
+
+    private static bool RestoreObjectPreview(string sessionKey)
+    {
+        string data = SessionState.GetString(sessionKey, "");
+        if (string.IsNullOrEmpty(data)) return false;
+
+        var entries = data.TrimEnd(';').Split(';');
+        for (int entryIndex = entries.Length - 1; entryIndex >= 0; entryIndex--)
+        {
+            var parts = entries[entryIndex].Split(':');
+            if (parts.Length != 2) continue;
+            if (!int.TryParse(parts[0], out int instanceID)) continue;
+            if (!int.TryParse(parts[1], out int wasInt)) continue;
+
+            var go = EditorUtility.InstanceIDToObject(instanceID) as GameObject;
+            if (go != null) SafeSetActive(go, wasInt == 1);
+        }
+
+        SessionState.EraseString(sessionKey);
+        return true;
     }
 
     // 원상태 저장 없이 현재 데이터를 다시 아바타에 적용 (미리보기 중 실시간 갱신용)
@@ -1023,7 +1427,9 @@ public class DiNeMultiSupporter : Editor
         for (int j = 0; j < layerData.targets.Count; j++)
         {
             var go = layerData.targets[j];
-            if (go != null) SafeSetActive(go, j == buttonIdx);
+            if (go == null) continue;
+            CapturePreviewObjectState(go);
+            SafeSetActive(go, j == buttonIdx);
         }
 
         // 링크 오브젝트
@@ -1039,7 +1445,11 @@ public class DiNeMultiSupporter : Editor
             }
         }
         foreach (var kvp in linkedMap)
-            if (kvp.Key != null) SafeSetActive(kvp.Key, kvp.Value);
+        {
+            if (kvp.Key == null) continue;
+            CapturePreviewObjectState(kvp.Key);
+            SafeSetActive(kvp.Key, kvp.Value);
+        }
 
         // 쉐이프키 — 관리 대상 키(어느 버튼이든 everRecorded된 것)만 갱신
         var refreshManaged = new Dictionary<int, HashSet<string>>();
@@ -1071,6 +1481,8 @@ public class DiNeMultiSupporter : Editor
                 int skIdx = smr.sharedMesh.GetBlendShapeIndex(skName);
                 if (skIdx < 0) continue;
 
+                CapturePreviewShapeKeyState(smr, skIdx);
+
                 float targetValue = 0f;
                 if (refreshBtnState != null && m < refreshBtnState.meshShapeKeys.Count)
                 {
@@ -1089,11 +1501,7 @@ public class DiNeMultiSupporter : Editor
             {
                 var rend = entry.renderer;
                 if (rend == null) continue;
-                if (!previewBaseMaterials.TryGetValue(rend, out var baseMats))
-                {
-                    baseMats = BuildPreviewBaseMaterials(layerData, rend);
-                    previewBaseMaterials[rend] = baseMats;
-                }
+                var baseMats = GetOrCapturePreviewBaseMaterials(layerData, rend);
                 var newMats = CloneMaterials(baseMats);
                 for (int si = 0; si < entry.materials.Count && si < newMats.Length; si++)
                 {
@@ -1103,6 +1511,8 @@ public class DiNeMultiSupporter : Editor
                 rend.sharedMaterials = newMats;
             }
         }
+
+        ForcePreviewRepaint();
     }
 
     private bool DrawGlobalShapeKeyTargets(SerializedProperty shapeKeyTargets, Dictionary<string, string> lang)

@@ -179,6 +179,10 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             }
 
             ApplyDressersForAvatarRoot(avatarGameObject);
+
+            // 여기서 넘어오는 avatarGameObject는 SDK가 만든 빌드 클론이므로,
+            // 렌더러의 머티리얼을 갈아끼워도 씬의 원본 아바타는 영향을 받지 않는다.
+            DiNeLightingBaker.NormalizeForBuild(avatarGameObject);
         }
         catch (Exception e)
         {
@@ -273,7 +277,12 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
                 toggle.gameObject.scene.IsValid() && !EditorUtility.IsPersistent(toggle))
             .ToArray();
 
-        if (dressers.Length == 0 && smartToggles.Length == 0)
+        var lightingDesigners = UnityEngine.Object.FindObjectsOfType<DiNeLightingDesigner>(true)
+            .Where(designer => designer != null && designer.enabled &&
+                designer.gameObject.scene.IsValid() && !EditorUtility.IsPersistent(designer))
+            .ToArray();
+
+        if (dressers.Length == 0 && smartToggles.Length == 0 && lightingDesigners.Length == 0)
             return;
 
         var groups = new Dictionary<VRCAvatarDescriptor, List<DiNeMultiDresser>>();
@@ -315,16 +324,37 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             groupedToggles.Add(smartToggle);
         }
 
+        var lightingGroups = new Dictionary<VRCAvatarDescriptor, List<DiNeLightingDesigner>>();
+        foreach (var designer in lightingDesigners)
+        {
+            var descriptor = designer.GetComponentInParent<VRCAvatarDescriptor>();
+            if (descriptor == null)
+            {
+                Debug.LogWarning($"[DiNe] Skipping Lighting Designer '{designer.name}' because no VRCAvatarDescriptor was found.");
+                continue;
+            }
+
+            if (!lightingGroups.TryGetValue(descriptor, out var groupedDesigners))
+            {
+                groupedDesigners = new List<DiNeLightingDesigner>();
+                lightingGroups.Add(descriptor, groupedDesigners);
+            }
+            groupedDesigners.Add(designer);
+        }
+
         var descriptors = new HashSet<VRCAvatarDescriptor>(groups.Keys);
         descriptors.UnionWith(toggleGroups.Keys);
+        descriptors.UnionWith(lightingGroups.Keys);
         foreach (var descriptor in descriptors)
         {
             groups.TryGetValue(descriptor, out var groupedDressers);
             toggleGroups.TryGetValue(descriptor, out var groupedToggles);
+            lightingGroups.TryGetValue(descriptor, out var groupedDesigners);
             ApplyTemporarySession(
                 descriptor,
                 groupedDressers ?? new List<DiNeMultiDresser>(),
-                groupedToggles ?? new List<DiNeSmartToggle>());
+                groupedToggles ?? new List<DiNeSmartToggle>(),
+                groupedDesigners ?? new List<DiNeLightingDesigner>());
         }
     }
 
@@ -344,26 +374,30 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         var smartToggles = avatarGameObject.GetComponentsInChildren<DiNeSmartToggle>(true)
             .Where(toggle => toggle != null && toggle.enabled)
             .ToList();
-        if (dressers.Count == 0 && smartToggles.Count == 0)
+        var lightingDesigners = avatarGameObject.GetComponentsInChildren<DiNeLightingDesigner>(true)
+            .Where(designer => designer != null && designer.enabled)
+            .ToList();
+        if (dressers.Count == 0 && smartToggles.Count == 0 && lightingDesigners.Count == 0)
             return;
 
-        Debug.Log($"[DiNe] Applying avatar tools to '{avatarGameObject.name}': {dressers.Count} dresser(s), {smartToggles.Count} smart toggle(s).");
+        Debug.Log($"[DiNe] Applying avatar tools to '{avatarGameObject.name}': {dressers.Count} dresser(s), {smartToggles.Count} smart toggle(s), {lightingDesigners.Count} lighting designer(s).");
 
         foreach (var dresser in dressers)
         {
             dresser.TryAutoAssignFXController();
         }
 
-        ApplyTemporarySession(descriptor, dressers, smartToggles);
+        ApplyTemporarySession(descriptor, dressers, smartToggles, lightingDesigners);
     }
 
     private static void ApplyTemporarySession(
         VRCAvatarDescriptor descriptor,
         List<DiNeMultiDresser> dressers,
-        List<DiNeSmartToggle> smartToggles)
+        List<DiNeSmartToggle> smartToggles,
+        List<DiNeLightingDesigner> lightingDesigners)
     {
-        if (descriptor == null || dressers == null || smartToggles == null ||
-            (dressers.Count == 0 && smartToggles.Count == 0))
+        if (descriptor == null || dressers == null || smartToggles == null || lightingDesigners == null ||
+            (dressers.Count == 0 && smartToggles.Count == 0 && lightingDesigners.Count == 0))
             return;
 
         // 플레이 모드 진입 등으로 도메인이 리로드되면 in-memory ActiveSessions가 비워진다.
@@ -413,6 +447,17 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
                 session.TempExpressionParameters,
                 smartToggles,
                 session.TempFolderPath + "/SmartToggle");
+        }
+
+        if (lightingDesigners.Count > 0)
+        {
+            DiNeLightingGenerator.ApplyToTemporaryAvatar(
+                descriptor,
+                session.TempAnimatorController,
+                session.TempExpressionsMenu,
+                session.TempExpressionParameters,
+                lightingDesigners,
+                session.TempFolderPath + "/LightingDesigner");
         }
     }
 
@@ -561,6 +606,17 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         }
 
         ActiveSessions.Clear();
+
+        // 라이팅 디자이너가 빌드 클론용으로 구운 머티리얼/텍스처도 같이 정리한다.
+        // 세션과 무관한 고정 폴더라서 복원 성공 여부와 상관없이 지워도 안전하다.
+        try
+        {
+            DiNeLightingBaker.CleanupTempAssets();
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[DiNe] 라이팅 디자이너 임시 에셋 정리 실패: {e.Message}");
+        }
 
         if (!hadInMemory && persisted.sessions.Count > 0)
         {

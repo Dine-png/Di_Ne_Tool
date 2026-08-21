@@ -231,6 +231,17 @@ Supports 60+ texture formats with accurate BPP data based on GPU memory layout.
 
 ## 📝 Version History
 
+**v1.6.0**
+- Screen Saver / Icon Maker: Added an interactive Game View preview with orbit, pan, dolly, selection focus, camera apply, aspect-ratio framing, and live background previews; isolated icon previews in an editor-only preview scene
+- Lighting Designer: Added non-destructive lighting controls, material profiles, texture baking, and NDMF build integration
+- Extra Modifier: Added VRM preflight, PhysBone conversion options, and VRM material conversion utilities
+- Package Patcher: Added RAR/7z support, reload-safe batch importing, safer folder organization, and GUID-preserving moves
+- Avi Editor, Multi Dresser, and Smart Toggle: Improved previews, compatibility, and generation stability
+
+**v1.5.0**
+- Multi Dresser and Opticore workflow improvements
+- Screen Saver and editor utility maintenance
+
 **v1.4.2**
 - Opticore: Added Remove Mesh feature with NDMF integration
 - Opticore: Object mapping support for mesh removal operations

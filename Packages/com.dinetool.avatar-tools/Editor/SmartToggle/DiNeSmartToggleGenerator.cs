@@ -40,7 +40,7 @@ public static class DiNeSmartToggleGenerator
         };
         Texture2D result = DiNeScreenSaver.DiNeScreenSaver.GenerateConfiguredIcon(
             smartToggle.gameObject, smartToggle.IconEuler, smartToggle.IconPan,
-            smartToggle.IconZoom, settings, path);
+            smartToggle.IconZoom, settings, path, smartToggle.IconIdlePose);
         if (result == null)
             result = DiNeIconMaker.GenerateIcon(smartToggle.gameObject, null, path, settings);
 

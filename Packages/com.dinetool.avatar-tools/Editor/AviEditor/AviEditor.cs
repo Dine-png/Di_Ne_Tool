@@ -67,7 +67,6 @@ public class ArmatureScalerEditor : EditorWindow
     private PreviewRenderUtility     _facePreview;
     private bool                     _facePreviewDirty = true;
     private AnimationClip            _exprClip;
-    private bool                     _exprIsNewClip;
     private string                   _exprNewClipName = "New Expression";
     private float[]                  _exprShapeValues;
     private Vector2                  _exprShapeScroll;
@@ -110,6 +109,12 @@ public class ArmatureScalerEditor : EditorWindow
     // ??????ш낄援???域밸Ŧ遊얕짆??
     private string                _skeSearch             = "";
     private Vector2               _skeSKListScroll;
+
+    // ── 얼굴 미리보기 카메라 (표정/쉐이프키 공용) ──
+    [SerializeField] private float   _headPrevYaw   = 0f;    // 좌우 회전 (도)
+    [SerializeField] private float   _headPrevPitch = 0f;    // 상하 회전 (도)
+    [SerializeField] private float   _headPrevZoom  = 1f;    // 1 = 머리 전체가 들어오는 기본 배율
+    [SerializeField] private Vector2 _headPrevPan   = Vector2.zero; // 머리 크기 기준 비율 오프셋
 
     [System.Serializable]
     private class DiNeSkeMixEntry
@@ -2248,6 +2253,13 @@ public class ArmatureScalerEditor : EditorWindow
             _facePreviewDirty = false;
         }
 
+        if (HandleHeadPreviewInput(previewRect))
+        {
+            _facePreviewDirty = true;
+            _skePreviewDirty  = true;
+        }
+        DrawHeadPreviewToolbar(previewRect);
+
         if (Event.current.type == EventType.Used)
             _facePreviewDirty = true;
     }
@@ -2256,6 +2268,7 @@ public class ArmatureScalerEditor : EditorWindow
     {
         if (_bodySmr == null || targetAvatarRoot == null) return;
         if (size <= 0) return;
+        if (!_facePreviewDirty && _faceRT != null && _faceRT.width == size) return;
 
         if (_faceRT == null || _faceRT.width != size)
         {
@@ -2265,29 +2278,215 @@ public class ArmatureScalerEditor : EditorWindow
             _faceRT.Create();
         }
 
-        Vector3 headPos = targetAvatarRoot.transform.position + Vector3.up * 1.5f;
-        if (boneMapping != null && boneMapping.TryGetValue(HumanBodyBones.Head, out Transform headBone))
-            headPos = headBone.position;
+        RenderHeadPreviewTo(_faceRT, _bodySmr);
+    }
 
-        var camGo = new GameObject("__AviExprPreviewCam__") { hideFlags = HideFlags.HideAndDontSave };
+    // ── 얼굴 미리보기 공용 로직 (표정 / 쉐이프키 탭 공용) ──────────────
+    // 머리 본 위치·머리 크기·정면 방향을 실제 계층에서 구해서 카메라를 배치한다.
+    // 예전에는 "루트 위치 + 1.5m" 와 고정 거리 0.45m 를 썼기 때문에
+    // 아바타 키가 다르거나 루트가 회전돼 있으면 얼굴이 화면 밖으로 벗어났다.
+    private bool ComputeHeadFraming(Renderer fallbackRenderer, out Vector3 focus, out Vector3 faceDir, out float headSize)
+    {
+        focus    = Vector3.zero;
+        faceDir  = Vector3.forward;
+        headSize = 0.25f;
+
+        Transform head = null, leftEye = null, rightEye = null, leftArm = null, rightArm = null;
+        Transform root = targetAvatarRoot != null ? targetAvatarRoot.transform : null;
+
+        // 1) 휴머노이드 아바타가 있으면 본 이름 추측보다 우선한다.
+        var animator = targetAvatarRoot != null ? targetAvatarRoot.GetComponentInChildren<Animator>(true) : null;
+        if (animator != null && animator.avatar != null && animator.isHuman)
+        {
+            head     = animator.GetBoneTransform(HumanBodyBones.Head);
+            leftEye  = animator.GetBoneTransform(HumanBodyBones.LeftEye);
+            rightEye = animator.GetBoneTransform(HumanBodyBones.RightEye);
+            leftArm  = animator.GetBoneTransform(HumanBodyBones.LeftUpperArm);
+            rightArm = animator.GetBoneTransform(HumanBodyBones.RightUpperArm);
+        }
+
+        // 2) 이름 기반 매핑으로 보완 (표정 탭에서는 boneMapping 이 아직 비어 있을 수 있다)
+        if (targetAvatarRoot != null && (head == null || leftArm == null || rightArm == null))
+        {
+            if (boneMapping == null)
+                boneMapping = ArmatureScalerCore.AssignBoneMappings(targetAvatarRoot);
+            if (boneMapping != null)
+            {
+                Transform t;
+                if (head     == null && boneMapping.TryGetValue(HumanBodyBones.Head,          out t)) head     = t;
+                if (leftEye  == null && boneMapping.TryGetValue(HumanBodyBones.LeftEye,       out t)) leftEye  = t;
+                if (rightEye == null && boneMapping.TryGetValue(HumanBodyBones.RightEye,      out t)) rightEye = t;
+                if (leftArm  == null && boneMapping.TryGetValue(HumanBodyBones.LeftUpperArm,  out t)) leftArm  = t;
+                if (rightArm == null && boneMapping.TryGetValue(HumanBodyBones.RightUpperArm, out t)) rightArm = t;
+            }
+        }
+
+        // 3) 정면 방향: 좌우 대칭 본으로 오른쪽 축을 구해 계산한다.
+        //    루트 오브젝트가 회전돼 있거나 루트가 아바타 상위 부모여도 정확하다.
+        //    눈 → 팔 순서. 눈이 있으면 머리를 돌려 놓은 아바타도 얼굴 정면을 잡는다.
+        Vector3 fwd = ForwardFromPair(leftEye, rightEye);
+        if (fwd.sqrMagnitude < 1e-6f) fwd = ForwardFromPair(leftArm, rightArm);
+        if (fwd.sqrMagnitude < 1e-6f)
+        {
+            Transform fb = root != null ? root : (fallbackRenderer != null ? fallbackRenderer.transform : null);
+            if (fb != null)
+            {
+                Vector3 rf = fb.forward; rf.y = 0f;
+                if (rf.sqrMagnitude > 1e-6f) fwd = rf.normalized;
+            }
+        }
+        if (fwd.sqrMagnitude < 1e-6f) fwd = Vector3.forward;
+        faceDir = fwd.normalized;
+
+        // 4) 머리 위치와 크기
+        if (head != null)
+        {
+            Vector3 headPos = head.position;
+
+            // 체형 비율 추정 (머리 본 높이의 약 16% ≒ 머리 높이)
+            float est = 0.22f;
+            if (root != null)
+            {
+                float h = headPos.y - root.position.y;
+                if (h > 0.05f) est = h * 0.16f;
+            }
+            // 메쉬 바운드 상단으로 실측 후, 추정치 범위 안으로 제한한다.
+            headSize = est;
+            if (fallbackRenderer != null)
+            {
+                float measured = fallbackRenderer.bounds.max.y - headPos.y;
+                if (measured > 0.01f)
+                    headSize = Mathf.Clamp(measured, est * 0.6f, est * 2.5f);
+            }
+            headSize = Mathf.Max(0.05f, headSize);
+
+            focus = headPos + Vector3.up * headSize * 0.5f;
+            if (leftEye != null && rightEye != null)
+                focus = (leftEye.position + rightEye.position) * 0.5f;
+        }
+        else if (fallbackRenderer != null)
+        {
+            var b = fallbackRenderer.bounds;
+            headSize = Mathf.Max(0.05f, b.size.y * 0.16f);
+            focus    = new Vector3(b.center.x, b.max.y - headSize * 0.5f, b.center.z);
+        }
+        else
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    // 좌(왼쪽 본) → 우(오른쪽 본) 벡터에서 정면 방향을 구한다.
+    private static Vector3 ForwardFromPair(Transform left, Transform right)
+    {
+        if (left == null || right == null) return Vector3.zero;
+        Vector3 r = right.position - left.position;
+        r.y = 0f;
+        if (r.sqrMagnitude < 1e-6f) return Vector3.zero;
+        return Vector3.Cross(r.normalized, Vector3.up).normalized;
+    }
+
+    private void RenderHeadPreviewTo(RenderTexture rt, Renderer fallbackRenderer)
+    {
+        if (rt == null) return;
+
+        Vector3 focus, faceDir;
+        float   headSize;
+        if (!ComputeHeadFraming(fallbackRenderer, out focus, out faceDir, out headSize)) return;
+
+        const float fov = 30f;
+        float zoom   = Mathf.Clamp(_headPrevZoom, 0.25f, 8f);
+        float viewH  = Mathf.Max(0.01f, headSize * 1.9f / zoom);
+        float dist   = (viewH * 0.5f) / Mathf.Tan(fov * 0.5f * Mathf.Deg2Rad);
+
+        Vector3 dir   = Quaternion.AngleAxis(_headPrevYaw, Vector3.up) * faceDir;
+        Vector3 axis  = Vector3.Cross(Vector3.up, dir).normalized;
+        if (axis.sqrMagnitude > 1e-6f)
+            dir = Quaternion.AngleAxis(-Mathf.Clamp(_headPrevPitch, -80f, 80f), axis) * dir;
+
+        Vector3 camPos = focus + dir.normalized * dist;
+
+        var camGo = new GameObject("__DiNeHeadPreviewCam__") { hideFlags = HideFlags.HideAndDontSave };
         var cam   = camGo.AddComponent<Camera>();
-        cam.backgroundColor    = new Color(0, 0, 0, 0);
-        cam.clearFlags         = CameraClearFlags.SolidColor;
-        cam.orthographic       = false;
-        cam.fieldOfView        = 22f;
-        cam.nearClipPlane      = 0.15f;  
-        cam.farClipPlane       = 100f;
-        cam.targetTexture      = _faceRT;
-        cam.cullingMask        = -1;
-        cam.enabled            = false;
+        cam.backgroundColor = new Color(0, 0, 0, 0);
+        cam.clearFlags      = CameraClearFlags.SolidColor;
+        cam.orthographic    = false;
+        cam.fieldOfView     = fov;
+        cam.nearClipPlane   = Mathf.Max(0.001f, dist * 0.02f);
+        cam.farClipPlane    = dist * 10f + 100f;
+        cam.targetTexture   = rt;
+        cam.cullingMask     = -1;
+        cam.enabled         = false;
 
-        Vector3 avatarForward = targetAvatarRoot.transform.forward;
-        cam.transform.position = headPos + avatarForward * 0.45f + Vector3.up * 0.04f;
-        cam.transform.LookAt(headPos + Vector3.up * 0.04f);
+        cam.transform.position = camPos;
+        cam.transform.rotation = Quaternion.LookRotation((focus - camPos).normalized, Vector3.up);
+        cam.transform.position = camPos
+                               + cam.transform.right * (_headPrevPan.x * headSize)
+                               + cam.transform.up    * (_headPrevPan.y * headSize);
 
         cam.Render();
         cam.targetTexture = null;
         DestroyImmediate(camGo);
+    }
+
+    // 드래그 = 회전, 휠 = 확대/축소, 가운데 버튼(또는 Alt+드래그) = 이동
+    private bool HandleHeadPreviewInput(Rect r)
+    {
+        Event e = Event.current;
+        if (e == null || !r.Contains(e.mousePosition)) return false;
+
+        if (e.type == EventType.MouseDrag && (e.button == 0 || e.button == 2))
+        {
+            if (e.button == 2 || e.alt)
+            {
+                _headPrevPan.x -= e.delta.x / Mathf.Max(1f, r.width)  * 2f;
+                _headPrevPan.y += e.delta.y / Mathf.Max(1f, r.height) * 2f;
+            }
+            else
+            {
+                _headPrevYaw   += e.delta.x * 0.5f;
+                _headPrevPitch  = Mathf.Clamp(_headPrevPitch - e.delta.y * 0.5f, -80f, 80f);
+            }
+            e.Use();
+            Repaint();
+            return true;
+        }
+
+        if (e.type == EventType.ScrollWheel)
+        {
+            _headPrevZoom = Mathf.Clamp(_headPrevZoom * (1f - e.delta.y * 0.05f), 0.25f, 8f);
+            e.Use();
+            Repaint();
+            return true;
+        }
+
+        return false;
+    }
+
+    // 미리보기 위에 겹쳐 그리는 시점 초기화 버튼
+    private void DrawHeadPreviewToolbar(Rect r)
+    {
+        var resetRect = new Rect(r.xMax - 26f, r.y + 4f, 22f, 18f);
+        var tip = new GUIContent("⟳", Tr("Reset view (drag: rotate, wheel: zoom, alt+drag: pan)",
+                                         "시점 초기화 (드래그: 회전, 휠: 확대, Alt+드래그: 이동)",
+                                         "視点リセット (ドラッグ: 回転, ホイール: ズーム, Alt+ドラッグ: 移動)"));
+        if (GUI.Button(resetRect, tip, EditorStyles.miniButton))
+        {
+            ResetHeadPreviewView();
+        }
+    }
+
+    private void ResetHeadPreviewView()
+    {
+        _headPrevYaw      = 0f;
+        _headPrevPitch    = 0f;
+        _headPrevZoom     = 1f;
+        _headPrevPan      = Vector2.zero;
+        _facePreviewDirty = true;
+        _skePreviewDirty  = true;
+        Repaint();
     }
     private void DrawExpressionClipSection(Color prevBg)
     {
@@ -2309,13 +2508,11 @@ public class ArmatureScalerEditor : EditorWindow
         _exprClip = (AnimationClip)EditorGUILayout.ObjectField(_exprClip, typeof(AnimationClip), false);
         if (EditorGUI.EndChangeCheck() && _exprClip != null)
         {
-            _exprIsNewClip = false;
             LoadExpressionFromClip();
         }
         if (GUILayout.Button(newLabel, GUILayout.Width(80)))
         {
             _exprClip        = null;
-            _exprIsNewClip   = true;
             _exprNewClipName = "New Expression";
         }
         EditorGUILayout.EndHorizontal();
@@ -2713,8 +2910,7 @@ public class ArmatureScalerEditor : EditorWindow
         if (!overwriteExisting || _exprClip == null)
         {
             AssetDatabase.CreateAsset(clip, path);
-            _exprClip      = clip;
-            _exprIsNewClip = false;
+            _exprClip = clip;
         }
         else
         {
@@ -2909,7 +3105,6 @@ public class ArmatureScalerEditor : EditorWindow
         }
         if (targetClip == null) return;
 
-        int idx = 0;
         foreach (var layer in ctrl.layers)
         {
             if (layer.name != layerName) continue;
@@ -3052,6 +3247,14 @@ public class ArmatureScalerEditor : EditorWindow
                 GUI.DrawTexture(previewRect, _skePreviewRT, ScaleMode.ScaleToFit, true);
             _skePreviewDirty = false;
         }
+
+        if (HandleHeadPreviewInput(previewRect))
+        {
+            _skePreviewDirty  = true;
+            _facePreviewDirty = true;
+        }
+        DrawHeadPreviewToolbar(previewRect);
+
         if (Event.current.type == EventType.Used)
             _skePreviewDirty = true;
     }
@@ -3070,45 +3273,8 @@ public class ArmatureScalerEditor : EditorWindow
             _skePreviewRT.Create();
         }
 
-        // ??筌믨퀣??????????곕럡????곕쿊 Head ????れ삀?????⑥???怨멸텭?嶺???袁⑸즲???
-        Vector3 headPos, camFwd;
-        if (targetAvatarRoot != null)
-        {
-            // boneMapping?????⑤챶?뺧┼?癲ル슣????癲?????(??ш끽維곭빊??⑤베毓??????癲꾧퀗???域밟뫁?? ????⒱봼???濡ろ뜑???????
-            if (boneMapping == null)
-                boneMapping = ArmatureScalerCore.AssignBoneMappings(targetAvatarRoot);
-
-            headPos = targetAvatarRoot.transform.position + Vector3.up * 1.5f;
-            if (boneMapping != null && boneMapping.TryGetValue(HumanBodyBones.Head, out Transform headBone))
-                headPos = headBone.position;
-            camFwd = targetAvatarRoot.transform.forward;
-        }
-        else
-        {
-            // SMR癲?????덉툗 ?濡ろ뜑??? bounds ???ㅿ폍???딅텑???????살젢????⑤베毓??
-            var bounds = _skeSmr.bounds;
-            headPos = bounds.center + Vector3.up * bounds.extents.y * 0.35f;
-            camFwd  = _skeSmr.transform.forward;
-        }
-
-        var camGo = new GameObject("__SkePrevCam__") { hideFlags = HideFlags.HideAndDontSave };
-        var cam   = camGo.AddComponent<Camera>();
-        cam.backgroundColor = new Color(0, 0, 0, 0);
-        cam.clearFlags      = CameraClearFlags.SolidColor;
-        cam.orthographic    = false;
-        cam.fieldOfView     = 22f;
-        cam.nearClipPlane   = 0.01f;
-        cam.farClipPlane    = 100f;
-        cam.targetTexture   = _skePreviewRT;
-        cam.cullingMask     = -1;
-        cam.enabled         = false;
-
-        cam.transform.position = headPos + camFwd * 0.45f + Vector3.up * 0.04f;
-        cam.transform.LookAt(headPos + Vector3.up * 0.04f);
-
-        cam.Render();
-        cam.targetTexture = null;
-        DestroyImmediate(camGo);
+        // 머리 위치·크기·정면 방향은 표정 탭과 동일한 공용 로직으로 계산한다.
+        RenderHeadPreviewTo(_skePreviewRT, _skeSmr);
     }
 
     // listMode: 0=create(??⑤베堉??類????  1=modify-select(???????ャ뀕??  2=modify-select+雅?퍔瑗????뽱돯??

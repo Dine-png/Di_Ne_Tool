@@ -9,20 +9,42 @@ using UnityEngine.Animations;
 
 namespace DiNeTool.ExtraModifier.Editor
 {
+    /// <summary>PhysBone을 어떻게 처리할지.</summary>
+    internal enum DiNeVrmPhysBoneMode
+    {
+        /// <summary>UniVRM SpringBone으로 변환한다.</summary>
+        Convert,
+        /// <summary>변환하지 않고 삭제한다.</summary>
+        Delete,
+        /// <summary>손대지 않는다. (직접 정리할 때)</summary>
+        Keep
+    }
+
     internal sealed class DiNeVrmReport
     {
         public int MergedBones;
         public int SpringBones;
         public int SpringColliders;
+        public int SkippedColliders;
+        public int RemovedPhysBones;
+        public int KeptPhysBones;
         public int ConvertedConstraints;
         public int RemovedComponents;
         public int MissingScripts;
+        public int ConvertedMaterials;
+        public int KeptNormalMaps;
+        public int KeptMatcaps;
+        public int KeptEmissions;
+        public int KeptOutlines;
+        public int KeptRims;
+        public int DroppedMaterialFeatures;
+        public string Warning;
         public string Error;
 
         public bool Succeeded => string.IsNullOrEmpty(Error);
 
         public string Summary => Succeeded
-            ? $"Bones {MergedBones} / SpringBones {SpringBones} / Constraints {ConvertedConstraints} / Removed {RemovedComponents}"
+            ? $"Bones {MergedBones} / SpringBones {SpringBones} / Constraints {ConvertedConstraints} / Materials {ConvertedMaterials} / Removed {RemovedComponents}"
             : Error;
 
         public void Add(DiNeVrmReport other)
@@ -32,12 +54,42 @@ namespace DiNeTool.ExtraModifier.Editor
             MergedBones += other.MergedBones;
             SpringBones += other.SpringBones;
             SpringColliders += other.SpringColliders;
+            SkippedColliders += other.SkippedColliders;
+            RemovedPhysBones += other.RemovedPhysBones;
+            KeptPhysBones += other.KeptPhysBones;
             ConvertedConstraints += other.ConvertedConstraints;
             RemovedComponents += other.RemovedComponents;
             MissingScripts += other.MissingScripts;
+            ConvertedMaterials += other.ConvertedMaterials;
+            KeptNormalMaps += other.KeptNormalMaps;
+            KeptMatcaps += other.KeptMatcaps;
+            KeptEmissions += other.KeptEmissions;
+            KeptOutlines += other.KeptOutlines;
+            KeptRims += other.KeptRims;
+            DroppedMaterialFeatures += other.DroppedMaterialFeatures;
+            if (!string.IsNullOrEmpty(other.Warning))
+                Warning = other.Warning;
             if (!string.IsNullOrEmpty(other.Error))
                 Error = other.Error;
         }
+    }
+
+    /// <summary>전체 자동 처리에서 사용할 설정.</summary>
+    internal struct DiNeVrmOptions
+    {
+        public DiNeVrmPhysBoneMode PhysBoneMode;
+        public bool ConvertMaterials;
+        public DiNeVrmMaterialOptions MaterialOptions;
+        /// <summary>마지막에 UniVRM의 Freeze T-Pose(본 정규화)를 실행할지.</summary>
+        public bool FreezeTPose;
+
+        public static DiNeVrmOptions Default => new DiNeVrmOptions
+        {
+            PhysBoneMode = DiNeVrmPhysBoneMode.Convert,
+            ConvertMaterials = true,
+            MaterialOptions = DiNeVrmMaterialOptions.Preserve,
+            FreezeTPose = false
+        };
     }
 
     /// <summary>
@@ -70,6 +122,11 @@ namespace DiNeTool.ExtraModifier.Editor
 
         public static DiNeVrmReport RunAll(GameObject source, out GameObject workingCopy)
         {
+            return RunAll(source, DiNeVrmOptions.Default, out workingCopy);
+        }
+
+        public static DiNeVrmReport RunAll(GameObject source, DiNeVrmOptions options, out GameObject workingCopy)
+        {
             var report = new DiNeVrmReport();
             workingCopy = CreateWorkingCopy(source);
             if (workingCopy == null)
@@ -86,11 +143,27 @@ namespace DiNeTool.ExtraModifier.Editor
                 report.Add(mergeReport);
                 if (!mergeReport.Succeeded)
                     return report;
-                var springReport = ConvertPhysBones(workingCopy);
-                report.Add(springReport);
-                if (!springReport.Succeeded)
+
+                var physBoneReport = ProcessPhysBones(workingCopy, options.PhysBoneMode);
+                report.Add(physBoneReport);
+                if (!physBoneReport.Succeeded)
                     return report;
+
+                if (options.ConvertMaterials)
+                {
+                    var materialReport = DiNeVrmMaterialConverter.ConvertToMToon(workingCopy, options.MaterialOptions);
+                    report.Add(materialReport);
+                    if (!materialReport.Succeeded)
+                        return report;
+                }
+
                 report.Add(CleanupForVrm(workingCopy));
+
+                // Freeze T-Pose는 반드시 마지막에. UniVRM의 본 정규화는 VRM 컴포넌트만 이해하므로
+                // PhysBone이 남은 상태에서 돌리면 참조가 끊긴다.
+                if (options.FreezeTPose && !DiNeUniVrmBridge.Invoke(DiNeUniVrmAction.FreezeTPose, workingCopy, out var freezeMessage))
+                    report.Warning = freezeMessage;
+
                 EditorUtility.SetDirty(workingCopy);
             }
             finally
@@ -148,6 +221,53 @@ namespace DiNeTool.ExtraModifier.Editor
             return report;
         }
 
+        /// <summary>선택한 방식(변환/삭제/유지)대로 PhysBone을 처리한다.</summary>
+        public static DiNeVrmReport ProcessPhysBones(GameObject avatarRoot, DiNeVrmPhysBoneMode mode)
+        {
+            switch (mode)
+            {
+                case DiNeVrmPhysBoneMode.Delete:
+                    return RemovePhysBones(avatarRoot);
+                case DiNeVrmPhysBoneMode.Keep:
+                    return CountPhysBones(avatarRoot);
+                default:
+                    return ConvertPhysBones(avatarRoot);
+            }
+        }
+
+        /// <summary>변환하지 않고 PhysBone과 PhysBoneCollider만 제거한다.</summary>
+        public static DiNeVrmReport RemovePhysBones(GameObject avatarRoot)
+        {
+            var report = new DiNeVrmReport();
+            if (avatarRoot == null)
+            {
+                report.Error = "Avatar is not assigned.";
+                return report;
+            }
+
+            foreach (var component in CollectPhysBoneComponents(avatarRoot))
+            {
+                Undo.DestroyObjectImmediate(component);
+                report.RemovedPhysBones++;
+            }
+
+            EditorUtility.SetDirty(avatarRoot);
+            Debug.Log($"[DiNe VRM] Removed {report.RemovedPhysBones} PhysBone components without converting.", avatarRoot);
+            return report;
+        }
+
+        private static DiNeVrmReport CountPhysBones(GameObject avatarRoot)
+        {
+            var report = new DiNeVrmReport();
+            if (avatarRoot == null)
+            {
+                report.Error = "Avatar is not assigned.";
+                return report;
+            }
+            report.KeptPhysBones = CollectPhysBoneComponents(avatarRoot).Count;
+            return report;
+        }
+
         public static DiNeVrmReport ConvertPhysBones(GameObject avatarRoot)
         {
             var report = new DiNeVrmReport();
@@ -183,7 +303,44 @@ namespace DiNeTool.ExtraModifier.Editor
                 secondary = secondaryObject.transform;
             }
 
-            var colliderMap = new Dictionary<Component, Component>();
+            // PhysBoneCollider는 rootTransform 기준의 로컬 좌표를 쓰므로,
+            // 같은 호스트 트랜스폼에 붙는 콜라이더들을 하나의 ColliderGroup으로 모은다.
+            var groupByHost = new Dictionary<Transform, Component>();
+            var groupByCollider = new Dictionary<Component, Component>();
+            var sphereByHost = new Dictionary<Transform, List<VrmSphere>>();
+            var usedColliders = new List<Component>();
+
+            foreach (var physBone in physBones)
+            {
+                foreach (var collider in ReadComponents(physBone, "colliders"))
+                {
+                    if (collider == null || groupByCollider.ContainsKey(collider))
+                        continue;
+
+                    var host = GetMember(collider, "rootTransform") as Transform ?? collider.transform;
+                    var spheres = ToSpheres(collider, host, out var skipped);
+                    if (skipped)
+                        report.SkippedColliders++;
+                    if (spheres.Count == 0)
+                        continue;
+
+                    if (!groupByHost.TryGetValue(host, out var group))
+                    {
+                        group = host.GetComponent(colliderGroupType) ?? Undo.AddComponent(host.gameObject, colliderGroupType);
+                        groupByHost.Add(host, group);
+                        sphereByHost.Add(host, new List<VrmSphere>());
+                        report.SpringColliders++;
+                    }
+
+                    sphereByHost[host].AddRange(spheres);
+                    groupByCollider.Add(collider, group);
+                    usedColliders.Add(collider);
+                }
+            }
+
+            foreach (var pair in groupByHost)
+                WriteColliderGroup(pair.Value, sphereByHost[pair.Key]);
+
             foreach (var physBone in physBones)
             {
                 var root = GetMember(physBone, "rootTransform") as Transform ?? physBone.transform;
@@ -192,57 +349,177 @@ namespace DiNeTool.ExtraModifier.Editor
 
                 var springBone = Undo.AddComponent(secondary.gameObject, springBoneType);
                 var springObject = new SerializedObject(springBone);
-                if (!SetObjectArray(springObject, new[] { "m_roots", "RootBones" }, new UnityEngine.Object[] { root }))
+                if (!SetObjectArray(springObject, new[] { "RootBones", "m_roots" }, new UnityEngine.Object[] { root }))
                 {
                     Undo.DestroyObjectImmediate(springBone);
                     continue;
                 }
 
-                var pull = ReadFloat(physBone, "pull", 0f);
-                var stiffness = ReadFloat(physBone, "stiffness", 0f);
-                var spring = ReadFloat(physBone, "spring", 0f);
-                var radius = Mathf.Max(0.001f, ReadFloat(physBone, "radius", 0.02f));
-                var gravity = ReadFloat(physBone, "gravity", 0f);
-                var isHair = IsHair(root.name);
+                ApplySpringParameters(springObject, physBone);
 
-                SetFloat(springObject, new[] { "m_stiffnessForce", "StiffnessForce" },
-                    Mathf.Clamp((pull + stiffness) * (isHair ? 2f : 1f), 0.02f, 4f));
-                SetFloat(springObject, new[] { "m_dragForce", "DragForce" },
-                    Mathf.Clamp(0.6f * (1f - spring), isHair ? 0.15f : 0.35f, 0.9f));
-                SetFloat(springObject, new[] { "m_hitRadius", "HitRadius" }, Mathf.Clamp(radius, 0.001f, 0.5f));
-                SetFloat(springObject, new[] { "m_gravityPower", "GravityPower" }, Mathf.Abs(gravity));
-                SetVector(springObject, new[] { "m_gravityDir", "GravityDir" }, gravity < 0f ? Vector3.up : Vector3.down);
-
-                var colliderGroups = new List<UnityEngine.Object>();
-                foreach (var collider in ReadComponents(physBone, "colliders"))
-                {
-                    if (collider == null)
-                        continue;
-                    if (!colliderMap.TryGetValue(collider, out var group))
-                    {
-                        group = collider.gameObject.GetComponent(colliderGroupType) ?? Undo.AddComponent(collider.gameObject, colliderGroupType);
-                        ApplyCollider(group, collider);
-                        colliderMap.Add(collider, group);
-                        report.SpringColliders++;
-                    }
-                    colliderGroups.Add(group);
-                }
-                SetObjectArray(springObject, new[] { "m_colliderGroups", "ColliderGroups" }, colliderGroups.ToArray());
+                var colliderGroups = ReadComponents(physBone, "colliders")
+                    .Where(collider => collider != null && groupByCollider.ContainsKey(collider))
+                    .Select(collider => (UnityEngine.Object)groupByCollider[collider])
+                    .Distinct()
+                    .ToArray();
+                SetObjectArray(springObject, new[] { "ColliderGroups", "m_colliderGroups" }, colliderGroups);
+                SetString(springObject, new[] { "m_comment", "Comment" }, physBone.gameObject.name);
                 springObject.ApplyModifiedPropertiesWithoutUndo();
 
                 Undo.DestroyObjectImmediate(physBone);
                 report.SpringBones++;
             }
 
-            foreach (var collider in colliderMap.Keys.Where(collider => collider != null).ToArray())
+            // 참조가 남지 않도록 변환이 끝난 뒤에 원본 콜라이더를 제거한다.
+            foreach (var collider in usedColliders.Where(collider => collider != null).Distinct().ToArray())
+                Undo.DestroyObjectImmediate(collider);
+            foreach (var collider in CollectPhysBoneComponents(avatarRoot))
                 Undo.DestroyObjectImmediate(collider);
 
             EditorUtility.SetDirty(avatarRoot);
-            Debug.Log($"[DiNe VRM] Converted {report.SpringBones} PhysBones and {report.SpringColliders} colliders.", avatarRoot);
+            Debug.Log($"[DiNe VRM] Converted {report.SpringBones} PhysBones and {report.SpringColliders} collider groups " +
+                      $"(unsupported colliders: {report.SkippedColliders}).", avatarRoot);
             return report;
         }
 
+        /// <summary>VRC PhysBone 값을 UniVRM SpringBone 파라미터로 옮긴다.</summary>
+        private static void ApplySpringParameters(SerializedObject springObject, Component physBone)
+        {
+            var pull = ReadFloat(physBone, "pull", 0.2f);
+            var stiffness = ReadFloat(physBone, "stiffness", 0.2f);
+            var spring = ReadFloat(physBone, "spring", 0.2f);
+            var immobile = ReadFloat(physBone, "immobile", 0f);
+            var radius = Mathf.Max(0.001f, ReadFloat(physBone, "radius", 0.02f));
+            var gravity = ReadFloat(physBone, "gravity", 0f);
+            var gravityFalloff = ReadFloat(physBone, "gravityFalloff", 0f);
+
+            // pull(원위치로 당기는 힘)과 stiffness(형태 유지)를 합쳐 VRM의 복원력으로 쓴다.
+            var stiffnessForce = Mathf.Clamp(pull * 4f + stiffness * 2f, 0.05f, 4f);
+            // spring이 클수록 잘 튀므로 감쇠(Drag)는 작아진다. immobile은 감쇠로 근사한다.
+            var dragForce = Mathf.Clamp01(Mathf.Lerp(0.7f, 0.05f, Mathf.Clamp01(spring)) + immobile * 0.2f);
+
+            SetFloat(springObject, new[] { "m_stiffnessForce", "StiffnessForce" }, stiffnessForce);
+            SetFloat(springObject, new[] { "m_dragForce", "DragForce" }, dragForce);
+            SetFloat(springObject, new[] { "m_hitRadius", "HitRadius" }, Mathf.Clamp(radius, 0.001f, 0.5f));
+            SetFloat(springObject, new[] { "m_gravityPower", "GravityPower" },
+                Mathf.Abs(gravity) * Mathf.Lerp(1f, 0.5f, Mathf.Clamp01(gravityFalloff)));
+            SetVector(springObject, new[] { "m_gravityDir", "GravityDir" }, gravity < 0f ? Vector3.up : Vector3.down);
+        }
+
+        private static List<Component> CollectPhysBoneComponents(GameObject avatarRoot)
+        {
+            return avatarRoot.GetComponentsInChildren<Component>(true)
+                .Where(component => component != null && IsPhysBoneRelated(component.GetType()))
+                .ToList();
+        }
+
+        /// <summary>VRC 콜라이더 하나를 VRM이 쓰는 구(Sphere) 목록으로 근사한다.</summary>
+        private static List<VrmSphere> ToSpheres(Component collider, Transform host, out bool skipped)
+        {
+            skipped = false;
+            var result = new List<VrmSphere>();
+            if (host == null)
+                return result;
+
+            var offset = ReadVector(collider, "position", Vector3.zero);
+            var rotation = GetMember(collider, "rotation") is Quaternion value ? value : Quaternion.identity;
+            var radius = Mathf.Max(0.001f, ReadFloat(collider, "radius", 0.05f));
+            var height = ReadFloat(collider, "height", 0f);
+            var shape = ReadShapeType(collider);
+
+            // VRC 콜라이더의 position은 rootTransform(없으면 자기 트랜스폼) 기준 로컬 좌표라
+            // host를 그 트랜스폼으로 잡아 두면 VRM ColliderGroup의 Offset과 좌표계가 일치한다.
+            switch (shape)
+            {
+                case ColliderShape.Plane:
+                    // VRM 0.x SpringBone에는 평면 콜라이더가 없다.
+                    skipped = true;
+                    return result;
+                case ColliderShape.Capsule:
+                {
+                    var span = Mathf.Max(0f, height - radius * 2f);
+                    if (span <= 0.0001f)
+                    {
+                        result.Add(new VrmSphere { Offset = offset, Radius = radius });
+                        return result;
+                    }
+
+                    var axis = (rotation * Vector3.up).normalized;
+                    var steps = Mathf.Clamp(Mathf.CeilToInt(span / radius) + 1, 2, 6);
+                    for (var i = 0; i < steps; i++)
+                    {
+                        var t = steps == 1 ? 0.5f : i / (float)(steps - 1);
+                        var position = offset + axis * Mathf.Lerp(-span * 0.5f, span * 0.5f, t);
+                        result.Add(new VrmSphere { Offset = position, Radius = radius });
+                    }
+                    return result;
+                }
+                default:
+                    result.Add(new VrmSphere { Offset = offset, Radius = radius });
+                    return result;
+            }
+        }
+
+        private static ColliderShape ReadShapeType(Component collider)
+        {
+            var value = GetMember(collider, "shapeType");
+            if (value == null)
+                return ColliderShape.Sphere;
+
+            var name = value.ToString();
+            if (name.IndexOf("Capsule", StringComparison.OrdinalIgnoreCase) >= 0)
+                return ColliderShape.Capsule;
+            if (name.IndexOf("Plane", StringComparison.OrdinalIgnoreCase) >= 0)
+                return ColliderShape.Plane;
+            return ColliderShape.Sphere;
+        }
+
+        private static void WriteColliderGroup(Component group, List<VrmSphere> spheres)
+        {
+            if (group == null || spheres == null || spheres.Count == 0)
+                return;
+
+            var serialized = new SerializedObject(group);
+            var property = serialized.FindProperty("Colliders") ?? serialized.FindProperty("m_colliders");
+            if (property == null || !property.isArray)
+                return;
+
+            property.ClearArray();
+            for (var i = 0; i < spheres.Count; i++)
+            {
+                property.InsertArrayElementAtIndex(i);
+                var element = property.GetArrayElementAtIndex(i);
+                var offset = element.FindPropertyRelative("Offset") ?? element.FindPropertyRelative("m_offset");
+                var radius = element.FindPropertyRelative("Radius") ?? element.FindPropertyRelative("m_radius");
+                if (offset != null) offset.vector3Value = spheres[i].Offset;
+                if (radius != null) radius.floatValue = Mathf.Max(0.001f, spheres[i].Radius);
+            }
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private enum ColliderShape
+        {
+            Sphere,
+            Capsule,
+            Plane
+        }
+
+        private struct VrmSphere
+        {
+            public Vector3 Offset;
+            public float Radius;
+        }
+
         public static DiNeVrmReport CleanupForVrm(GameObject avatarRoot)
+        {
+            return CleanupForVrm(avatarRoot, true);
+        }
+
+        /// <param name="keepPhysBones">
+        /// true면 PhysBone과 콜라이더는 건드리지 않는다. 변환/삭제는 전용 단계에서만 처리해야
+        /// "변환한 줄 알았는데 그냥 사라지는" 일이 생기지 않는다.
+        /// </param>
+        public static DiNeVrmReport CleanupForVrm(GameObject avatarRoot, bool keepPhysBones)
         {
             var report = new DiNeVrmReport();
             if (avatarRoot == null)
@@ -266,6 +543,11 @@ namespace DiNeTool.ExtraModifier.Editor
             foreach (var component in components)
             {
                 if (component == null || component is Transform || IsVrmCompatible(component))
+                    continue;
+
+                // PhysBone은 전용 단계(ProcessPhysBones)에서만 다룬다. 여기서 지우면
+                // 변환한 줄 알았는데 그냥 사라지는 문제가 생긴다.
+                if (keepPhysBones && IsPhysBoneRelated(component.GetType()))
                     continue;
 
                 if (component is MonoBehaviour)
@@ -481,26 +763,17 @@ namespace DiNeTool.ExtraModifier.Editor
             return name.Contains("VRCPhysBone") && !name.Contains("Collider");
         }
 
+        /// <summary>PhysBone 본체와 콜라이더. 정리 단계가 임의로 지우면 안 되는 대상이다.</summary>
+        private static bool IsPhysBoneRelated(Type type)
+        {
+            var name = type.FullName ?? type.Name;
+            return name.Contains("VRCPhysBone");
+        }
+
         private static bool IsVrcConstraint(Type type)
         {
             var name = type.FullName ?? type.Name;
             return name.Contains("VRC") && name.Contains("Constraint") && !name.Contains("ConstraintSource");
-        }
-
-        private static void ApplyCollider(Component target, Component source)
-        {
-            var serialized = new SerializedObject(target);
-            var property = serialized.FindProperty("Colliders") ?? serialized.FindProperty("m_colliders");
-            if (property == null || !property.isArray)
-                return;
-            property.ClearArray();
-            property.InsertArrayElementAtIndex(0);
-            var element = property.GetArrayElementAtIndex(0);
-            var offset = element.FindPropertyRelative("Offset") ?? element.FindPropertyRelative("m_offset");
-            var radius = element.FindPropertyRelative("Radius") ?? element.FindPropertyRelative("m_radius");
-            if (offset != null) offset.vector3Value = ReadVector(source, "position", Vector3.zero);
-            if (radius != null) radius.floatValue = Mathf.Max(0.001f, ReadFloat(source, "radius", 0.05f));
-            serialized.ApplyModifiedPropertiesWithoutUndo();
         }
 
         private static bool SetObjectArray(SerializedObject serialized, string[] names, UnityEngine.Object[] values)
@@ -527,6 +800,13 @@ namespace DiNeTool.ExtraModifier.Editor
         {
             var property = FindProperty(serialized, names);
             if (property != null) property.vector3Value = value;
+        }
+
+        private static void SetString(SerializedObject serialized, string[] names, string value)
+        {
+            var property = FindProperty(serialized, names);
+            if (property != null && property.propertyType == SerializedPropertyType.String)
+                property.stringValue = value;
         }
 
         private static SerializedProperty FindProperty(SerializedObject serialized, IEnumerable<string> names)
@@ -600,12 +880,6 @@ namespace DiNeTool.ExtraModifier.Editor
                 transform = transform.parent;
             }
             return depth;
-        }
-
-        private static bool IsHair(string name)
-        {
-            var lower = (name ?? string.Empty).ToLowerInvariant();
-            return lower.Contains("hair") || lower.Contains("헤어") || lower.Contains("髪");
         }
 
         private static Type FindType(string fullName)
