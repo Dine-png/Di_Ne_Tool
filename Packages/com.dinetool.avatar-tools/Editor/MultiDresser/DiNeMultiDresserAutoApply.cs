@@ -75,11 +75,17 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
     [Serializable]
     private class PersistedSession
     {
+        public int descriptorStateVersion;
         public string descriptorId;
         public string tempFolderPath;
         public string originalFxControllerPath;
         public string originalMenuPath;
         public string originalParametersPath;
+        public bool originalCustomizeAnimationLayers;
+        public bool originalFxLayerExisted;
+        public bool originalFxLayerWasInBase;
+        public int originalFxLayerIndex = -1;
+        public bool originalFxLayerIsDefault;
         public List<PersistedDresserBinding> dressers = new List<PersistedDresserBinding>();
     }
 
@@ -100,11 +106,17 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
 
     private sealed class TemporarySession
     {
+        public int DescriptorStateVersion;
         public VRCAvatarDescriptor Descriptor;
         public string TempFolderPath;
         public RuntimeAnimatorController OriginalFxController;
         public VRCExpressionsMenu OriginalMenu;
         public VRCExpressionParameters OriginalParameters;
+        public bool OriginalCustomizeAnimationLayers;
+        public bool OriginalFxLayerExisted;
+        public bool OriginalFxLayerWasInBase;
+        public int OriginalFxLayerIndex = -1;
+        public bool OriginalFxLayerIsDefault;
         public AnimatorController TempAnimatorController;
         public VRCExpressionsMenu TempExpressionsMenu;
         public VRCExpressionParameters TempExpressionParameters;
@@ -140,9 +152,31 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             // EnteredPlayMode is too late for tools that cache avatar controllers during startup.
             ApplyAllDressersInScene();
         }
+        else if (state == PlayModeStateChange.EnteredPlayMode)
+        {
+            // 이제 씬은 Unity가 만든 플레이 모드 클론이다. 이 시점에는 원본 에셋을 건드리지 않고
+            // Poiyomi 키워드/Animated 태그와 lilToon 색 보정 정규화를 안전하게 적용할 수 있다.
+            NormalizeLightingForPlayMode();
+        }
         else if (state == PlayModeStateChange.EnteredEditMode)
         {
             EditorApplication.delayCall += () => TryRestoreIfIdle("play mode ended");
+        }
+    }
+
+    private static void NormalizeLightingForPlayMode()
+    {
+        var descriptors = UnityEngine.Object.FindObjectsOfType<VRCAvatarDescriptor>(true)
+            .Where(descriptor => descriptor != null && descriptor.gameObject.scene.IsValid() &&
+                !EditorUtility.IsPersistent(descriptor));
+
+        foreach (var descriptor in descriptors)
+        {
+            if (!descriptor.GetComponentsInChildren<DiNeLightingDesigner>(true)
+                .Any(designer => designer != null && designer.enabled))
+                continue;
+
+            DiNeLightingBaker.NormalizeForPlayMode(descriptor.gameObject);
         }
     }
 
@@ -493,11 +527,17 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
 
             var session = new TemporarySession
             {
+                DescriptorStateVersion = ps.descriptorStateVersion,
                 Descriptor = descriptor,
                 TempFolderPath = ps.tempFolderPath,
                 OriginalFxController = LoadAssetByPath<RuntimeAnimatorController>(ps.originalFxControllerPath),
                 OriginalMenu = LoadAssetByPath<VRCExpressionsMenu>(ps.originalMenuPath),
-                OriginalParameters = LoadAssetByPath<VRCExpressionParameters>(ps.originalParametersPath)
+                OriginalParameters = LoadAssetByPath<VRCExpressionParameters>(ps.originalParametersPath),
+                OriginalCustomizeAnimationLayers = ps.originalCustomizeAnimationLayers,
+                OriginalFxLayerExisted = ps.originalFxLayerExisted,
+                OriginalFxLayerWasInBase = ps.originalFxLayerWasInBase,
+                OriginalFxLayerIndex = ps.originalFxLayerIndex,
+                OriginalFxLayerIsDefault = ps.originalFxLayerIsDefault
             };
 
             if (ps.dressers != null)
@@ -537,6 +577,7 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             OriginalMenu = descriptor.expressionsMenu,
             OriginalParameters = descriptor.expressionParameters
         };
+        CaptureDescriptorFxState(descriptor, session);
 
         // 캡처한 '원본'이 임시 폴더의 에셋이면 이전 빌드의 복원이 실패해 남은 잔여물이다.
         // 이대로 복원하면 삭제될 임시 에셋을 가리키게 되므로 명확히 경고한다.
@@ -557,7 +598,7 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         session.TempExpressionParameters = CloneOrCreateExpressionParameters(descriptor.expressionParameters, sessionFolder);
         SanitizeAnimatorController(session.TempAnimatorController);
 
-        SetDescriptorFxController(descriptor, session.TempAnimatorController);
+        SetDescriptorFxController(descriptor, session.TempAnimatorController, true);
         descriptor.expressionsMenu = session.TempExpressionsMenu;
         descriptor.expressionParameters = session.TempExpressionParameters;
         EditorUtility.SetDirty(descriptor);
@@ -618,7 +659,10 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             Debug.LogWarning($"[DiNe] 라이팅 디자이너 임시 에셋 정리 실패: {e.Message}");
         }
 
-        if (!hadInMemory && persisted.sessions.Count > 0)
+        // 플레이 모드에서 도메인 리로드가 비활성화돼 있으면 ActiveSessions에는 파괴된
+        // 플레이 클론이 남을 수 있다. 그 항목이 있었다는 이유로 영속 세션 복원을 건너뛰면,
+        // 에디트 모드 씬은 임시 FX를 가리킨 채 남는다. 따라서 영속 세션도 항상 확인한다.
+        if (persisted.sessions.Count > 0)
         {
             foreach (var session in persisted.sessions)
             {
@@ -661,12 +705,10 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         if (session == null)
             return true;
 
-        // 디스크립터가 파괴됐으면(null) 더 이상 참조가 없으므로 임시 폴더 삭제 안전.
+        // 플레이 종료 시 이 참조는 파괴된 플레이 클론일 수 있다. 같은 임시 폴더를 가리키는
+        // 에디트 모드 원본은 영속 세션으로 이어서 복원해야 하므로 여기서 폴더를 지우지 않는다.
         if (session.Descriptor == null)
-        {
-            DeleteTemporaryFolder(session.TempFolderPath);
             return true;
-        }
 
         // 원본이 임시(_DiNe) 에셋을 가리키면 그 값으로 되돌리면 안 된다(미싱/오염 유발).
         // 빈 슬롯(null)은 원래 비어있던 정상 상태로 간주한다.
@@ -674,7 +716,24 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         bool menuOk = !IsTempAsset(session.OriginalMenu);
         bool paramsOk = !IsTempAsset(session.OriginalParameters);
 
-        if (fxOk) SetDescriptorFxController(session.Descriptor, session.OriginalFxController);
+        if (fxOk)
+        {
+            if (session.DescriptorStateVersion >= 1)
+            {
+                RestoreDescriptorFxState(
+                    session.Descriptor,
+                    session.OriginalFxController,
+                    session.OriginalCustomizeAnimationLayers,
+                    session.OriginalFxLayerExisted,
+                    session.OriginalFxLayerWasInBase,
+                    session.OriginalFxLayerIndex,
+                    session.OriginalFxLayerIsDefault);
+            }
+            else
+            {
+                SetDescriptorFxController(session.Descriptor, session.OriginalFxController);
+            }
+        }
         if (menuOk) session.Descriptor.expressionsMenu = session.OriginalMenu;
         if (paramsOk) session.Descriptor.expressionParameters = session.OriginalParameters;
         EditorUtility.SetDirty(session.Descriptor);
@@ -701,6 +760,19 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         }
 
         DeleteTemporaryFolder(session.TempFolderPath);
+        // AssetDatabase.Refresh가 삭제된 컨트롤러를 Unity의 fake-null 참조로 다시 남기는
+        // 경우가 있어, 삭제 완료 뒤 직렬화 필드까지 한 번 더 원본 상태로 확정한다.
+        if (fxOk && session.DescriptorStateVersion >= 1 && session.Descriptor != null)
+        {
+            RestoreDescriptorFxState(
+                session.Descriptor,
+                session.OriginalFxController,
+                session.OriginalCustomizeAnimationLayers,
+                session.OriginalFxLayerExisted,
+                session.OriginalFxLayerWasInBase,
+                session.OriginalFxLayerIndex,
+                session.OriginalFxLayerIsDefault);
+        }
         return true;
     }
 
@@ -742,7 +814,24 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
 
         foreach (var d in targetDescriptors)
         {
-            if (fxOk) SetDescriptorFxController(d, originalFx);
+            if (fxOk)
+            {
+                if (session.descriptorStateVersion >= 1)
+                {
+                    RestoreDescriptorFxState(
+                        d,
+                        originalFx,
+                        session.originalCustomizeAnimationLayers,
+                        session.originalFxLayerExisted,
+                        session.originalFxLayerWasInBase,
+                        session.originalFxLayerIndex,
+                        session.originalFxLayerIsDefault);
+                }
+                else
+                {
+                    SetDescriptorFxController(d, originalFx);
+                }
+            }
             if (menuOk) d.expressionsMenu = originalMenu;
             if (paramsOk) d.expressionParameters = originalParams;
             EditorUtility.SetDirty(d);
@@ -773,6 +862,19 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             }
         }
 
+        // NDMF Test Build는 업로드용 클론과 __Generated 에셋을 빌드 직후 파기한다.
+        // 이 클론의 세션이 도메인 리로드를 넘어 남으면 원본 메뉴/파라미터 경로가 이미 사라져
+        // 일반 플레이 모드 종료 때 복원 실패로 오인된다. 현재 로드된 씬에서 이 임시 폴더를
+        // 참조하는 대상이 전혀 없다면 파괴된 클론의 잔여 세션이므로 안전하게 정리한다.
+        if (targetDescriptors.Count == 0 &&
+            targetDressers.Count == 0 &&
+            !AnyLoadedObjectReferencesFolder(session.tempFolderPath))
+        {
+            DeleteTemporaryFolder(session.tempFolderPath);
+            Debug.Log($"[DiNe] Multi Dresser: 파기된 빌드 클론의 잔여 세션을 정리했습니다: {session.tempFolderPath}");
+            return true;
+        }
+
         bool allOk = fxOk && menuOk && paramsOk;
         if (!allOk)
         {
@@ -791,6 +893,20 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         }
 
         DeleteTemporaryFolder(session.tempFolderPath);
+        if (fxOk && session.descriptorStateVersion >= 1)
+        {
+            foreach (var descriptor in targetDescriptors)
+            {
+                RestoreDescriptorFxState(
+                    descriptor,
+                    originalFx,
+                    session.originalCustomizeAnimationLayers,
+                    session.originalFxLayerExisted,
+                    session.originalFxLayerWasInBase,
+                    session.originalFxLayerIndex,
+                    session.originalFxLayerIsDefault);
+            }
+        }
         return true;
     }
 
@@ -899,11 +1015,17 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
 
             var persistedSession = new PersistedSession
             {
+                descriptorStateVersion = session.DescriptorStateVersion,
                 descriptorId = ToGlobalObjectId(session.Descriptor),
                 tempFolderPath = session.TempFolderPath,
                 originalFxControllerPath = AssetDatabase.GetAssetPath(session.OriginalFxController),
                 originalMenuPath = AssetDatabase.GetAssetPath(session.OriginalMenu),
-                originalParametersPath = AssetDatabase.GetAssetPath(session.OriginalParameters)
+                originalParametersPath = AssetDatabase.GetAssetPath(session.OriginalParameters),
+                originalCustomizeAnimationLayers = session.OriginalCustomizeAnimationLayers,
+                originalFxLayerExisted = session.OriginalFxLayerExisted,
+                originalFxLayerWasInBase = session.OriginalFxLayerWasInBase,
+                originalFxLayerIndex = session.OriginalFxLayerIndex,
+                originalFxLayerIsDefault = session.OriginalFxLayerIsDefault
             };
 
             foreach (var binding in session.Dressers)
@@ -975,12 +1097,32 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         return null;
     }
 
-    private static void SetDescriptorFxController(VRCAvatarDescriptor descriptor, RuntimeAnimatorController controller)
+    private static void CaptureDescriptorFxState(VRCAvatarDescriptor descriptor, TemporarySession session)
     {
-        if (descriptor == null)
+        if (descriptor == null || session == null)
             return;
 
-        bool updated = false;
+        session.OriginalCustomizeAnimationLayers = descriptor.customizeAnimationLayers;
+        session.DescriptorStateVersion = 1;
+        session.OriginalFxLayerExisted = TryFindDescriptorFxLayer(
+            descriptor,
+            out session.OriginalFxLayerWasInBase,
+            out session.OriginalFxLayerIndex,
+            out var layer);
+        session.OriginalFxLayerIsDefault = session.OriginalFxLayerExisted && layer.isDefault;
+    }
+
+    private static bool TryFindDescriptorFxLayer(
+        VRCAvatarDescriptor descriptor,
+        out bool inBaseLayers,
+        out int index,
+        out VRCAvatarDescriptor.CustomAnimLayer result)
+    {
+        inBaseLayers = true;
+        index = -1;
+        result = default;
+        if (descriptor == null)
+            return false;
 
         if (descriptor.baseAnimationLayers != null)
         {
@@ -989,10 +1131,9 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
                 if (descriptor.baseAnimationLayers[i].type != VRCAvatarDescriptor.AnimLayerType.FX)
                     continue;
 
-                var layer = descriptor.baseAnimationLayers[i];
-                layer.animatorController = controller;
-                descriptor.baseAnimationLayers[i] = layer;
-                updated = true;
+                index = i;
+                result = descriptor.baseAnimationLayers[i];
+                return true;
             }
         }
 
@@ -1003,17 +1144,207 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
                 if (descriptor.specialAnimationLayers[i].type != VRCAvatarDescriptor.AnimLayerType.FX)
                     continue;
 
-                var layer = descriptor.specialAnimationLayers[i];
-                layer.animatorController = controller;
-                descriptor.specialAnimationLayers[i] = layer;
-                updated = true;
+                inBaseLayers = false;
+                index = i;
+                result = descriptor.specialAnimationLayers[i];
+                return true;
             }
         }
 
-        if (updated)
+        return false;
+    }
+
+    private static void SetDescriptorFxController(
+        VRCAvatarDescriptor descriptor,
+        RuntimeAnimatorController controller,
+        bool makeCustom = false)
+    {
+        if (descriptor == null)
+            return;
+
+        if (TryFindDescriptorFxLayer(descriptor, out bool inBaseLayers, out int index, out var layer))
         {
-            EditorUtility.SetDirty(descriptor);
+            layer.animatorController = controller;
+            if (makeCustom)
+                layer.isDefault = false;
+
+            if (inBaseLayers)
+            {
+                descriptor.baseAnimationLayers[index] = layer;
+            }
+            else
+            {
+                descriptor.specialAnimationLayers[index] = layer;
+            }
         }
+        else if (makeCustom)
+        {
+            // VRCSDK는 Descriptor 인스펙터의 Playable Layers가 한 번도 펼쳐지지 않은
+            // 아바타에서 배열을 아직 만들지 않을 수 있다. 이 경우 임시 FX 슬롯을 추가한다.
+            var layers = descriptor.baseAnimationLayers != null
+                ? descriptor.baseAnimationLayers.ToList()
+                : new List<VRCAvatarDescriptor.CustomAnimLayer>();
+            layers.Add(new VRCAvatarDescriptor.CustomAnimLayer
+            {
+                type = VRCAvatarDescriptor.AnimLayerType.FX,
+                isDefault = false,
+                animatorController = controller
+            });
+            descriptor.baseAnimationLayers = layers.ToArray();
+        }
+
+        if (makeCustom)
+            descriptor.customizeAnimationLayers = true;
+
+        EditorUtility.SetDirty(descriptor);
+    }
+
+    private static void RestoreDescriptorFxState(
+        VRCAvatarDescriptor descriptor,
+        RuntimeAnimatorController originalController,
+        bool originalCustomizeAnimationLayers,
+        bool originalLayerExisted,
+        bool originalLayerWasInBase,
+        int originalLayerIndex,
+        bool originalLayerIsDefault)
+    {
+        if (descriptor == null)
+            return;
+
+        if (!originalLayerExisted)
+        {
+            // 이 세션에서 추가한 FX 슬롯만 제거한다. 원래 FX 슬롯이 없었으므로
+            // 임시 컨트롤러를 가리키는 FX 항목을 정리하면 원본 배열 상태가 복원된다.
+            if (descriptor.baseAnimationLayers != null)
+            {
+                descriptor.baseAnimationLayers = descriptor.baseAnimationLayers
+                    .Where(layer => layer.type != VRCAvatarDescriptor.AnimLayerType.FX ||
+                        layer.animatorController != originalController)
+                    .ToArray();
+
+                // originalController가 null인 경우 위 조건으로는 임시 FX가 남으므로,
+                // 원래 FX가 전혀 없었다는 캡처 정보를 기준으로 남은 FX도 제거한다.
+                descriptor.baseAnimationLayers = descriptor.baseAnimationLayers
+                    .Where(layer => layer.type != VRCAvatarDescriptor.AnimLayerType.FX)
+                    .ToArray();
+            }
+
+            if (descriptor.specialAnimationLayers != null)
+            {
+                descriptor.specialAnimationLayers = descriptor.specialAnimationLayers
+                    .Where(layer => layer.type != VRCAvatarDescriptor.AnimLayerType.FX)
+                    .ToArray();
+            }
+        }
+        else
+        {
+            var layers = originalLayerWasInBase
+                ? descriptor.baseAnimationLayers
+                : descriptor.specialAnimationLayers;
+            var list = layers != null
+                ? layers.ToList()
+                : new List<VRCAvatarDescriptor.CustomAnimLayer>();
+
+            int targetIndex = originalLayerIndex >= 0 && originalLayerIndex < list.Count &&
+                list[originalLayerIndex].type == VRCAvatarDescriptor.AnimLayerType.FX
+                ? originalLayerIndex
+                : list.FindIndex(layer => layer.type == VRCAvatarDescriptor.AnimLayerType.FX);
+
+            var restoredLayer = new VRCAvatarDescriptor.CustomAnimLayer
+            {
+                type = VRCAvatarDescriptor.AnimLayerType.FX,
+                isDefault = originalLayerIsDefault,
+                animatorController = originalController
+            };
+
+            if (targetIndex >= 0)
+            {
+                // 기존 임시 레이어 인스턴스를 재사용하면 에셋 삭제 뒤 컨트롤러가 Unity의
+                // fake-null(Missing) 참조로 남을 수 있다. 새 값 객체로 교체하되 마스크는 보존한다.
+                restoredLayer.mask = list[targetIndex].mask;
+                list[targetIndex] = restoredLayer;
+            }
+            else
+            {
+                int insertIndex = Mathf.Clamp(originalLayerIndex, 0, list.Count);
+                list.Insert(insertIndex, restoredLayer);
+            }
+
+            if (originalLayerWasInBase)
+                descriptor.baseAnimationLayers = list.ToArray();
+            else
+                descriptor.specialAnimationLayers = list.ToArray();
+        }
+
+        descriptor.customizeAnimationLayers = originalCustomizeAnimationLayers;
+        ApplySerializedDescriptorFxState(
+            descriptor,
+            originalController,
+            originalCustomizeAnimationLayers,
+            originalLayerExisted,
+            originalLayerWasInBase,
+            originalLayerIndex,
+            originalLayerIsDefault);
+        EditorUtility.SetDirty(descriptor);
+    }
+
+    private static void ApplySerializedDescriptorFxState(
+        VRCAvatarDescriptor descriptor,
+        RuntimeAnimatorController originalController,
+        bool originalCustomizeAnimationLayers,
+        bool originalLayerExisted,
+        bool originalLayerWasInBase,
+        int originalLayerIndex,
+        bool originalLayerIsDefault)
+    {
+        var serialized = new SerializedObject(descriptor);
+        serialized.Update();
+
+        var customize = serialized.FindProperty("customizeAnimationLayers");
+        if (customize != null)
+            customize.boolValue = originalCustomizeAnimationLayers;
+
+        if (originalLayerExisted)
+        {
+            var layers = serialized.FindProperty(
+                originalLayerWasInBase ? "baseAnimationLayers" : "specialAnimationLayers");
+            if (layers != null && layers.isArray)
+            {
+                int targetIndex = -1;
+                if (originalLayerIndex >= 0 && originalLayerIndex < layers.arraySize)
+                {
+                    var candidateType = layers.GetArrayElementAtIndex(originalLayerIndex)
+                        .FindPropertyRelative("type");
+                    if (candidateType != null &&
+                        candidateType.enumValueIndex == (int)VRCAvatarDescriptor.AnimLayerType.FX)
+                        targetIndex = originalLayerIndex;
+                }
+
+                if (targetIndex < 0)
+                {
+                    for (int i = 0; i < layers.arraySize; i++)
+                    {
+                        var type = layers.GetArrayElementAtIndex(i).FindPropertyRelative("type");
+                        if (type == null || type.enumValueIndex != (int)VRCAvatarDescriptor.AnimLayerType.FX)
+                            continue;
+
+                        targetIndex = i;
+                        break;
+                    }
+                }
+
+                if (targetIndex >= 0)
+                {
+                    var element = layers.GetArrayElementAtIndex(targetIndex);
+                    var isDefault = element.FindPropertyRelative("isDefault");
+                    var controller = element.FindPropertyRelative("animatorController");
+                    if (isDefault != null) isDefault.boolValue = originalLayerIsDefault;
+                    if (controller != null) controller.objectReferenceValue = originalController;
+                }
+            }
+        }
+
+        serialized.ApplyModifiedPropertiesWithoutUndo();
     }
 
     private static AnimatorController CloneOrCreateAnimatorController(AnimatorController source, string folder)

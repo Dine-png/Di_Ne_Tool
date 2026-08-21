@@ -9,8 +9,8 @@ using VRC.SDK3.Avatars.Components;
 /// <summary>
 /// 머티리얼 정규화 진입점.
 ///
-/// 반드시 IVRCSDKPreprocessAvatarCallback.OnPreprocessAvatar에서만 호출한다.
-/// 그 콜백이 받는 GameObject는 SDK가 업로드용으로 만든 '빌드 클론'이라서
+/// 빌드 전처리 또는 플레이 모드 진입 뒤의 임시 아바타에서만 호출한다.
+/// 두 경로가 받는 GameObject는 SDK/Unity가 만든 클론이라서
 /// 렌더러의 sharedMaterials를 갈아끼워도 씬의 원본 아바타는 그대로다.
 /// (NDMF/Modular Avatar도 같은 전제로 이 지점에서 파괴적 변경을 한다.)
 /// 절대 OnBuildRequested 쪽에서 부르면 안 된다 — 거기서는 씬 원본을 망가뜨린다.
@@ -18,6 +18,16 @@ using VRC.SDK3.Avatars.Components;
 public static class DiNeLightingBaker
 {
     public static void NormalizeForBuild(GameObject avatarGameObject)
+    {
+        NormalizeTemporaryAvatar(avatarGameObject);
+    }
+
+    public static void NormalizeForPlayMode(GameObject avatarGameObject)
+    {
+        NormalizeTemporaryAvatar(avatarGameObject);
+    }
+
+    private static void NormalizeTemporaryAvatar(GameObject avatarGameObject)
     {
         if (avatarGameObject == null)
             return;

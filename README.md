@@ -231,6 +231,11 @@ Supports 60+ texture formats with accurate BPP data based on GPU memory layout.
 
 ## 📝 Version History
 
+**v1.6.2**
+- Lighting Designer: Reworked the inspector to match the Di Ne Tool UI, added Korean/English/Japanese localization, reusable settings presets, and the supplied menu icon
+- Lighting Designer: Simplified lilToon/Poiyomi controls and changed lighting to one menu slider whose actual shader range is set by minimum and maximum brightness values
+- Lighting Designer / Multi Dresser: Improved non-destructive upload and Play Mode processing, restoration, diagnostics, and stale NDMF build-clone cleanup
+
 **v1.6.1**
 - Multi Dresser: Store generated and edited icons in the shared `Assets/Di Ne/Icons` folder
 

@@ -212,16 +212,14 @@ public static class DiNeLightingGenerator
         float defaultMin = Mathf.Lerp(designer.MinLightValue, designer.MaxLightValue, designer.DefaultMinLightValue);
         float defaultMax = Mathf.Lerp(designer.MinLightValue, designer.MaxLightValue, designer.DefaultMaxLightValue);
 
-        if (!designer.OverwriteDefaultLightMinMax)
+        // 단일 밝기 UI에서는 별도 복원값을 받지 않고, OFF일 때 각 머티리얼의 원래 값을 자동 복원한다.
+        foreach (var profile in profiles)
         {
-            foreach (var profile in profiles)
+            if (profile.TryGetLightRange(materials, out float materialMin, out float materialMax))
             {
-                if (profile.TryGetLightRange(materials, out float materialMin, out float materialMax))
-                {
-                    defaultMin = materialMin;
-                    defaultMax = materialMax;
-                    break;
-                }
+                defaultMin = materialMin;
+                defaultMax = materialMax;
+                break;
             }
         }
 

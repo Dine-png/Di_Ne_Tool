@@ -91,6 +91,7 @@ public sealed class DiNeLightingDesigner : MonoBehaviour
     // ── 메뉴 ─────────────────────────────────────────────
     [SerializeField] private string menuName = "Lighting Designer";
     [SerializeField] private Texture2D menuIcon;
+    [SerializeField, HideInInspector] private bool menuIconInitialized;
 
     // ── 전체 On/Off ──────────────────────────────────────
     [SerializeField] private bool useEnableToggle = true;
@@ -98,6 +99,8 @@ public sealed class DiNeLightingDesigner : MonoBehaviour
     [SerializeField] private bool enableSaved = true;
 
     // ── 밝기 범위 ────────────────────────────────────────
+    // Light Limit Changer와 같은 방식으로 메뉴 슬라이더의 양 끝에 대응할
+    // 실제 셰이더 밝기 수치를 저장한다. 기본 범위는 최소 0, 최대 1이다.
     [SerializeField, Range(0f, 10f)] private float minLightValue;
     [SerializeField, Range(0f, 10f)] private float maxLightValue = 1f;
     [SerializeField] private bool overwriteDefaultLightMinMax = true;
@@ -144,7 +147,6 @@ public sealed class DiNeLightingDesigner : MonoBehaviour
     {
         EnsureDefaults();
         GetSetting(DiNeLightingControl.LightMin).enabled = true;
-        GetSetting(DiNeLightingControl.LightMax).enabled = true;
     }
 
     /// <summary>정의 테이블에 있는 모든 항목의 설정 슬롯을 보장하고, 사라진 항목을 정리한다.</summary>
@@ -155,6 +157,39 @@ public sealed class DiNeLightingDesigner : MonoBehaviour
 
         if (string.IsNullOrWhiteSpace(menuName))
             menuName = "Lighting Designer";
+
+        // 새 컴포넌트와 업데이트 전 컴포넌트에는 기본 아이콘을 한 번만 넣는다.
+        // 이후 사용자가 아이콘을 비우거나 교체한 선택은 다시 덮어쓰지 않는다.
+        if (!menuIconInitialized)
+        {
+            if (menuIcon == null)
+                menuIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/LightingDesigner/DNLighting.png");
+            menuIconInitialized = true;
+        }
+
+        // 이전 버전의 최대 밝기 설정을 단일 조명 밝기로 이관한다.
+        var legacyLightMax = controls.Find(setting =>
+            setting != null && setting.control == DiNeLightingControl.LightMax);
+        var light = controls.Find(setting =>
+            setting != null && setting.control == DiNeLightingControl.LightMin);
+        if (legacyLightMax != null && legacyLightMax.enabled)
+        {
+            if (light == null)
+            {
+                legacyLightMax.control = DiNeLightingControl.LightMin;
+                light = legacyLightMax;
+            }
+            else if (!light.enabled)
+            {
+                light.enabled = true;
+                light.saved = legacyLightMax.saved;
+                light.initialValue = legacyLightMax.initialValue;
+                if (string.IsNullOrWhiteSpace(light.displayNameOverride))
+                    light.displayNameOverride = legacyLightMax.displayNameOverride;
+                if (light.icon == null)
+                    light.icon = legacyLightMax.icon;
+            }
+        }
 
         controls.RemoveAll(setting => setting == null || DiNeLightingControlDef.Get(setting.control) == null);
 
@@ -175,8 +210,9 @@ public sealed class DiNeLightingDesigner : MonoBehaviour
         // 정의 테이블 순서로 정렬해 인스펙터 표시 순서를 고정한다.
         controls.Sort((a, b) => a.control.CompareTo(b.control));
 
-        if (maxLightValue < minLightValue)
-            maxLightValue = minLightValue;
+        minLightValue = Mathf.Clamp(minLightValue, 0f, 10f);
+        maxLightValue = Mathf.Clamp(maxLightValue, 0f, 10f);
+        if (maxLightValue < minLightValue) maxLightValue = minLightValue;
 
         if (groups == null) groups = new List<RendererGroup>();
         groups.RemoveAll(group => group == null);
@@ -184,6 +220,13 @@ public sealed class DiNeLightingDesigner : MonoBehaviour
         {
             if (group.renderers == null) group.renderers = new List<Renderer>();
             if (group.separateControls == null) group.separateControls = new List<DiNeLightingControl>();
+
+            if (group.separateControls.Contains(DiNeLightingControl.LightMax) &&
+                !group.separateControls.Contains(DiNeLightingControl.LightMin))
+            {
+                group.separateControls.Add(DiNeLightingControl.LightMin);
+            }
+            group.separateControls.RemoveAll(control => control == DiNeLightingControl.LightMax);
 
             // 꺼진 항목이 그룹에만 남아 있으면 파라미터가 붕 뜨므로 정리한다.
             group.separateControls.RemoveAll(control => !IsEnabled(control));
@@ -197,6 +240,18 @@ public sealed class DiNeLightingDesigner : MonoBehaviour
             if (preset.values == null) preset.values = new List<float>();
             while (preset.values.Count < preset.controls.Count) preset.values.Add(0f);
             while (preset.values.Count > preset.controls.Count) preset.values.RemoveAt(preset.values.Count - 1);
+
+            int legacyIndex = preset.controls.IndexOf(DiNeLightingControl.LightMax);
+            int lightIndex = preset.controls.IndexOf(DiNeLightingControl.LightMin);
+            if (legacyIndex >= 0 && lightIndex < 0)
+            {
+                preset.controls[legacyIndex] = DiNeLightingControl.LightMin;
+            }
+            else if (legacyIndex >= 0)
+            {
+                preset.controls.RemoveAt(legacyIndex);
+                if (legacyIndex < preset.values.Count) preset.values.RemoveAt(legacyIndex);
+            }
 
             for (int i = preset.controls.Count - 1; i >= 0; i--)
             {

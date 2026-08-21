@@ -51,7 +51,6 @@ internal sealed class DiNeShaderProfilePoiyomi : DiNeShaderProfile
         switch (control)
         {
             case DiNeLightingControl.LightMin:
-            case DiNeLightingControl.LightMax:
             case DiNeLightingControl.Saturation:
             case DiNeLightingControl.Hue:
             case DiNeLightingControl.Brightness:
@@ -84,8 +83,6 @@ internal sealed class DiNeShaderProfilePoiyomi : DiNeShaderProfile
         {
             case DiNeLightingControl.LightMin:
                 sink.SetFloatConstant(LightingMinLightBrightness, context.DefaultMinLight);
-                break;
-            case DiNeLightingControl.LightMax:
                 sink.SetFloatConstant(LightingCap, context.DefaultMaxLight);
                 break;
             case DiNeLightingControl.Saturation:
@@ -124,8 +121,6 @@ internal sealed class DiNeShaderProfilePoiyomi : DiNeShaderProfile
         {
             case DiNeLightingControl.LightMin:
                 sink.SetFloatRange(LightingMinLightBrightness, context.MinLight, context.MaxLight);
-                break;
-            case DiNeLightingControl.LightMax:
                 sink.SetFloatRange(LightingCap, context.MinLight, context.MaxLight);
                 break;
             case DiNeLightingControl.Saturation:
@@ -209,8 +204,10 @@ internal sealed class DiNeShaderProfilePoiyomi : DiNeShaderProfile
     {
         switch (control)
         {
-            case DiNeLightingControl.LightMin: yield return LightingMinLightBrightness; break;
-            case DiNeLightingControl.LightMax: yield return LightingCap; break;
+            case DiNeLightingControl.LightMin:
+                yield return LightingMinLightBrightness;
+                yield return LightingCap;
+                break;
             case DiNeLightingControl.Saturation: yield return Saturation; break;
             case DiNeLightingControl.Hue: yield return MainHueShift; break;
             case DiNeLightingControl.Brightness: yield return MainBrightness; break;

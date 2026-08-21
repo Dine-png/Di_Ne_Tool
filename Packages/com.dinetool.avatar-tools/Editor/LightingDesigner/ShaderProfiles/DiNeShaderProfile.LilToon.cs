@@ -52,21 +52,15 @@ internal sealed class DiNeShaderProfileLilToon : DiNeShaderProfile
         switch (control)
         {
             case DiNeLightingControl.LightMin:
-            case DiNeLightingControl.LightMax:
-            case DiNeLightingControl.Unlit:
             case DiNeLightingControl.Saturation:
             case DiNeLightingControl.Hue:
             case DiNeLightingControl.Brightness:
-            case DiNeLightingControl.Gamma:
             case DiNeLightingControl.ColorTemperature:
             case DiNeLightingControl.Monochrome:
-            case DiNeLightingControl.Emission:
             case DiNeLightingControl.ShadowStrength:
-            case DiNeLightingControl.ShadowBorder:
             case DiNeLightingControl.OutlineTint:
             case DiNeLightingControl.OutlineWidth:
             case DiNeLightingControl.Reflectance:
-            case DiNeLightingControl.LightDirection:
                 return true;
             default:
                 return false;
@@ -98,8 +92,6 @@ internal sealed class DiNeShaderProfileLilToon : DiNeShaderProfile
         {
             case DiNeLightingControl.LightMin:
                 sink.SetFloatConstant(LightMinLimit, context.DefaultMinLight);
-                break;
-            case DiNeLightingControl.LightMax:
                 sink.SetFloatConstant(LightMaxLimit, context.DefaultMaxLight);
                 break;
             case DiNeLightingControl.Unlit:
@@ -156,8 +148,6 @@ internal sealed class DiNeShaderProfileLilToon : DiNeShaderProfile
         {
             case DiNeLightingControl.LightMin:
                 sink.SetFloatRange(LightMinLimit, context.MinLight, context.MaxLight);
-                break;
-            case DiNeLightingControl.LightMax:
                 sink.SetFloatRange(LightMaxLimit, context.MinLight, context.MaxLight);
                 break;
             case DiNeLightingControl.Unlit:
