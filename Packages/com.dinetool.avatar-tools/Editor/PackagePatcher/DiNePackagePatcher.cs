@@ -24,7 +24,10 @@ public class DiNePackagePatcher : EditorWindow
 
         public string CachedTempPath; // set when pre-extracted during ProcessFile (e.g. from Bandizip temp)
         public string ArchiveLabel = "ZIP"; // 목록 뱃지에 쓰는 압축 종류 (ZIP / RAR / 7Z)
-        public bool   IsExternalArchive = false; // rar·7z: .NET 이 못 여는 포맷
+        // rar·7z 또는 압축 안의 압축: 원본 ZIP 을 바로 열어 꺼낼 수 없는 항목.
+        // 캐시가 사라지면 원본을 다시 탐색(DiscoverArchive)해서 복구한다.
+        public bool   IsExternalArchive = false;
+        public string ContainerChain; // 중첩 압축일 때 거쳐 온 안쪽 압축 파일명 ("inner.zip › deep.rar")
 
         public PackageItem(string sourcePath, string displayName, bool isFromZip, string packagePathInZip = null)
         {
@@ -489,20 +492,14 @@ public class DiNePackagePatcher : EditorWindow
         {
             string picked = EditorUtility.OpenFilePanel(UI_TEXT[20], "", "unitypackage,zip,rar,7z");
             if (!string.IsNullOrEmpty(picked))
-            {
-                ProcessFile(picked);
-                Repaint();
-            }
+                QueuePaths(new[] { picked });
         }
         GUI.backgroundColor = new Color(0.28f, 0.38f, 0.28f);
         if (GUILayout.Button(UI_TEXT[21], GUILayout.Height(26)))
         {
             string pickedDir = EditorUtility.OpenFolderPanel(UI_TEXT[21], "", "");
             if (!string.IsNullOrEmpty(pickedDir))
-            {
-                AddFromPath(pickedDir, true);
-                Repaint();
-            }
+                QueuePaths(new[] { pickedDir });
         }
         GUI.backgroundColor = prevBgBrowse;
         EditorGUILayout.EndHorizontal();
@@ -567,13 +564,14 @@ public class DiNePackagePatcher : EditorWindow
                 var rowBg = item.IsSelected ? new Color(0.18f, 0.28f, 0.26f) : new Color(0.20f, 0.20f, 0.20f);
                 var prevBg = GUI.backgroundColor;
                 GUI.backgroundColor = rowBg;
-                EditorGUILayout.BeginVertical("box");
+                EditorGUILayout.BeginHorizontal("box");
                 GUI.backgroundColor = prevBg;
 
-                EditorGUILayout.BeginHorizontal();
+                // 체크박스 자리만 비워 두고, 칸이 다 그려진 뒤 칸 높이 전체를 클릭 영역으로 쓴다.
+                GUILayout.Space(DiNePackageSelectWindow.ToggleColumnWidth);
+                EditorGUILayout.BeginVertical();
 
-                item.IsSelected = EditorGUILayout.Toggle(item.IsSelected, GUILayout.Width(16), GUILayout.Height(16));
-                GUILayout.Space(2);
+                EditorGUILayout.BeginHorizontal();
 
                 // 타입 뱃지
                 string badgeText  = item.IsDone ? "✓" : item.IsFailed ? "✗" : item.IsFromZip ? item.ArchiveLabel : "PKG";
@@ -608,10 +606,12 @@ public class DiNePackagePatcher : EditorWindow
 
                 // ZIP 서브라인
                 if (item.IsFromZip && !string.IsNullOrEmpty(item.PackagePathInZip))
-                    GUILayout.Label($"  ↳  {Path.GetFileName(item.SourcePath)}",
+                    GUILayout.Label($"  ↳  {AppendChain(Path.GetFileName(item.SourcePath), item.ContainerChain)}",
                         new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = new Color(0.40f, 0.55f, 0.70f) } });
 
                 EditorGUILayout.EndVertical();
+                EditorGUILayout.EndHorizontal();
+                item.IsSelected = DiNePackageSelectWindow.RowToggle(GUILayoutUtility.GetLastRect(), item.IsSelected);
                 GUILayout.Space(1);
             }
             if (removeIndex != -1 && !isImporting) { foundPackages.RemoveAt(removeIndex); Repaint(); }
@@ -708,110 +708,339 @@ public class DiNePackagePatcher : EditorWindow
                 if (evt.type == EventType.DragPerform)
                 {
                     DragAndDrop.AcceptDrag();
-                    foreach (string path in DragAndDrop.paths)
-                    {
-                        if (string.IsNullOrEmpty(path)) continue;
-                        string fullPath;
-                        try { fullPath = Path.GetFullPath(path); }
-                        catch { fullPath = path; }
-
-                        if (!Directory.Exists(fullPath) && !File.Exists(fullPath))
-                            if (Directory.Exists(path) || File.Exists(path))
-                                fullPath = path;
-
-                        if (Directory.Exists(fullPath)) AddFromPath(fullPath, true);
-                        else ProcessFile(fullPath);
-                    }
-                    Repaint();
+                    QueuePaths(DragAndDrop.paths);
                 }
                 evt.Use();
                 break;
         }
     }
 
-    private void AddFromPath(string path, bool isFolder)
+    private readonly List<string> pendingPaths = new List<string>();
+    private bool processingPaths;
+
+    /// <summary>
+    /// 경로 처리를 OnGUI 밖(delayCall)으로 미룬다. 압축 안에 패키지가 여러 개면
+    /// 모달 선택 창이 뜨는데, OnGUI 도중에 모달을 열면 GUI 레이아웃 스택이 깨진다.
+    /// </summary>
+    private void QueuePaths(IEnumerable<string> paths)
     {
-        if (isFolder)
+        var list = (paths ?? Enumerable.Empty<string>()).Where(p => !string.IsNullOrEmpty(p)).ToList();
+        if (list.Count == 0) return;
+
+        pendingPaths.AddRange(list);
+        EditorApplication.delayCall += DrainPendingPaths;
+    }
+
+    /// <summary>
+    /// 쌓인 경로를 한 묶음으로 처리한다. 먼저 모든 압축을 끝까지 탐색해 두고,
+    /// 그 다음에 선택 창을 하나씩 차례로 띄운다 → 남은 창 개수를 미리 알 수 있다.
+    /// </summary>
+    private void DrainPendingPaths()
+    {
+        if (this == null || processingPaths) return;
+        processingPaths = true;
+        try
         {
-            var files = Directory.GetFiles(path, "*.*", SearchOption.AllDirectories)
-                .Where(s => SupportedExtensions.Contains(Path.GetExtension(s).ToLower()));
-            foreach (var file in files) ProcessFile(file);
+            while (pendingPaths.Count > 0)
+            {
+                var batch = pendingPaths.ToList();
+                pendingPaths.Clear();
+
+                // 1) 폴더를 펼쳐 실제 파일 목록으로
+                var files = new List<string>();
+                foreach (string path in batch)
+                {
+                    string fullPath;
+                    try { fullPath = Path.GetFullPath(path); }
+                    catch { fullPath = path; }
+
+                    if (!Directory.Exists(fullPath) && !File.Exists(fullPath))
+                        if (Directory.Exists(path) || File.Exists(path))
+                            fullPath = path;
+
+                    if (Directory.Exists(fullPath))
+                    {
+                        try
+                        {
+                            files.AddRange(Directory.GetFiles(fullPath, "*.*", SearchOption.AllDirectories)
+                                .Where(f => SupportedExtensions.Contains(Path.GetExtension(f).ToLower())));
+                        }
+                        catch (Exception e) { Debug.LogWarning($"[DiNe] 폴더 스캔 실패: {fullPath}\n{e.Message}"); }
+                    }
+                    else files.Add(fullPath);
+                }
+                files = files.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+                // 2) 단일 패키지는 바로 넣고, 압축은 전부 탐색만 해 둔다
+                var archives = new List<KeyValuePair<string, List<FoundPackage>>>();
+                foreach (string file in files)
+                {
+                    string ext = Path.GetExtension(file).ToLower();
+                    if (DiNeArchiveTools.IsArchive(ext))
+                    {
+                        var fresh = DiscoverFresh(file);
+                        if (fresh != null && fresh.Count > 0)
+                            archives.Add(new KeyValuePair<string, List<FoundPackage>>(file, fresh));
+                    }
+                    else if (ext == ".unitypackage")
+                    {
+                        if (!foundPackages.Any(p => p.SourcePath == file && !p.IsFromZip))
+                            foundPackages.Add(new PackageItem(file, Path.GetFileName(file), false));
+                    }
+                }
+                Repaint();
+
+                // 3) 여러 개가 든 압축은 전부 넣기 전에 선택 창을 하나씩 차례로 띄운다
+                int dialogTotal = archives.Count(a => a.Value.Count > 1);
+                int dialogIndex = 0;
+                foreach (var a in archives)
+                {
+                    var chosen = a.Value;
+                    if (chosen.Count > 1)
+                    {
+                        dialogIndex++;
+                        chosen = AskSelection(a.Key, a.Value, dialogIndex, dialogTotal);
+                    }
+                    CommitArchive(a.Key, chosen);
+                    Repaint();
+                }
+            }
         }
-        else ProcessFile(path);
+        finally
+        {
+            processingPaths = false;
+            EditorUtility.ClearProgressBar();
+            Repaint();
+        }
     }
 
     private static readonly HashSet<string> SupportedExtensions =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".unitypackage", ".zip", ".rar", ".7z" };
 
-    private void ProcessFile(string path)
+    // ── 압축 파일 탐색 (압축 안의 압축까지 재귀) ─────────────────────────────
+
+    private const int MaxNestDepth = 3; // 압축 안의 압축을 몇 겹까지 따라 들어갈지
+
+    /// <summary>압축 파일 안에서 찾은 .unitypackage 하나.</summary>
+    private class FoundPackage
     {
-        string ext = Path.GetExtension(path).ToLower();
-        if (DiNeArchiveTools.NeedsExternalTool(ext))
-        {
-            ProcessExternalArchive(path, ext == ".rar" ? "RAR" : "7Z");
-            return;
-        }
-        if (ext == ".zip")
-        {
-            List<Encoding> encodings = new List<Encoding> { Encoding.UTF8 };
-            try { encodings.Add(Encoding.GetEncoding(932)); } catch { }
-            try { encodings.Add(Encoding.GetEncoding(51949)); } catch { }
+        public string InnerPath;      // 최상위 압축 기준 경로. 중첩이면 "inner.zip/sub/a.unitypackage"
+        public string ContainerChain; // 거쳐 온 안쪽 압축 파일명 (표시용). 최상위면 빈 값
+        public string CachedPath;     // 외부 도구가 이미 디스크에 풀어 둔 파일
+        public string ZipPath;        // 아직 안 풀었을 때: 이 항목을 담고 있는 ZIP (디스크 상 경로)
+        public string ZipEntry;
+        public int    ZipCodePage;
+        public bool   IsDirectZipEntry; // 최상위 ZIP 의 직속 항목 → 캐시가 없어도 원본에서 바로 꺼낼 수 있음
+    }
 
-            foreach (var enc in encodings)
+    private static string ArchiveLabelOf(string path)
+    {
+        switch (Path.GetExtension(path).ToLower())
+        {
+            case ".rar": return "RAR";
+            case ".7z":  return "7Z";
+            default:     return "ZIP";
+        }
+    }
+
+    /// <summary>압축을 끝까지 탐색해, 아직 목록에 없는 패키지만 돌려준다. 없으면 null.</summary>
+    private List<FoundPackage> DiscoverFresh(string path)
+    {
+        var results = new List<FoundPackage>();
+        var errors  = new List<string>();
+        try { DiscoverArchive(path, "", "", 0, results, errors); }
+        finally { EditorUtility.ClearProgressBar(); }
+
+        if (results.Count == 0)
+        {
+            statusMessage = (errors.Count > 0 && !DiNeArchiveTools.HasAnyTool()) ? UI_TEXT[22] : UI_TEXT[23];
+            Debug.LogError($"[DiNe] 압축 파일 안에서 .unitypackage 를 찾지 못했습니다: {Path.GetFileName(path)}" +
+                           (errors.Count > 0 ? "\n" + string.Join("\n", errors) : ""));
+            return null;
+        }
+        if (errors.Count > 0)
+            Debug.LogWarning($"[DiNe] {Path.GetFileName(path)} 의 일부 압축은 열지 못했습니다.\n" + string.Join("\n", errors));
+
+        // 이미 목록에 있는 항목은 다시 넣지 않는다.
+        var fresh = results
+            .Where(r => !foundPackages.Any(p => p.IsFromZip && p.SourcePath == path && p.PackagePathInZip == r.InnerPath))
+            .OrderBy(r => r.InnerPath, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        foreach (var dup in results.Except(fresh)) DeleteCachedFile(dup);
+        return fresh;
+    }
+
+    /// <summary>선택 창을 띄워 고른 항목만 돌려준다. index/total 은 이번 묶음에서 몇 번째 창인지.</summary>
+    private List<FoundPackage> AskSelection(string path, List<FoundPackage> fresh, int index, int total)
+    {
+        var flags = fresh.Select(_ => true).ToArray();
+        string title    = total > 1 ? $"{UI_TEXT[24]}  ({index} / {total})" : UI_TEXT[24];
+        string progress = total > 1 ? string.Format(UI_TEXT[28], index, total, total - index) : null;
+
+        bool ok = DiNePackageSelectWindow.Show(
+            title,
+            string.Format(UI_TEXT[25], Path.GetFileName(path), fresh.Count),
+            progress,
+            fresh.Select(r => Path.GetFileName(r.InnerPath)).ToArray(),
+            fresh.Select(r => r.InnerPath).ToArray(),
+            flags, UI_TEXT[16], UI_TEXT[17], UI_TEXT[26], UI_TEXT[27]);
+
+        var chosen = ok ? fresh.Where((r, i) => flags[i]).ToList() : new List<FoundPackage>();
+        foreach (var skipped in fresh.Except(chosen)) DeleteCachedFile(skipped);
+        return chosen;
+    }
+
+    private void CommitArchive(string path, List<FoundPackage> chosen)
+    {
+        string label = ArchiveLabelOf(path);
+        try
+        {
+            for (int i = 0; i < chosen.Count; i++)
             {
-                try
+                var found = chosen[i];
+                // 대용량 ZIP 은 추출에 시간이 걸리므로 진행률을 보여준다.
+                EditorUtility.DisplayProgressBar("Package Patcher",
+                    $"{Path.GetFileName(path)} → {Path.GetFileName(found.InnerPath)}", (float)i / chosen.Count);
+
+                // ZIP 원본이 반디집 등 임시 경로에 있을 수 있으므로 즉시 캐시에 추출
+                string cached = MaterializeFound(found);
+                if (cached == null && !found.IsDirectZipEntry)
                 {
-                    using (var archive = ZipFile.Open(path, ZipArchiveMode.Read, enc))
-                    {
-                        var entries = archive.Entries
-                            .Where(e => e.FullName.ToLower().EndsWith(".unitypackage"))
-                            .ToList();
-
-                        for (int i = 0; i < entries.Count; i++)
-                        {
-                            var entry = entries[i];
-                            if (foundPackages.Any(p => p.SourcePath == path && p.PackagePathInZip == entry.FullName))
-                                continue;
-
-                            // 대용량 ZIP 은 추출에 시간이 걸리므로 진행률을 보여준다.
-                            EditorUtility.DisplayProgressBar("Package Patcher",
-                                $"{Path.GetFileName(path)} → {Path.GetFileName(entry.FullName)}",
-                                entries.Count > 0 ? (float)i / entries.Count : 0f);
-
-                            // ZIP 원본이 반디집 등 임시 경로에 있을 수 있으므로 즉시 캐시에 추출
-                            string cached = TryCacheZipEntry(entry, path);
-                            var item = new PackageItem(path, entry.FullName, true, entry.FullName);
-                            item.CachedTempPath = cached;
-                            foundPackages.Add(item);
-                        }
-                        return;
-                    }
+                    Debug.LogError($"[DiNe] 압축 해제 실패: {found.InnerPath}");
+                    continue;
                 }
-                catch { continue; }
-                finally { EditorUtility.ClearProgressBar(); }
+
+                foundPackages.Add(new PackageItem(path, found.InnerPath, true, found.InnerPath)
+                {
+                    CachedTempPath    = cached,
+                    ArchiveLabel      = label,
+                    IsExternalArchive = !found.IsDirectZipEntry,
+                    ContainerChain    = found.ContainerChain,
+                });
             }
         }
-        else if (ext == ".unitypackage")
+        finally { EditorUtility.ClearProgressBar(); }
+    }
+
+    private static void DeleteCachedFile(FoundPackage found)
+    {
+        if (string.IsNullOrEmpty(found.CachedPath)) return;
+        try { if (File.Exists(found.CachedPath)) File.Delete(found.CachedPath); } catch { }
+    }
+
+    /// <summary>찾은 항목을 디스크 상의 .unitypackage 로 만든다. 실패 시 null.</summary>
+    private static string MaterializeFound(FoundPackage found)
+    {
+        if (!string.IsNullOrEmpty(found.CachedPath) && File.Exists(found.CachedPath)) return found.CachedPath;
+        if (string.IsNullOrEmpty(found.ZipPath)) return null;
+
+        try
         {
-            if (!foundPackages.Any(p => p.SourcePath == path && !p.IsFromZip))
+            // 항목 이름은 탐색 때 쓴 인코딩으로 열어야 같은 문자열로 나온다.
+            using (var archive = ZipFile.Open(found.ZipPath, ZipArchiveMode.Read, Encoding.GetEncoding(found.ZipCodePage)))
             {
-                foundPackages.Add(new PackageItem(path, Path.GetFileName(path), false));
+                var entry = archive.Entries.FirstOrDefault(e => e.FullName == found.ZipEntry);
+                if (entry == null) return null;
+                found.CachedPath = TryCacheZipEntry(entry, found.ZipPath);
+                return found.CachedPath;
             }
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[DiNe] ZIP 캐시 추출 실패: {Path.GetFileName(found.ZipPath)}\n{e.Message}");
+            return null;
         }
     }
 
     /// <summary>
-    /// .rar / .7z 는 .NET 이 열지 못하므로 외부 도구로 .unitypackage 만 캐시 폴더에
-    /// 미리 추출한다. 추출 결과가 곧 임포트용 파일이 된다.
+    /// archivePath 안의 .unitypackage 를 results 에 모은다. 안쪽에 또 압축 파일이
+    /// 있으면 캐시 폴더에 풀어서 MaxNestDepth 겹까지 따라 들어간다.
     /// </summary>
-    private void ProcessExternalArchive(string path, string label)
+    private void DiscoverArchive(string archivePath, string pathPrefix, string chain, int depth,
+                                 List<FoundPackage> results, List<string> errors)
     {
-        if (foundPackages.Any(p => p.SourcePath == path && p.IsExternalArchive)) return;
+        string ext = Path.GetExtension(archivePath).ToLower();
+        if (!DiNeArchiveTools.NeedsExternalTool(ext) && DiscoverZip(archivePath, pathPrefix, chain, depth, results, errors))
+            return;
 
+        // rar·7z, 그리고 .NET 이 못 여는 ZIP(특수 압축 방식 등)은 외부 도구로 연다.
+        DiscoverExternal(archivePath, pathPrefix, chain, depth, results, errors);
+    }
+
+    private bool DiscoverZip(string zipPath, string pathPrefix, string chain, int depth,
+                             List<FoundPackage> results, List<string> errors)
+    {
+        List<Encoding> encodings = new List<Encoding> { Encoding.UTF8 };
+        try { encodings.Add(Encoding.GetEncoding(932)); } catch { }
+        try { encodings.Add(Encoding.GetEncoding(51949)); } catch { }
+
+        foreach (var enc in encodings)
+        {
+            int resultMark = results.Count;
+            var nested = new List<KeyValuePair<string, string>>(); // (풀어 둔 파일, ZIP 내 경로)
+            try
+            {
+                using (var archive = ZipFile.Open(zipPath, ZipArchiveMode.Read, enc))
+                {
+                    foreach (var entry in archive.Entries)
+                    {
+                        if (string.IsNullOrEmpty(entry.Name)) continue; // 폴더 항목
+                        string entryExt = Path.GetExtension(entry.Name).ToLower();
+
+                        if (entryExt == ".unitypackage")
+                        {
+                            results.Add(new FoundPackage
+                            {
+                                InnerPath        = pathPrefix + entry.FullName,
+                                ContainerChain   = chain,
+                                ZipPath          = zipPath,
+                                ZipEntry         = entry.FullName,
+                                ZipCodePage      = enc.CodePage,
+                                IsDirectZipEntry = depth == 0,
+                            });
+                        }
+                        else if (depth < MaxNestDepth && DiNeArchiveTools.IsArchive(entryExt))
+                        {
+                            EditorUtility.DisplayProgressBar("Package Patcher",
+                                $"{Path.GetFileName(zipPath)} → {entry.Name}", 0.5f);
+
+                            string dir = Path.Combine(tempCachePath, "Nested_" + Guid.NewGuid().ToString("N").Substring(0, 8));
+                            Directory.CreateDirectory(dir);
+                            // 확장자만 유지한 ASCII 이름으로 풀어 경로 문제를 피한다.
+                            string outPath = Path.Combine(dir, "inner" + entryExt);
+                            entry.ExtractToFile(outPath, true);
+                            nested.Add(new KeyValuePair<string, string>(outPath, entry.FullName));
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // 이 인코딩으로는 못 읽음 → 모은 것을 버리고 다음 인코딩으로.
+                results.RemoveRange(resultMark, results.Count - resultMark);
+                foreach (var n in nested)
+                    try { Directory.Delete(Path.GetDirectoryName(n.Key), true); } catch { }
+                continue;
+            }
+
+            foreach (var n in nested)
+                DiscoverArchive(n.Key, pathPrefix + n.Value + "/", AppendChain(chain, Path.GetFileName(n.Value)),
+                                depth + 1, results, errors);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// .rar / .7z 는 .NET 이 열지 못하므로 외부 도구로 .unitypackage(와 안쪽 압축)만
+    /// 캐시 폴더에 미리 추출한다. 추출 결과가 곧 임포트용 파일이 된다.
+    /// </summary>
+    private void DiscoverExternal(string archivePath, string pathPrefix, string chain, int depth,
+                                  List<FoundPackage> results, List<string> errors)
+    {
         if (!DiNeArchiveTools.HasAnyTool())
         {
-            statusMessage = UI_TEXT[22];
-            Debug.LogError($"[DiNe] {UI_TEXT[22]} | {Path.GetFileName(path)}");
+            errors.Add($"{Path.GetFileName(archivePath)}: {UI_TEXT[22]}");
             return;
         }
 
@@ -821,17 +1050,20 @@ public class DiNePackagePatcher : EditorWindow
         try
         {
             EditorUtility.DisplayProgressBar("Package Patcher",
-                $"{label}: {Path.GetFileName(path)}", 0.5f);
+                $"{ArchiveLabelOf(archivePath)}: {(string.IsNullOrEmpty(chain) ? Path.GetFileName(archivePath) : chain)}", 0.5f);
             Directory.CreateDirectory(destRoot);
-            extracted = DiNeArchiveTools.ExtractUnityPackages(path, destRoot, out error);
+            extracted = DiNeArchiveTools.ExtractUnityPackages(archivePath, destRoot, depth < MaxNestDepth, out error);
         }
-        finally { EditorUtility.ClearProgressBar(); }
+        catch (Exception e)
+        {
+            errors.Add($"{Path.GetFileName(archivePath)}: {e.Message}");
+            return;
+        }
 
         if (extracted.Count == 0)
         {
             try { Directory.Delete(destRoot, true); } catch { }
-            statusMessage = UI_TEXT[23];
-            Debug.LogError($"[DiNe] {label} 안에서 .unitypackage 를 찾지 못했습니다: {Path.GetFileName(path)}\n{error}");
+            if (!string.IsNullOrEmpty(error)) errors.Add($"{Path.GetFileName(archivePath)}: {error}");
             return;
         }
 
@@ -843,16 +1075,27 @@ public class DiNePackagePatcher : EditorWindow
             // 도구별 임시 하위 폴더(GUID) 한 겹은 표시에서 걷어낸다.
             int slash = rel.IndexOfAny(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar });
             if (slash >= 0) rel = rel.Substring(slash + 1);
+            rel = rel.Replace('\\', '/');
 
-            var item = new PackageItem(path, Path.GetFileName(file), true, rel)
+            if (Path.GetExtension(file).ToLower() == ".unitypackage")
             {
-                CachedTempPath    = file,
-                ArchiveLabel      = label,
-                IsExternalArchive = true,
-            };
-            foundPackages.Add(item);
+                results.Add(new FoundPackage
+                {
+                    InnerPath      = pathPrefix + rel,
+                    ContainerChain = chain,
+                    CachedPath     = file,
+                });
+            }
+            else
+            {
+                DiscoverArchive(file, pathPrefix + rel + "/", AppendChain(chain, Path.GetFileName(file)),
+                                depth + 1, results, errors);
+            }
         }
     }
+
+    private static string AppendChain(string chain, string name)
+        => string.IsNullOrEmpty(chain) ? name : (string.IsNullOrEmpty(name) ? chain : chain + " › " + name);
 
     private void StartImport()
     {
@@ -941,24 +1184,24 @@ public class DiNePackagePatcher : EditorWindow
 
             if (item.IsExternalArchive)
             {
-                // 캐시가 지워졌으면 외부 도구로 다시 푼다.
-                string destRoot = Path.Combine(tempCachePath, "Ext_" + Guid.NewGuid().ToString("N").Substring(0, 8));
+                // 캐시가 지워졌으면 원본 압축을 다시 탐색해서 같은 항목을 찾아 푼다.
                 try
                 {
-                    Directory.CreateDirectory(destRoot);
-                    string err;
-                    var files = DiNeArchiveTools.ExtractUnityPackages(item.SourcePath, destRoot, out err);
-                    string wanted = Path.GetFileName(item.PackagePathInZip ?? item.DisplayName);
-                    string hit = files.FirstOrDefault(f =>
-                                     Path.GetFileName(f).Equals(wanted, StringComparison.OrdinalIgnoreCase))
-                                 ?? files.FirstOrDefault();
-                    if (hit == null)
+                    var results = new List<FoundPackage>();
+                    var errors  = new List<string>();
+                    DiscoverArchive(item.SourcePath, "", "", 0, results, errors);
+
+                    var hit = results.FirstOrDefault(r => r.InnerPath == item.PackagePathInZip);
+                    string file = hit != null ? MaterializeFound(hit) : null;
+                    foreach (var other in results) if (other != hit) DeleteCachedFile(other);
+
+                    if (file == null)
                     {
-                        Debug.LogError($"[DiNe] {item.ArchiveLabel} 재추출 실패: {item.DisplayName}\n{err}");
+                        Debug.LogError($"[DiNe] {item.ArchiveLabel} 재추출 실패: {item.DisplayName}\n" + string.Join("\n", errors));
                         return null;
                     }
-                    item.CachedTempPath = hit;
-                    return Path.GetFullPath(hit);
+                    item.CachedTempPath = file;
+                    return Path.GetFullPath(file);
                 }
                 catch (Exception e)
                 {
@@ -1359,6 +1602,11 @@ public class DiNePackagePatcher : EditorWindow
                     /* 21 */ "📁  폴더 직접 선택",
                     /* 22 */ ".rar · .7z 를 열려면 7-Zip / WinRAR / Bandizip 이 필요합니다.",
                     /* 23 */ "압축 파일 안에서 .unitypackage 를 찾지 못했습니다. (콘솔 창 확인)",
+                    /* 24 */ "넣을 패키지 선택",
+                    /* 25 */ "{0} 안에서 패키지 {1}개를 찾았습니다.\n목록에 넣을 항목을 선택하세요.",
+                    /* 26 */ "선택 항목 추가",
+                    /* 27 */ "취소",
+                    /* 28 */ "선택 창 {0} / {1}   ·   이 창 뒤에 {2}개 더 남았습니다",
                 };
                 break;
             case LanguagePreset.Japanese:
@@ -1386,6 +1634,11 @@ public class DiNePackagePatcher : EditorWindow
                     /* 21 */ "📁  フォルダを直接選択",
                     /* 22 */ ".rar · .7z を開くには 7-Zip / WinRAR / Bandizip が必要です。",
                     /* 23 */ "圧縮ファイル内に .unitypackage が見つかりません。(コンソール確認)",
+                    /* 24 */ "追加するパッケージを選択",
+                    /* 25 */ "{0} の中にパッケージが {1} 個見つかりました。\nリストに追加する項目を選択してください。",
+                    /* 26 */ "選択項目を追加",
+                    /* 27 */ "キャンセル",
+                    /* 28 */ "選択ウィンドウ {0} / {1}   ·   この後にあと {2} 個あります",
                 };
                 break;
             default:
@@ -1413,6 +1666,11 @@ public class DiNePackagePatcher : EditorWindow
                     /* 21 */ "📁  Browse Folder",
                     /* 22 */ "7-Zip / WinRAR / Bandizip is required to open .rar · .7z files.",
                     /* 23 */ "No .unitypackage found inside the archive. (Check Console)",
+                    /* 24 */ "Select Packages to Add",
+                    /* 25 */ "Found {1} packages inside {0}.\nChoose which ones to add to the list.",
+                    /* 26 */ "Add Selected",
+                    /* 27 */ "Cancel",
+                    /* 28 */ "Window {0} / {1}   ·   {2} more after this one",
                 };
                 break;
         }

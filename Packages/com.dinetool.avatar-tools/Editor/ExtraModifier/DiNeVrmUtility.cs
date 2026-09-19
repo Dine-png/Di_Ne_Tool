@@ -26,6 +26,14 @@ namespace DiNeTool.ExtraModifier.Editor
         public int SpringBones;
         public int SpringColliders;
         public int SkippedColliders;
+        /// <summary>내보내기 대상이 아니라 변환하지 않은 PhysBone(비활성 오브젝트 등).</summary>
+        public int SkippedSpringBones;
+        /// <summary>참조를 정리한 SpringBone.</summary>
+        public int RepairedSpringBones;
+        /// <summary>쓸 수 있는 RootBone이 남지 않아 제거한 SpringBone.</summary>
+        public int RemovedSpringBones;
+        /// <summary>아무 역할이 없어 제거한 빈 오브젝트.</summary>
+        public int RemovedEmptyObjects;
         public int RemovedPhysBones;
         public int KeptPhysBones;
         public int ConvertedConstraints;
@@ -44,7 +52,12 @@ namespace DiNeTool.ExtraModifier.Editor
         public bool Succeeded => string.IsNullOrEmpty(Error);
 
         public string Summary => Succeeded
-            ? $"Bones {MergedBones} / SpringBones {SpringBones} / Constraints {ConvertedConstraints} / Materials {ConvertedMaterials} / Removed {RemovedComponents}"
+            ? $"Bones {MergedBones} / SpringBones {SpringBones} / Constraints {ConvertedConstraints} / Materials {ConvertedMaterials} / Removed {RemovedComponents}" +
+              (SkippedSpringBones > 0 ? $" / Skipped {SkippedSpringBones}" : string.Empty) +
+              (RepairedSpringBones > 0 || RemovedSpringBones > 0
+                  ? $" / Repaired {RepairedSpringBones}+{RemovedSpringBones}"
+                  : string.Empty) +
+              (RemovedEmptyObjects > 0 ? $" / Empty {RemovedEmptyObjects}" : string.Empty)
             : Error;
 
         public void Add(DiNeVrmReport other)
@@ -55,6 +68,10 @@ namespace DiNeTool.ExtraModifier.Editor
             SpringBones += other.SpringBones;
             SpringColliders += other.SpringColliders;
             SkippedColliders += other.SkippedColliders;
+            SkippedSpringBones += other.SkippedSpringBones;
+            RemovedEmptyObjects += other.RemovedEmptyObjects;
+            RepairedSpringBones += other.RepairedSpringBones;
+            RemovedSpringBones += other.RemovedSpringBones;
             RemovedPhysBones += other.RemovedPhysBones;
             KeptPhysBones += other.KeptPhysBones;
             ConvertedConstraints += other.ConvertedConstraints;
@@ -82,13 +99,16 @@ namespace DiNeTool.ExtraModifier.Editor
         public DiNeVrmMaterialOptions MaterialOptions;
         /// <summary>마지막에 UniVRM의 Freeze T-Pose(본 정규화)를 실행할지.</summary>
         public bool FreezeTPose;
+        /// <summary>정리가 끝난 뒤 남은 빈 오브젝트를 지울지.</summary>
+        public bool RemoveEmptyObjects;
 
         public static DiNeVrmOptions Default => new DiNeVrmOptions
         {
             PhysBoneMode = DiNeVrmPhysBoneMode.Convert,
             ConvertMaterials = true,
-            MaterialOptions = DiNeVrmMaterialOptions.Preserve,
-            FreezeTPose = false
+            MaterialOptions = DiNeVrmMaterialOptions.Default,
+            FreezeTPose = false,
+            RemoveEmptyObjects = false
         };
     }
 
@@ -158,6 +178,10 @@ namespace DiNeTool.ExtraModifier.Editor
                 }
 
                 report.Add(CleanupForVrm(workingCopy));
+
+                // 컴포넌트를 다 걷어낸 뒤에 해야 "이제서야 비게 된" 오브젝트까지 잡힌다.
+                if (options.RemoveEmptyObjects)
+                    report.Add(RemoveEmptyObjects(workingCopy));
 
                 // Freeze T-Pose는 반드시 마지막에. UniVRM의 본 정규화는 VRM 컴포넌트만 이해하므로
                 // PhysBone이 남은 상태에서 돌리면 참조가 끊긴다.
@@ -318,6 +342,14 @@ namespace DiNeTool.ExtraModifier.Editor
                         continue;
 
                     var host = GetMember(collider, "rootTransform") as Transform ?? collider.transform;
+                    // UniVRM은 내보내기 루트 밖이거나 비활성인 트랜스폼을 내보내지 않는다.
+                    // 그런 곳에 ColliderGroup을 만들면 내보내기에서 "is out of hierarchy"로 막힌다.
+                    if (!IsExportTarget(host, avatarRoot.transform))
+                    {
+                        report.SkippedColliders++;
+                        continue;
+                    }
+
                     var spheres = ToSpheres(collider, host, out var skipped);
                     if (skipped)
                         report.SkippedColliders++;
@@ -346,6 +378,14 @@ namespace DiNeTool.ExtraModifier.Editor
                 var root = GetMember(physBone, "rootTransform") as Transform ?? physBone.transform;
                 if (root == null)
                     continue;
+
+                // 비활성 오브젝트(꺼 둔 의상 등)는 VRM으로 내보내지지 않으므로 SpringBone도 만들지 않는다.
+                // 만들어 두면 UniVRM 내보내기에서 "RootBones[0] is not active"로 막힌다.
+                if (!IsExportTarget(root, avatarRoot.transform))
+                {
+                    report.SkippedSpringBones++;
+                    continue;
+                }
 
                 var springBone = Undo.AddComponent(secondary.gameObject, springBoneType);
                 var springObject = new SerializedObject(springBone);
@@ -376,10 +416,226 @@ namespace DiNeTool.ExtraModifier.Editor
             foreach (var collider in CollectPhysBoneComponents(avatarRoot))
                 Undo.DestroyObjectImmediate(collider);
 
+            // 예전 변환이 남긴 잘못된 참조까지 여기서 함께 정리한다.
+            report.Add(RepairSpringBones(avatarRoot));
+
             EditorUtility.SetDirty(avatarRoot);
             Debug.Log($"[DiNe VRM] Converted {report.SpringBones} PhysBones and {report.SpringColliders} collider groups " +
-                      $"(unsupported colliders: {report.SkippedColliders}).", avatarRoot);
+                      $"(unsupported colliders: {report.SkippedColliders}, " +
+                      $"skipped inactive/out-of-hierarchy PhysBones: {report.SkippedSpringBones}).", avatarRoot);
             return report;
+        }
+
+        /// <summary>
+        /// UniVRM이 내보낼 수 있는 트랜스폼인지. 내보내기 루트의 자손이면서 비활성이 아니어야 한다.
+        /// UniVRM 0.x의 내보내기 검사는 이 조건을 벗어난 참조를
+        /// "is out of hierarchy" / "is not active" 오류로 막는다.
+        /// </summary>
+        private static bool IsExportTarget(Transform transform, Transform exportRoot)
+        {
+            if (transform == null || exportRoot == null || !transform.IsChildOf(exportRoot))
+                return false;
+
+            // 루트 자신이 씬에서 꺼져 있어도 작업은 할 수 있어야 하므로 루트까지만 확인한다.
+            for (var current = transform; current != null && current != exportRoot; current = current.parent)
+                if (!current.gameObject.activeSelf)
+                    return false;
+            return true;
+        }
+
+        /// <summary>
+        /// 이미 만들어진 UniVRM 0.x SpringBone에서 내보낼 수 없는 참조를 걷어낸다.
+        /// 쓸 수 있는 RootBone이 하나도 남지 않으면 그 SpringBone 자체를 지운다.
+        /// </summary>
+        public static DiNeVrmReport RepairSpringBones(GameObject avatarRoot)
+        {
+            var report = new DiNeVrmReport();
+            if (avatarRoot == null)
+            {
+                report.Error = "Avatar is not assigned.";
+                return report;
+            }
+
+            var springBoneType = FindType("VRM.VRMSpringBone");
+            if (springBoneType == null)
+            {
+                report.Error = "UniVRM 0.x was not found.";
+                return report;
+            }
+
+            var exportRoot = avatarRoot.transform;
+            foreach (var springBone in CollectSpringBones(avatarRoot, springBoneType))
+            {
+                var serialized = new SerializedObject(springBone);
+                var roots = FindProperty(serialized, new[] { "RootBones", "m_roots" });
+                var groups = FindProperty(serialized, new[] { "ColliderGroups", "m_colliderGroups" });
+
+                var validRoots = CollectValidReferences(roots, exportRoot, out var removedRoots);
+                var validGroups = CollectValidReferences(groups, exportRoot, out var removedGroups);
+
+                if (validRoots.Count == 0)
+                {
+                    Undo.DestroyObjectImmediate(springBone);
+                    report.RemovedSpringBones++;
+                    continue;
+                }
+
+                if (removedRoots == 0 && removedGroups == 0)
+                    continue;
+
+                SetObjectArray(serialized, new[] { "RootBones", "m_roots" }, validRoots.ToArray());
+                SetObjectArray(serialized, new[] { "ColliderGroups", "m_colliderGroups" }, validGroups.ToArray());
+                serialized.ApplyModifiedPropertiesWithoutUndo();
+                report.RepairedSpringBones++;
+            }
+
+            if (report.RepairedSpringBones > 0 || report.RemovedSpringBones > 0)
+            {
+                EditorUtility.SetDirty(avatarRoot);
+                Debug.Log($"[DiNe VRM] Repaired {report.RepairedSpringBones} SpringBones and " +
+                          $"removed {report.RemovedSpringBones} unusable SpringBones.", avatarRoot);
+            }
+            return report;
+        }
+
+        /// <summary>
+        /// 아무 역할도 없는 빈 오브젝트를 지운다.
+        /// Transform 말고는 컴포넌트가 없고, 자식도 없고, 휴머노이드 본도 아니고,
+        /// 어떤 컴포넌트도 참조하지 않는 오브젝트만 대상이다. 안쪽부터 지우므로 빈 사슬도 함께 사라진다.
+        /// </summary>
+        public static DiNeVrmReport RemoveEmptyObjects(GameObject avatarRoot)
+        {
+            var report = new DiNeVrmReport();
+            if (avatarRoot == null)
+            {
+                report.Error = "Avatar is not assigned.";
+                return report;
+            }
+
+            var keep = CollectReferencedTransforms(avatarRoot);
+            keep.Add(avatarRoot.transform);
+            foreach (var bone in CollectHumanoidBones(avatarRoot))
+                keep.Add(bone);
+
+            var removedNames = new List<string>();
+            // 깊은 곳부터 확인해야 "빈 오브젝트만 담고 있던 부모"까지 연쇄로 정리된다.
+            foreach (var transform in avatarRoot.GetComponentsInChildren<Transform>(true)
+                         .OrderByDescending(GetDepth)
+                         .ToArray())
+            {
+                if (transform == null || transform == avatarRoot.transform)
+                    continue;
+                if (transform.childCount > 0 || keep.Contains(transform))
+                    continue;
+                if (transform.GetComponents<Component>().Length > 1)
+                    continue; // Transform 외의 컴포넌트가 있으면 역할이 있는 오브젝트다.
+
+                removedNames.Add(transform.name);
+                Undo.DestroyObjectImmediate(transform.gameObject);
+                report.RemovedEmptyObjects++;
+            }
+
+            if (report.RemovedEmptyObjects > 0)
+            {
+                EditorUtility.SetDirty(avatarRoot);
+                Debug.Log($"[DiNe VRM] Removed {report.RemovedEmptyObjects} empty objects: " +
+                          string.Join(", ", removedNames.Take(20)) +
+                          (removedNames.Count > 20 ? " ..." : string.Empty), avatarRoot);
+            }
+            return report;
+        }
+
+        /// <summary>지우면 안 되는(어딘가에서 참조 중인) 트랜스폼을 모은다.</summary>
+        private static HashSet<Transform> CollectReferencedTransforms(GameObject avatarRoot)
+        {
+            var referenced = new HashSet<Transform>();
+            foreach (var component in avatarRoot.GetComponentsInChildren<Component>(true))
+            {
+                if (component == null || component is Transform)
+                    continue;
+
+                var serialized = new SerializedObject(component);
+                var property = serialized.GetIterator();
+                while (property.Next(true))
+                {
+                    if (property.propertyType != SerializedPropertyType.ObjectReference)
+                        continue;
+
+                    var value = property.objectReferenceValue;
+                    var transform = value is GameObject gameObject
+                        ? gameObject.transform
+                        : (value as Component)?.transform;
+                    if (transform != null)
+                        referenced.Add(transform);
+                }
+            }
+            return referenced;
+        }
+
+        /// <summary>Animator가 휴머노이드로 쓰고 있는 본. 비어 보여도 지우면 리그가 깨진다.</summary>
+        private static IEnumerable<Transform> CollectHumanoidBones(GameObject avatarRoot)
+        {
+            var animator = avatarRoot.GetComponent<Animator>();
+            if (animator == null || animator.avatar == null || !animator.avatar.isHuman)
+                yield break;
+
+            foreach (HumanBodyBones bone in Enum.GetValues(typeof(HumanBodyBones)))
+            {
+                if (bone == HumanBodyBones.LastBone)
+                    continue;
+                var transform = animator.GetBoneTransform(bone);
+                if (transform != null)
+                    yield return transform;
+            }
+        }
+
+        /// <summary>내보내기에서 막힐 참조를 가진 SpringBone 수를 센다. (사전 점검용)</summary>
+        public static int CountBrokenSpringBones(GameObject avatarRoot)
+        {
+            var springBoneType = avatarRoot != null ? FindType("VRM.VRMSpringBone") : null;
+            if (springBoneType == null)
+                return 0;
+
+            var exportRoot = avatarRoot.transform;
+            var broken = 0;
+            foreach (var springBone in CollectSpringBones(avatarRoot, springBoneType))
+            {
+                var serialized = new SerializedObject(springBone);
+                CollectValidReferences(FindProperty(serialized, new[] { "RootBones", "m_roots" }), exportRoot, out var removedRoots);
+                CollectValidReferences(FindProperty(serialized, new[] { "ColliderGroups", "m_colliderGroups" }), exportRoot, out var removedGroups);
+                if (removedRoots > 0 || removedGroups > 0)
+                    broken++;
+            }
+            return broken;
+        }
+
+        private static List<Component> CollectSpringBones(GameObject avatarRoot, Type springBoneType)
+        {
+            return avatarRoot.GetComponentsInChildren<Component>(true)
+                .Where(component => component != null && springBoneType.IsInstanceOfType(component))
+                .ToList();
+        }
+
+        /// <summary>배열 프로퍼티에서 내보낼 수 있는 참조만 골라낸다.</summary>
+        private static List<UnityEngine.Object> CollectValidReferences(
+            SerializedProperty property, Transform exportRoot, out int removed)
+        {
+            var valid = new List<UnityEngine.Object>();
+            removed = 0;
+            if (property == null || !property.isArray)
+                return valid;
+
+            for (var i = 0; i < property.arraySize; i++)
+            {
+                var value = property.GetArrayElementAtIndex(i).objectReferenceValue;
+                var transform = value is Component component ? component.transform
+                    : value as Transform;
+                if (transform != null && IsExportTarget(transform, exportRoot))
+                    valid.Add(value);
+                else
+                    removed++;
+            }
+            return valid;
         }
 
         /// <summary>VRC PhysBone 값을 UniVRM SpringBone 파라미터로 옮긴다.</summary>

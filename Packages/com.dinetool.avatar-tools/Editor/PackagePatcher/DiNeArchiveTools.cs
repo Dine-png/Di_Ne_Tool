@@ -25,6 +25,20 @@ internal static class DiNeArchiveTools
         }
     }
 
+    /// <summary>패키지 패쳐가 안을 들여다보는 압축 확장자인지 (중첩 압축 탐색용).</summary>
+    public static bool IsArchive(string ext)
+    {
+        switch (ext)
+        {
+            case ".zip":
+            case ".rar":
+            case ".7z":
+                return true;
+            default:
+                return false;
+        }
+    }
+
     private class Tool
     {
         public string Path;
@@ -132,9 +146,11 @@ internal static class DiNeArchiveTools
 
     /// <summary>
     /// 압축 파일 안의 .unitypackage 를 전부 destDir 로 추출한다.
+    /// includeNestedArchives 가 켜져 있으면 안쪽의 .zip/.rar/.7z 도 함께 꺼내서
+    /// 호출 측이 재귀적으로 들여다볼 수 있게 한다.
     /// 반환값은 추출된 파일의 절대 경로 목록(비어 있을 수 있음).
     /// </summary>
-    public static List<string> ExtractUnityPackages(string archivePath, string destDir, out string error)
+    public static List<string> ExtractUnityPackages(string archivePath, string destDir, bool includeNestedArchives, out string error)
     {
         error = null;
         var tools = EnumerateTools();
@@ -151,14 +167,20 @@ internal static class DiNeArchiveTools
             try { Directory.CreateDirectory(attemptDir); }
             catch (Exception e) { error = e.Message; return new List<string>(); }
 
-            string args = BuildArgs(tool, archivePath, attemptDir);
+            string args = BuildArgs(tool, archivePath, attemptDir, includeNestedArchives);
             string toolError;
             bool ran = RunProcess(tool.Path, args, out toolError);
 
             var extracted = new List<string>();
             try
             {
-                extracted = Directory.GetFiles(attemptDir, "*.unitypackage", SearchOption.AllDirectories).ToList();
+                extracted = Directory.GetFiles(attemptDir, "*.*", SearchOption.AllDirectories)
+                    .Where(f =>
+                    {
+                        string e = Path.GetExtension(f).ToLowerInvariant();
+                        return e == ".unitypackage" || (includeNestedArchives && IsArchive(e));
+                    })
+                    .ToList();
             }
             catch { }
 
@@ -174,17 +196,21 @@ internal static class DiNeArchiveTools
         return new List<string>();
     }
 
-    private static string BuildArgs(Tool tool, string archivePath, string destDir)
+    private static string BuildArgs(Tool tool, string archivePath, string destDir, bool includeNestedArchives)
     {
+        string masks = includeNestedArchives
+            ? "\"*.unitypackage\" \"*.zip\" \"*.rar\" \"*.7z\""
+            : "\"*.unitypackage\"";
+
         if (tool.IsBandizip)
             // bz 는 마스크 필터가 없어 통째로 푼 뒤 스캔한다.
             return $"x -y -o:\"{destDir}\" \"{archivePath}\"";
 
         if (tool.IsUnrar)
-            return $"x -y -idq \"{archivePath}\" \"*.unitypackage\" \"{destDir}{Path.DirectorySeparatorChar}\"";
+            return $"x -y -idq \"{archivePath}\" {masks} \"{destDir}{Path.DirectorySeparatorChar}\"";
 
         // 7-Zip: 하위 경로 포함 재귀 매칭
-        return $"x -y -bd -r -o\"{destDir}\" \"{archivePath}\" \"*.unitypackage\"";
+        return $"x -y -bd -r -o\"{destDir}\" \"{archivePath}\" {masks}";
     }
 
     private static bool RunProcess(string exe, string args, out string error)

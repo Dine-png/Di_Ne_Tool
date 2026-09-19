@@ -103,6 +103,8 @@ public class DiNeMultiSupporter : Editor
                 { "defaultState", "기본 상태 (Default)" },
                 { "menuButton", "메뉴 버튼" },
                 { "defaultWarn", "기본 상태는 메뉴 버튼이 생성되지 않습니다. (꺼진 상태 or 기본 의상)" },
+                { "emptyBtnWarn", "대상 오브젝트가 비어 있습니다(None).\n이대로 업로드하면 이 버튼은 자동으로 제거된 뒤 적용됩니다." },
+                { "emptyBtnRemove", "이 버튼 삭제" },
                 { "menuName", "메뉴 이름" },
                 { "linkedObj", "함께 켜질 오브젝트 (Linked):" },
                 { "linkDragHint", "추가 오브젝트 드래그" },
@@ -139,6 +141,8 @@ public class DiNeMultiSupporter : Editor
                 { "defaultState", "Default State" },
                 { "menuButton", "Menu Button" },
                 { "defaultWarn", "Default state does not create a menu button. (Off state or Base outfit)" },
+                { "emptyBtnWarn", "Target Object is empty (None).\nIf you upload as-is, this button is removed automatically before applying." },
+                { "emptyBtnRemove", "Remove This Button" },
                 { "menuName", "Menu Name" },
                 { "linkedObj", "Linked Objects (Toggle Together):" },
                 { "linkDragHint", "Drag extra objects here" },
@@ -175,6 +179,8 @@ public class DiNeMultiSupporter : Editor
                 { "defaultState", "基本状態 (Default)" },
                 { "menuButton", "メニューボタン" },
                 { "defaultWarn", "基本状態はメニューボタンが生成されません。(オフ状態 or 基本衣装)" },
+                { "emptyBtnWarn", "対象オブジェクトが空です(None)。\nこのままアップロードすると、このボタンは自動的に削除されてから適用されます。" },
+                { "emptyBtnRemove", "このボタンを削除" },
                 { "menuName", "メニュー名" },
                 { "linkedObj", "連動オブジェクト (Linked):" },
                 { "linkDragHint", "追加オブジェクトをドラッグ" },
@@ -549,6 +555,10 @@ public class DiNeMultiSupporter : Editor
         Event evt = Event.current;
         if (evt.type == EventType.Repaint) itemRects.Clear();
 
+        // 대상이 비어있는(None) 버튼의 삭제 요청. GUI 레이아웃이 깨지지 않도록
+        // 이번 프레임 그리기를 모두 마친 뒤에 실제 제거를 수행한다.
+        int pendingEmptyButtonRemoval = -1;
+
         for (int i = 0; i < targets.arraySize; i++)
         {
             SerializedProperty t    = targets.GetArrayElementAtIndex(i);
@@ -656,6 +666,18 @@ public class DiNeMultiSupporter : Editor
 
             if (i != 0)
             {
+                if (t.objectReferenceValue == null)
+                {
+                    GUILayout.Space(4);
+                    EditorGUILayout.HelpBox(lang["emptyBtnWarn"], MessageType.Warning);
+
+                    Color previousRemoveColor = GUI.backgroundColor;
+                    GUI.backgroundColor = new Color(1f, 0.7f, 0.7f);
+                    if (GUILayout.Button(lang["emptyBtnRemove"], GUILayout.Height(24)))
+                        pendingEmptyButtonRemoval = i;
+                    GUI.backgroundColor = previousRemoveColor;
+                }
+
                 GUILayout.Space(4);
                 EditorGUILayout.BeginHorizontal();
                 Rect iconRect = GUILayoutUtility.GetRect(76, 76, GUILayout.Width(76), GUILayout.Height(76));
@@ -843,6 +865,22 @@ public class DiNeMultiSupporter : Editor
             EditorGUIUtility.AddCursorRect(
                 new Rect(0, 0, EditorGUIUtility.currentViewWidth, Screen.height),
                 MouseCursor.Pan);
+        }
+
+        // 확장 패키지(Random Dresser 등)의 레이어별 추가 UI
+        EditorGUILayout.Space(4);
+        DiNeMultiDresser.InvokeDrawLayerExtensionUI(gen, index);
+
+        // 비어있는(None) 버튼 삭제 요청 처리 (레이아웃 그리기가 끝난 뒤)
+        if (pendingEmptyButtonRemoval >= 0 && pendingEmptyButtonRemoval < currentLayerData.targets.Count)
+        {
+            serializedObject.ApplyModifiedProperties();
+            ClearPreview();
+            Undo.RecordObject(gen, "Remove Empty Dresser Button");
+            currentLayerData.RemoveAt(pendingEmptyButtonRemoval);
+            EditorUtility.SetDirty(gen);
+            serializedObject.Update();
+            Repaint();
         }
     }
     

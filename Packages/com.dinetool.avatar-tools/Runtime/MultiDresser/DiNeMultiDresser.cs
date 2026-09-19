@@ -9,7 +9,7 @@ using System.IO;
 using System.Linq;
 
 [AddComponentMenu("DiNe/Multi Dresser")]
-public class DiNeMultiDresser : MonoBehaviour
+public class DiNeMultiDresser : MonoBehaviour, VRC.SDKBase.IEditorOnly
 {
     [System.Serializable]
     public struct ShapeKeyState { public string name; public float value; public bool everRecorded; }
@@ -65,6 +65,34 @@ public class DiNeMultiDresser : MonoBehaviour
     [SerializeField] public List<GameObject> shapeKeyTargets = new List<GameObject>();
     [SerializeField] public List<DresserLayer> layers = new List<DresserLayer>();
 
+    // ──────────────────────────────────────────────
+    //  확장 훅 (외부 패키지용)
+    // ──────────────────────────────────────────────
+    // Multi Dresser 를 확장하는 별도 패키지(Random Dresser 등)가 구독하는 지점.
+    // 이 파일은 확장 패키지의 존재를 몰라야 하므로, 범용 델리게이트만 노출한다.
+
+    /// <summary>
+    /// 인스펙터가 옷장(레이어) UI를 그린 뒤 호출한다. (dresser, layerIndex)
+    /// 확장 패키지가 레이어별 추가 UI를 여기에 그린다.
+    /// </summary>
+    public static event System.Action<DiNeMultiDresser, int> DrawLayerExtensionUI;
+
+    /// <summary>
+    /// Generate() 가 FX 레이어/메뉴 생성을 마친 직후 호출한다.
+    /// 임시 세션(자동 적용) 중이라면 animatorController 는 임시 FX 클론을 가리키므로,
+    /// 구독자는 이 시점의 animatorController 에 쓰면 원본 FX를 건드리지 않는다.
+    /// </summary>
+    public static event System.Action<DiNeMultiDresser> OnGenerated;
+
+    /// <summary>인스펙터 전용. 구독자 예외가 인스펙터를 죽이지 않게 감싼다.</summary>
+    public static void InvokeDrawLayerExtensionUI(DiNeMultiDresser dresser, int layerIndex)
+    {
+        var handlers = DrawLayerExtensionUI;
+        if (handlers == null) return;
+        try { handlers(dresser, layerIndex); }
+        catch (System.Exception e) { Debug.LogException(e); }
+    }
+
     private static Material[] CloneMaterials(Material[] materials)
     {
         return materials != null ? (Material[])materials.Clone() : new Material[0];
@@ -114,6 +142,12 @@ public class DiNeMultiDresser : MonoBehaviour
         Debug.Log("🚀 [DiNe] 생성 프로세스 시작...");
         TryAutoAssignFXController();
 
+        // 대상이 비어있는(None) 버튼이 남아 있으면 메뉴/스테이트 인덱스가 어긋나
+        // 드레서가 정상적으로 적용되지 않는다. 생성 직전에 자동으로 정리한다.
+        int removedEmptyButtons = RemoveEmptyButtons();
+        if (removedEmptyButtons > 0)
+            Debug.LogWarning($"⚠ [DiNe] 대상 오브젝트가 비어있는(None) 메뉴 버튼 {removedEmptyButtons}개를 자동으로 제거했습니다.");
+
         // 1. 기존 데이터 말소 (Clean Up)
         if (clearExistingGeneratedData)
             DeleteAllGeneratedData();
@@ -127,6 +161,14 @@ public class DiNeMultiDresser : MonoBehaviour
         TryAddExpressionParameters();
         DiNeMultiMenuGenerator.TryCreateExpressionMenu(this, generatedRootFolder, mergeIntoExistingMenu);
 
+        // 확장 패키지(Random Dresser 등)가 생성된 FX 위에 자기 레이어를 얹는 지점.
+        // 구독자 예외가 드레서 생성 자체를 실패시키지 않도록 감싼다.
+        var generatedHandlers = OnGenerated;
+        if (generatedHandlers != null)
+        {
+            try { generatedHandlers(this); }
+            catch (System.Exception e) { Debug.LogException(e); }
+        }
 
         Debug.Log("✨ [DiNe] 모든 작업 완료! (기존 데이터 삭제 후 재생성됨)");
     }
@@ -201,6 +243,49 @@ public class DiNeMultiDresser : MonoBehaviour
         shapeKeyTargets.Clear();
 
         EditorUtility.SetDirty(this);
+    }
+
+    /// <summary>
+    /// 대상 오브젝트가 비어있는(None) 메뉴 버튼을 모든 레이어에서 제거한다.
+    /// 0번(기본 상태)은 원래 비어있을 수 있는 슬롯이므로 유지한다.
+    /// </summary>
+    /// <returns>제거된 버튼 수.</returns>
+    public int RemoveEmptyButtons()
+    {
+        if (layers == null) return 0;
+
+        int removed = 0;
+        foreach (var layer in layers)
+        {
+            if (layer?.targets == null) continue;
+
+            for (int i = layer.targets.Count - 1; i >= 1; i--)
+            {
+                if (layer.targets[i] != null) continue;
+                layer.RemoveAt(i);
+                removed++;
+            }
+        }
+
+        if (removed > 0)
+            EditorUtility.SetDirty(this);
+
+        return removed;
+    }
+
+    /// <summary>대상이 비어있는(None) 버튼이 하나라도 있으면 true.</summary>
+    public bool HasEmptyButtons()
+    {
+        if (layers == null) return false;
+
+        foreach (var layer in layers)
+        {
+            if (layer?.targets == null) continue;
+            for (int i = 1; i < layer.targets.Count; i++)
+                if (layer.targets[i] == null) return true;
+        }
+
+        return false;
     }
 
     public bool HasConfiguredContent()

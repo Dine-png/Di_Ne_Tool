@@ -180,6 +180,12 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         }
     }
 
+    // 업로드 흐름(씬 원본은 건드리지 않는다):
+    //   OnBuildRequested          : 이전 잔여 세션 정리, 빌드 진행 플래그만 켠다.
+    //   Preprocess(-12000, 클론)   : SDK가 만든 빌드 클론에만 임시 FX/메뉴/파라미터를 만들어 붙인다.
+    //   Preprocess(0, 클론)        : 라이팅 디자이너 머티리얼 정규화(NDMF/MA가 머티리얼을 바꾼 뒤).
+    //   Postprocess / 빌더 종료    : 클론은 SDK가 버리므로 임시 폴더만 지우면 끝. 복원할 게 없다.
+    // 씬 아바타에 직접 적용·복원하는 방식은 플레이 모드 테스트(ExitingEditMode)에서만 쓴다.
     public bool OnBuildRequested(VRCSDKRequestedBuildType requestedBuildType)
     {
         if (requestedBuildType != VRCSDKRequestedBuildType.Avatar)
@@ -187,19 +193,29 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
 
         try
         {
+            // 플레이 모드 테스트 등이 남긴 임시 세션이 씬에 남아 있으면 먼저 원본으로 되돌린다.
+            // 그래야 클론이 진짜 원본을 복사해 오고, 더미 위에 더미가 쌓이지 않는다.
+            BuildInProgress = false;
+            RestoreAllSessions("before build");
+
             BuildInProgress = true;
             EnsureBuilderHooks();
-            ApplyAllDressersInScene();
         }
         catch (Exception e)
         {
-            Debug.LogError($"[DiNe] Failed to prepare temporary Multi Dresser data for build: {e.Message}\n{e.StackTrace}");
+            Debug.LogError($"[DiNe] Failed to prepare Multi Dresser build: {e.Message}\n{e.StackTrace}");
         }
 
         return true;
     }
 
-    public bool OnPreprocessAvatar(GameObject avatarGameObject)
+    /// <summary>
+    /// 빌드 클론에 임시 세션을 만들어 붙인다(callbackOrder -12000 훅에서 호출).
+    /// NDMF의 본 처리(-11000)는 시작하자마자 EditorOnly 태그 오브젝트를 파괴하는데, Multi Dresser
+    /// 오브젝트는 DiNeMultiCleaner가 EditorOnly 태그를 강제하므로 그보다 먼저 돌아야 드레서가 살아 있다.
+    /// 또 이 순서여야 Modular Avatar 등이 우리 레이어/메뉴/파라미터까지 함께 병합해 준다.
+    /// </summary>
+    internal static void ApplyToBuildAvatar(GameObject avatarGameObject)
     {
         try
         {
@@ -212,15 +228,27 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
                 EnsureBuilderHooks();
             }
 
+            // 플레이 모드에서는 ExitingEditMode에서 씬 아바타에 이미 적용돼 있으므로
+            // ApplyTemporarySession의 활성 세션 가드가 중복 적용을 막는다.
             ApplyDressersForAvatarRoot(avatarGameObject);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[DiNe] Failed to apply temporary Multi Dresser data to build avatar: {e.Message}\n{e.StackTrace}");
+        }
+    }
 
+    public bool OnPreprocessAvatar(GameObject avatarGameObject)
+    {
+        try
+        {
             // 여기서 넘어오는 avatarGameObject는 SDK가 만든 빌드 클론이므로,
             // 렌더러의 머티리얼을 갈아끼워도 씬의 원본 아바타는 영향을 받지 않는다.
             DiNeLightingBaker.NormalizeForBuild(avatarGameObject);
         }
         catch (Exception e)
         {
-            Debug.LogError($"[DiNe] Failed to apply temporary Multi Dresser data to build avatar: {e.Message}\n{e.StackTrace}");
+            Debug.LogError($"[DiNe] Failed to normalize build avatar materials: {e.Message}\n{e.StackTrace}");
         }
 
         return true;
@@ -284,6 +312,15 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         EditorApplication.delayCall += () => TryRestoreIfIdle("build/upload finished");
     }
 
+    // SDK가 아바타 번들을 다 만든 직후(업로드 전) 호출된다. 번들은 이미 파일로 나왔으므로
+    // 임시 에셋을 지워도 안전하다. 빌더 이벤트(OnSdkBuildFinish 등)를 못 받는 경우
+    // (패널 밖에서 빌드가 시작됐거나 후킹 전에 빌드된 경우)에도 정리가 되도록 한 겹 더 둔다.
+    internal static void OnAvatarBuildPostprocessed()
+    {
+        BuildInProgress = false;
+        EditorApplication.delayCall += () => TryRestoreIfIdle("avatar build postprocess");
+    }
+
     // 더미는 (1) 빌드/업로드가 끝나고 (2) 플레이 모드도 아닐 때만 안전하게 제거할 수 있다.
     // 둘 중 하나라도 진행 중이면 그 작업이 더미를 참조하고 있을 수 있으므로 복원을 미룬다.
     // 미뤄진 복원은 나머지 조건이 풀리는 이벤트(빌드 종료 / 플레이 모드 종료)에서 다시 시도된다.
@@ -343,7 +380,9 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         var toggleGroups = new Dictionary<VRCAvatarDescriptor, List<DiNeSmartToggle>>();
         foreach (var smartToggle in smartToggles)
         {
-            var descriptor = smartToggle.GetComponentInParent<VRCAvatarDescriptor>();
+            // GetComponentInParent()는 비활성 오브젝트(부모가 꺼진 경우 포함)에서 null을 돌려준다.
+            // 위에서 비활성 토글도 수집했으므로 반드시 includeInactive로 찾아야 한다.
+            var descriptor = smartToggle.GetComponentInParent<VRCAvatarDescriptor>(true);
             if (descriptor == null)
             {
                 Debug.LogWarning($"[DiNe] Skipping Smart Toggle '{smartToggle.name}' because no VRCAvatarDescriptor was found.");
@@ -361,7 +400,8 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         var lightingGroups = new Dictionary<VRCAvatarDescriptor, List<DiNeLightingDesigner>>();
         foreach (var designer in lightingDesigners)
         {
-            var descriptor = designer.GetComponentInParent<VRCAvatarDescriptor>();
+            // 비활성 오브젝트 아래에 있는 디자이너도 설치 대상이므로 includeInactive로 찾는다.
+            var descriptor = designer.GetComponentInParent<VRCAvatarDescriptor>(true);
             if (descriptor == null)
             {
                 Debug.LogWarning($"[DiNe] Skipping Lighting Designer '{designer.name}' because no VRCAvatarDescriptor was found.");
@@ -454,8 +494,16 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         // 이미 적용된 상태이므로 그냥 건너뛴다(진짜 원본은 영속 세션이 보존).
         if (DescriptorPointsToTempAsset(descriptor))
         {
-            Debug.LogWarning($"[DiNe] Multi Dresser: '{descriptor.name}'가 이미 임시(_DiNe) 에셋을 가리키고 있어 중복 적용을 건너뜁니다. 진짜 원본은 영속 세션에 보존됩니다.");
-            return;
+            // 다만 그 임시 폴더를 책임지는 세션이 아예 없으면(유니티 재시작/크래시로 세션 기록이
+            // 날아간 '고아' 상태) 여기서 건너뛰는 순간 아바타는 영원히 더미를 가리킨 채 남고,
+            // 업로드할 때마다 아무것도 설치되지 않는다. 임시 폴더에 남겨둔 매니페스트로 원본을
+            // 되돌린 뒤 정상 경로로 계속 진행하고, 매니페스트조차 없으면(구버전이 남긴 폴더)
+            // 지금 가리키는 에셋을 기준으로 진행한다. 진짜 세션이 살아 있을 때만 건너뛴다.
+            if (!TryRecoverOrphanTempSession(descriptor))
+            {
+                Debug.LogWarning($"[DiNe] Multi Dresser: '{descriptor.name}'가 이미 임시(_DiNe) 에셋을 가리키고 있어 중복 적용을 건너뜁니다. 진짜 원본은 영속 세션에 보존됩니다.");
+                return;
+            }
         }
 
         var session = CreateTemporarySession(descriptor, dressers);
@@ -505,6 +553,308 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         return IsTempAsset(GetDescriptorFxController(descriptor))
             || IsTempAsset(descriptor.expressionsMenu)
             || IsTempAsset(descriptor.expressionParameters);
+    }
+
+    // 임시 세션 폴더에 함께 저장하는 원본 참조 매니페스트. SessionState는 유니티를 껐다 켜면
+    // 사라지기 때문에, 그 상태에서 더미만 남으면 원본을 되돌릴 방법이 없어진다.
+    private const string SessionManifestFileName = "__DiNeOriginals.json";
+
+    private static string GetSessionManifestPath(string sessionFolder)
+        => string.IsNullOrEmpty(sessionFolder) ? null : sessionFolder + "/" + SessionManifestFileName;
+
+    private static void WriteSessionManifest(TemporarySession session)
+    {
+        if (session == null || string.IsNullOrEmpty(session.TempFolderPath))
+            return;
+
+        try
+        {
+            File.WriteAllText(GetSessionManifestPath(session.TempFolderPath),
+                JsonUtility.ToJson(ToPersistedSession(session), true));
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[DiNe] Multi Dresser: 임시 세션 매니페스트 기록 실패: {e.Message}");
+        }
+    }
+
+    // 에셋 경로가 임시 폴더 안이면 그 세션 폴더(= __Temp/<세션>)를 돌려준다.
+    private static string GetSessionFolderOf(UnityEngine.Object asset)
+        => GetSessionFolderOfPath(AssetDatabase.GetAssetPath(asset));
+
+    private static string GetSessionFolderOfPath(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return null;
+
+        path = path.Replace('\\', '/');
+        if (!path.StartsWith(TempRootFolder + "/", StringComparison.Ordinal))
+            return null;
+
+        string rest = path.Substring(TempRootFolder.Length + 1);
+        int slash = rest.IndexOf('/');
+        return slash < 0 ? null : TempRootFolder + "/" + rest.Substring(0, slash);
+    }
+
+    private enum OriginalKind { Fx, Menu, Parameters }
+
+    private static bool IsTempPath(string path)
+        => !string.IsNullOrEmpty(path) && path.Replace('\\', '/').StartsWith(TempRootFolder, StringComparison.Ordinal);
+
+    /// <summary>
+    /// 세션이 기록한 '원본' 경로가 사실은 이전 빌드의 더미(__Temp)라면, 그 더미 폴더의 매니페스트를
+    /// 따라가며 진짜 원본을 찾는다. 매니페스트가 끊긴 구버전 폴더에 닿으면 파일명에서 _DiNe 접미사를
+    /// 벗겨 프로젝트에서 같은 이름의 에셋을 찾아본다.
+    /// 반환값: __Temp 밖의 경로, 원래부터 비어 있던 슬롯이면 빈 문자열, 못 찾으면 null.
+    /// </summary>
+    private static string ResolveTrueOriginalPath(string path, OriginalKind kind)
+    {
+        if (string.IsNullOrEmpty(path))
+            return string.Empty;
+
+        string current = path.Replace('\\', '/');
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+
+        while (IsTempPath(current))
+        {
+            if (!visited.Add(current))
+                return null;
+
+            string folder = GetSessionFolderOfPath(current);
+            string manifestPath = GetSessionManifestPath(folder);
+            PersistedSession manifest = null;
+            if (!string.IsNullOrEmpty(manifestPath) && File.Exists(manifestPath))
+            {
+                try { manifest = JsonUtility.FromJson<PersistedSession>(File.ReadAllText(manifestPath)); }
+                catch { manifest = null; }
+            }
+
+            if (manifest == null)
+                return GuessOriginalPathByName(current, kind);
+
+            string next;
+            switch (kind)
+            {
+                case OriginalKind.Fx: next = manifest.originalFxControllerPath; break;
+                case OriginalKind.Menu: next = manifest.originalMenuPath; break;
+                default: next = manifest.originalParametersPath; break;
+            }
+
+            // 매니페스트가 있는데 비어 있으면 그 슬롯은 원래 비어 있던 것이다.
+            if (string.IsNullOrEmpty(next))
+                return string.Empty;
+
+            current = next.Replace('\\', '/');
+        }
+
+        return current;
+    }
+
+    // 더미는 '원본이름_DiNe(_DiNe...)( N)' 꼴로 이름 붙는다. 접미사를 벗겨 원본 후보를 찾는다.
+    // 후보가 정확히 하나일 때만 인정한다(잘못된 에셋을 원본으로 박아 넣는 것이 더 큰 사고다).
+    private static string GuessOriginalPathByName(string tempPath, OriginalKind kind)
+    {
+        string name = Path.GetFileNameWithoutExtension(tempPath);
+        string extension = Path.GetExtension(tempPath);
+
+        bool changed = true;
+        while (changed)
+        {
+            changed = false;
+            string trimmed = name.TrimEnd();
+            int space = trimmed.LastIndexOf(' ');
+            if (space > 0 && trimmed.Substring(space + 1).All(char.IsDigit))
+            {
+                name = trimmed.Substring(0, space);
+                changed = true;
+                continue;
+            }
+            if (name.EndsWith("_DiNe", StringComparison.Ordinal))
+            {
+                name = name.Substring(0, name.Length - 5);
+                changed = true;
+            }
+        }
+
+        // 원본이 없어서 fallback 이름으로 만들어진 더미면 원래 슬롯은 비어 있던 것이다.
+        if (name == "FX" || name == "ExpressionsMenu" || name == "ExpressionParameters" || name.Length == 0)
+            return string.Empty;
+
+        string typeFilter;
+        switch (kind)
+        {
+            case OriginalKind.Fx: typeFilter = "t:AnimatorController"; break;
+            case OriginalKind.Menu: typeFilter = "t:VRCExpressionsMenu"; break;
+            default: typeFilter = "t:VRCExpressionParameters"; break;
+        }
+
+        var candidates = AssetDatabase.FindAssets($"{name} {typeFilter}")
+            .Select(AssetDatabase.GUIDToAssetPath)
+            .Where(candidate => !string.IsNullOrEmpty(candidate) && !IsTempPath(candidate))
+            .Where(candidate => string.Equals(Path.GetFileNameWithoutExtension(candidate), name, StringComparison.Ordinal))
+            .Where(candidate => string.Equals(Path.GetExtension(candidate), extension, StringComparison.OrdinalIgnoreCase))
+            .Distinct()
+            .ToList();
+
+        if (candidates.Count == 1)
+        {
+            Debug.LogWarning($"[DiNe] Multi Dresser: 더미 '{tempPath}'의 원본 기록이 없어 이름으로 추정한 원본을 씁니다: {candidates[0]}");
+            return candidates[0];
+        }
+
+        Debug.LogError(
+            $"[DiNe] Multi Dresser: 더미 '{tempPath}'의 진짜 원본을 찾지 못했습니다(이름 '{name}' 후보 {candidates.Count}개). " +
+            "FX 컨트롤러 / Expressions 메뉴 / 파라미터를 직접 원본으로 지정하세요.");
+        return null;
+    }
+
+    /// <summary>
+    /// 원본 후보(오브젝트 또는 경로)를 진짜 원본으로 확정한다. 더미면 체인을 따라가 되돌린다.
+    /// 반환값: 이 슬롯을 복원해도 되면 true(asset은 null일 수 있다 = 원래 빈 슬롯).
+    /// </summary>
+    private static bool TryResolveOriginal<T>(UnityEngine.Object current, string path, OriginalKind kind, out T asset)
+        where T : UnityEngine.Object
+    {
+        asset = null;
+
+        if (current != null && !IsTempAsset(current))
+        {
+            asset = current as T;
+            return asset != null;
+        }
+
+        string source = current != null ? AssetDatabase.GetAssetPath(current) : path;
+        if (string.IsNullOrEmpty(source))
+            return true;   // 원래 비어 있던 슬롯.
+
+        string resolved = ResolveTrueOriginalPath(source, kind);
+        if (resolved == null)
+            return false;
+        if (resolved.Length == 0)
+            return true;
+
+        asset = AssetDatabase.LoadAssetAtPath<T>(resolved);
+        return asset != null;
+    }
+
+    // 이 임시 폴더를 책임지는 세션(메모리/영속)이 하나도 없으면 고아다.
+    private static bool IsOrphanTempFolder(string sessionFolder)
+    {
+        if (string.IsNullOrEmpty(sessionFolder))
+            return false;
+
+        if (ActiveSessions.Values.Any(item =>
+                item != null && string.Equals(item.TempFolderPath, sessionFolder, StringComparison.Ordinal)))
+            return false;
+
+        var persisted = LoadPersistedState();
+        if (persisted.sessions != null && persisted.sessions.Any(item =>
+                item != null && string.Equals(item.tempFolderPath, sessionFolder, StringComparison.Ordinal)))
+            return false;
+
+        return true;
+    }
+
+    // 고아 임시 세션을 매니페스트로 되돌린다.
+    // true를 돌려주면 정상 경로로 계속 진행해도 된다는 뜻이다:
+    //  - 매니페스트로 원본을 되돌렸거나,
+    //  - 되돌릴 기록이 없는 고아 폴더뿐이라 보호할 '진짜 세션'이 없는 경우.
+    //    (이때는 지금 가리키는 에셋을 기준으로 진행한다. 건너뛰면 업로드마다 아무것도 설치되지 않는다.)
+    // false는 살아 있는 세션이 그 폴더를 책임지고 있어 다시 캡처하면 원본이 덮어써지는 경우다.
+    private static bool TryRecoverOrphanTempSession(VRCAvatarDescriptor descriptor)
+    {
+        if (descriptor == null)
+            return false;
+
+        var folders = new[]
+            {
+                GetSessionFolderOf(GetDescriptorFxController(descriptor)),
+                GetSessionFolderOf(descriptor.expressionsMenu),
+                GetSessionFolderOf(descriptor.expressionParameters)
+            }
+            .Where(folder => !string.IsNullOrEmpty(folder))
+            .Distinct()
+            .ToList();
+
+        bool ownedByLiveSession = false;
+
+        foreach (var folder in folders)
+        {
+            if (!IsOrphanTempFolder(folder))
+            {
+                ownedByLiveSession = true;
+                continue;
+            }
+
+            string manifestPath = GetSessionManifestPath(folder);
+            if (!File.Exists(manifestPath))
+            {
+                if (TryRestoreDescriptorByGuess(descriptor))
+                {
+                    Debug.Log($"[DiNe] Multi Dresser: 원본 기록이 없는 임시 폴더({folder})의 더미를 이름 추정으로 원본에 되돌렸습니다.");
+                }
+                else
+                {
+                    Debug.LogWarning(
+                        $"[DiNe] Multi Dresser: '{descriptor.name}'가 남겨진 임시 폴더({folder})를 가리키는데 원본 기록이 없어 " +
+                        "지금 가리키는 에셋을 기준으로 계속 진행합니다. 업로드는 정상 동작하지만, " +
+                        "FX 컨트롤러 / Expressions 메뉴 / 파라미터를 직접 원본으로 되돌리는 것을 권장합니다.");
+                }
+                continue;
+            }
+
+            PersistedSession recovered = null;
+            try
+            {
+                recovered = JsonUtility.FromJson<PersistedSession>(File.ReadAllText(manifestPath));
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[DiNe] Multi Dresser: 임시 세션 매니페스트를 읽지 못했습니다({manifestPath}): {e.Message}");
+                continue;
+            }
+
+            if (recovered == null)
+                continue;
+
+            Debug.Log($"[DiNe] Multi Dresser: 남겨진 임시 세션을 발견해 원본으로 복구합니다: {folder}");
+            RestorePersistedSession(recovered);
+        }
+
+        return !ownedByLiveSession;
+    }
+
+    // 디스크립터가 들고 있는 더미 참조를 더미 체인/이름 추정으로 진짜 원본에 되돌린다.
+    // 세 슬롯 모두 확정됐을 때만 적용한다(반쯤 되돌리면 상태가 더 꼬인다).
+    private static bool TryRestoreDescriptorByGuess(VRCAvatarDescriptor descriptor)
+    {
+        if (descriptor == null)
+            return false;
+
+        if (!TryResolveOriginal(GetDescriptorFxController(descriptor), null, OriginalKind.Fx, out RuntimeAnimatorController fx))
+            return false;
+        if (!TryResolveOriginal(descriptor.expressionsMenu, null, OriginalKind.Menu, out VRCExpressionsMenu menu))
+            return false;
+        if (!TryResolveOriginal(descriptor.expressionParameters, null, OriginalKind.Parameters, out VRCExpressionParameters parameters))
+            return false;
+
+        SetDescriptorFxController(descriptor, fx);
+        descriptor.expressionsMenu = menu;
+        descriptor.expressionParameters = parameters;
+        EditorUtility.SetDirty(descriptor);
+        MarkSceneDirty(descriptor);
+
+        // 같은 더미를 드레서가 들고 있으면 함께 되돌린다.
+        foreach (var dresser in descriptor.GetComponentsInChildren<DiNeMultiDresser>(true))
+        {
+            if (dresser == null) continue;
+            bool dirty = false;
+            if (IsTempAsset(dresser.animatorController) && fx is AnimatorController fxAc) { dresser.animatorController = fxAc; dirty = true; }
+            if (IsTempAsset(dresser.expressionsMenu)) { dresser.expressionsMenu = menu; dirty = true; }
+            if (dirty) EditorUtility.SetDirty(dresser);
+        }
+
+        return !DescriptorPointsToTempAsset(descriptor);
     }
 
     // 도메인 리로드로 비워진 ActiveSessions를, SessionState에 영속된 세션 정보로부터
@@ -619,6 +969,8 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             session.Dressers.Add(binding);
         }
 
+        WriteSessionManifest(session);
+
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
 
@@ -691,12 +1043,53 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
                 "인스펙터의 새로고침(↺) 버튼으로 원본을 다시 지정하면 다음 복원에서 정리됩니다.");
         }
 
-        if (hadInMemory || persisted.sessions.Count > 0)
+        bool swept = SweepOrphanTempFolders();
+
+        if (hadInMemory || persisted.sessions.Count > 0 || swept)
         {
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             Debug.Log($"[DiNe] Multi Dresser 복원 완료 ({reason}). 실패 있음={anyFailed}");
         }
+    }
+
+    // __Temp 아래에 남았지만 어떤 세션도 책임지지 않고(메모리/영속 모두), 로드된 씬 오브젝트가
+    // 하나도 가리키지 않는 폴더는 이전 빌드가 남긴 쓰레기다. 버려진 빌드 클론의 폴더가 대표적.
+    // 반환값: 하나라도 지웠으면 true.
+    private static bool SweepOrphanTempFolders()
+    {
+        if (!AssetDatabase.IsValidFolder(TempRootFolder))
+            return false;
+
+        bool deletedAny = false;
+        foreach (var folder in AssetDatabase.GetSubFolders(TempRootFolder))
+        {
+            string normalized = folder.Replace('\\', '/');
+            if (!IsOrphanTempFolder(normalized))
+                continue;
+            if (AnyLoadedObjectReferencesFolder(normalized))
+                continue;
+
+            try
+            {
+                DeleteTemporaryFolder(normalized);
+                deletedAny = true;
+                Debug.Log($"[DiNe] Multi Dresser: 남겨진 임시 폴더를 정리했습니다: {normalized}");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[DiNe] Multi Dresser: 임시 폴더 정리 실패({normalized}): {e.Message}");
+            }
+        }
+
+        if (deletedAny &&
+            AssetDatabase.GetSubFolders(TempRootFolder).Length == 0 &&
+            AssetDatabase.FindAssets(string.Empty, new[] { TempRootFolder }).Length == 0)
+        {
+            DeleteTemporaryFolder(TempRootFolder);
+        }
+
+        return deletedAny;
     }
 
     // 반환값: 완전히 복원되어 임시 폴더를 정리해도 되면 true.
@@ -710,11 +1103,15 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         if (session.Descriptor == null)
             return true;
 
-        // 원본이 임시(_DiNe) 에셋을 가리키면 그 값으로 되돌리면 안 된다(미싱/오염 유발).
+        // 원본이 임시(_DiNe) 에셋을 가리키면(이전 빌드 잔여물 위에 세션이 만들어진 경우) 그 값으로
+        // 되돌리면 안 된다. 더미 체인을 따라 진짜 원본을 찾아 그것으로 되돌린다.
         // 빈 슬롯(null)은 원래 비어있던 정상 상태로 간주한다.
-        bool fxOk = !IsTempAsset(session.OriginalFxController);
-        bool menuOk = !IsTempAsset(session.OriginalMenu);
-        bool paramsOk = !IsTempAsset(session.OriginalParameters);
+        bool fxOk = TryResolveOriginal(session.OriginalFxController, null, OriginalKind.Fx, out RuntimeAnimatorController resolvedFx);
+        bool menuOk = TryResolveOriginal(session.OriginalMenu, null, OriginalKind.Menu, out VRCExpressionsMenu resolvedMenu);
+        bool paramsOk = TryResolveOriginal(session.OriginalParameters, null, OriginalKind.Parameters, out VRCExpressionParameters resolvedParams);
+        if (fxOk) session.OriginalFxController = resolvedFx;
+        if (menuOk) session.OriginalMenu = resolvedMenu;
+        if (paramsOk) session.OriginalParameters = resolvedParams;
 
         if (fxOk)
         {
@@ -782,15 +1179,11 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         if (session == null)
             return true;
 
-        var originalFx = LoadAssetByPath<RuntimeAnimatorController>(session.originalFxControllerPath);
-        var originalMenu = LoadAssetByPath<VRCExpressionsMenu>(session.originalMenuPath);
-        var originalParams = LoadAssetByPath<VRCExpressionParameters>(session.originalParametersPath);
-
-        // 원본이 비었거나(경로 stale/삭제됨) 임시(_DiNe) 에셋을 가리키면, 그 값으로 덮어쓰면
-        // 오히려 missing/오염이 된다. 그런 필드는 건드리지 않고 실패로 처리한다.
-        bool fxOk = IsValidOriginal(originalFx, session.originalFxControllerPath);
-        bool menuOk = IsValidOriginal(originalMenu, session.originalMenuPath);
-        bool paramsOk = IsValidOriginal(originalParams, session.originalParametersPath);
+        // 원본이 비었거나(경로 stale/삭제됨) 그 값으로 덮어쓰면 오히려 missing이 되므로 실패로 처리한다.
+        // 원본이 임시(_DiNe) 에셋이면 더미 체인을 따라 진짜 원본을 찾는다.
+        bool fxOk = TryResolveOriginal(null, session.originalFxControllerPath, OriginalKind.Fx, out RuntimeAnimatorController originalFx);
+        bool menuOk = TryResolveOriginal(null, session.originalMenuPath, OriginalKind.Menu, out VRCExpressionsMenu originalMenu);
+        bool paramsOk = TryResolveOriginal(null, session.originalParametersPath, OriginalKind.Parameters, out VRCExpressionParameters originalParams);
 
         // 복원 대상은 '이 세션의 임시 폴더를 실제로 가리키는' 디스크립터다. GlobalObjectId는
         // 게임모드/복제 후 빗나갈 수 있으므로(엉뚱한 인스턴스 복원 → 진짜 아바타는 더미 채로
@@ -854,10 +1247,10 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
                 if (dresser == null)
                     continue;
 
-                var dac = LoadAssetByPath<AnimatorController>(binding.originalAnimatorControllerPath);
-                var dmenu = LoadAssetByPath<VRCExpressionsMenu>(binding.originalExpressionsMenuPath);
-                if (IsValidOriginal(dac, binding.originalAnimatorControllerPath)) dresser.animatorController = dac;
-                if (IsValidOriginal(dmenu, binding.originalExpressionsMenuPath)) dresser.expressionsMenu = dmenu;
+                if (TryResolveOriginal(null, binding.originalAnimatorControllerPath, OriginalKind.Fx, out AnimatorController dac))
+                    dresser.animatorController = dac;
+                if (TryResolveOriginal(null, binding.originalExpressionsMenuPath, OriginalKind.Menu, out VRCExpressionsMenu dmenu))
+                    dresser.expressionsMenu = dmenu;
                 EditorUtility.SetDirty(dresser);
             }
         }
@@ -986,13 +1379,6 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
     // - 경로가 비어있고 에셋도 null이면, 원래부터 비어있던 슬롯이므로 정상(true).
     // - 경로는 있는데 에셋이 null이면 stale/삭제됨 → 복원 불가(false).
     // - 임시(__Temp) 에셋이면 복원하면 안 됨(false).
-    private static bool IsValidOriginal(UnityEngine.Object asset, string path)
-    {
-        if (asset == null)
-            return string.IsNullOrEmpty(path);
-
-        return !IsTempAsset(asset);
-    }
 
     private static void RestoreDresserBinding(DresserBinding binding)
     {
@@ -1013,35 +1399,7 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             if (session == null || session.Descriptor == null)
                 continue;
 
-            var persistedSession = new PersistedSession
-            {
-                descriptorStateVersion = session.DescriptorStateVersion,
-                descriptorId = ToGlobalObjectId(session.Descriptor),
-                tempFolderPath = session.TempFolderPath,
-                originalFxControllerPath = AssetDatabase.GetAssetPath(session.OriginalFxController),
-                originalMenuPath = AssetDatabase.GetAssetPath(session.OriginalMenu),
-                originalParametersPath = AssetDatabase.GetAssetPath(session.OriginalParameters),
-                originalCustomizeAnimationLayers = session.OriginalCustomizeAnimationLayers,
-                originalFxLayerExisted = session.OriginalFxLayerExisted,
-                originalFxLayerWasInBase = session.OriginalFxLayerWasInBase,
-                originalFxLayerIndex = session.OriginalFxLayerIndex,
-                originalFxLayerIsDefault = session.OriginalFxLayerIsDefault
-            };
-
-            foreach (var binding in session.Dressers)
-            {
-                if (binding?.Dresser == null)
-                    continue;
-
-                persistedSession.dressers.Add(new PersistedDresserBinding
-                {
-                    dresserId = ToGlobalObjectId(binding.Dresser),
-                    originalAnimatorControllerPath = AssetDatabase.GetAssetPath(binding.OriginalAnimatorController),
-                    originalExpressionsMenuPath = AssetDatabase.GetAssetPath(binding.OriginalExpressionsMenu)
-                });
-            }
-
-            state.sessions.Add(persistedSession);
+            state.sessions.Add(ToPersistedSession(session));
         }
 
         if (state.sessions.Count == 0)
@@ -1051,6 +1409,39 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         }
 
         SessionState.SetString(SessionStateKey, JsonUtility.ToJson(state));
+    }
+
+    private static PersistedSession ToPersistedSession(TemporarySession session)
+    {
+        var persistedSession = new PersistedSession
+        {
+            descriptorStateVersion = session.DescriptorStateVersion,
+            descriptorId = ToGlobalObjectId(session.Descriptor),
+            tempFolderPath = session.TempFolderPath,
+            originalFxControllerPath = AssetDatabase.GetAssetPath(session.OriginalFxController),
+            originalMenuPath = AssetDatabase.GetAssetPath(session.OriginalMenu),
+            originalParametersPath = AssetDatabase.GetAssetPath(session.OriginalParameters),
+            originalCustomizeAnimationLayers = session.OriginalCustomizeAnimationLayers,
+            originalFxLayerExisted = session.OriginalFxLayerExisted,
+            originalFxLayerWasInBase = session.OriginalFxLayerWasInBase,
+            originalFxLayerIndex = session.OriginalFxLayerIndex,
+            originalFxLayerIsDefault = session.OriginalFxLayerIsDefault
+        };
+
+        foreach (var binding in session.Dressers)
+        {
+            if (binding?.Dresser == null)
+                continue;
+
+            persistedSession.dressers.Add(new PersistedDresserBinding
+            {
+                dresserId = ToGlobalObjectId(binding.Dresser),
+                originalAnimatorControllerPath = AssetDatabase.GetAssetPath(binding.OriginalAnimatorController),
+                originalExpressionsMenuPath = AssetDatabase.GetAssetPath(binding.OriginalExpressionsMenu)
+            });
+        }
+
+        return persistedSession;
     }
 
     private static PersistedState LoadPersistedState()
@@ -1067,8 +1458,8 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         if (dresser == null)
             return null;
 
-        return dresser.GetComponentInParent<VRCAvatarDescriptor>()
-            ?? dresser.GetComponentInChildren<VRCAvatarDescriptor>();
+        return dresser.GetComponentInParent<VRCAvatarDescriptor>(true)
+            ?? dresser.GetComponentInChildren<VRCAvatarDescriptor>(true);
     }
 
     private static RuntimeAnimatorController GetDescriptorFxController(VRCAvatarDescriptor descriptor)
@@ -1678,6 +2069,32 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         }
 
         return name.Replace("\\", "_").Replace("/", "_");
+    }
+}
+/// <summary>
+/// 빌드 클론에 Multi Dresser / Smart Toggle / Lighting Designer를 설치하는 훅.
+/// NDMF 본 처리(-11000)·VRCFury(-10000)보다 먼저 돈다. NDMF가 EditorOnly 태그 오브젝트
+/// (= Multi Dresser 오브젝트)를 지우기 전에 생성을 끝내야 하기 때문이다.
+/// </summary>
+internal sealed class DiNeAvatarToolsBuildApplyHook : IVRCSDKPreprocessAvatarCallback
+{
+    public int callbackOrder => -12000;
+
+    public bool OnPreprocessAvatar(GameObject avatarGameObject)
+    {
+        DiNeMultiDresserAutoApply.ApplyToBuildAvatar(avatarGameObject);
+        return true;
+    }
+}
+
+/// <summary>아바타 번들 빌드가 끝난 직후 임시 에셋 정리를 예약하는 훅.</summary>
+internal sealed class DiNeAvatarToolsBuildPostprocessHook : IVRCSDKPostprocessAvatarCallback
+{
+    public int callbackOrder => 0;
+
+    public void OnPostprocessAvatar()
+    {
+        DiNeMultiDresserAutoApply.OnAvatarBuildPostprocessed();
     }
 }
 #endif

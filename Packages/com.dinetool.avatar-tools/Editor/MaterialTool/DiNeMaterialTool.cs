@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEditor;
@@ -8,7 +8,7 @@ public class DiNeMaterialTool : EditorWindow
     // ══════════════════════════════════════════════════════════════════════════
     //  Enums
     // ══════════════════════════════════════════════════════════════════════════
-    private enum ToolMode { PresetApply, Diet, VRAMOptimize }
+    private enum ToolMode { PresetApply, Diet, VRAMOptimize, BulkEdit }
     private enum Lang { English, Korean, Japanese }
     private enum ShaderFamily { Unsupported, LilToon, Poiyomi }
 
@@ -112,6 +112,20 @@ public class DiNeMaterialTool : EditorWindow
         /* 76 */ new[] { "All", "전체", "全て" },
         /* 77 */ new[] { "Clear", "해제", "解除" },
         /* 78 */ new[] { "Apply", "적용", "適用" },
+        // ── Bulk Edit ──
+        /* 79 */ new[] { "Bulk Edit", "일괄 조절", "一括調整" },
+        /* 80 */ new[] { "Edit Selected Materials ({0})", "선택 마테리얼 조정 ({0}개)", "選択マテリアルの調整（{0}個）" },
+        /* 81 */ new[] { "Materials are grouped by shader family so their controls match (lilToon rendering-mode variants share one group). Choose a group to edit its checked materials.",
+                         "조정 항목이 같은 마테리얼끼리 쉐이더 계열별로 표시합니다(lilToon은 렌더링 모드가 달라도 같은 그룹). 그룹을 선택하면 해당 목록에서 체크한 마테리얼을 함께 조정합니다.",
+                         "調整項目が一致するよう、シェーダー系統ごとに表示します（lilToonは描画モードが違っても同じグループ）。グループを選ぶと、その一覧でチェックしたマテリアルをまとめて調整できます。" },
+        /* 82 */ new[] { "{0} material(s) / Editing: {1}", "마테리얼 {0}개 / 조절 대상: {1}개", "マテリアル {0}個 / 調整対象: {1}個" },
+        /* 83 */ new[] { "Materials", "마테리얼 목록", "マテリアル一覧" },
+        /* 84 */ new[] { "Different values appear as mixed (—). Editing a field sets it on all checked materials; other fields keep their own values. Changes apply immediately and support Undo.",
+                         "서로 다른 값은 혼합 상태(—)로 표시됩니다. 항목을 수정하면 체크한 마테리얼에 함께 적용되고, 나머지 항목은 각자의 값을 유지합니다. 변경은 즉시 적용되며 Undo로 되돌릴 수 있습니다.",
+                         "異なる値は混在（—）で表示されます。項目を変更するとチェックした全マテリアルに適用され、他の項目はそれぞれの値を維持します。変更は即座に反映され、Undoで元に戻せます。" },
+        /* 85 */ new[] { "Updated {0} selected material(s)", "선택한 마테리얼 {0}개를 변경했습니다.", "選択したマテリアル{0}個を変更しました。" },
+        /* 86 */ new[] { "Shader", "쉐이더", "シェーダー" },
+        /* 87 */ new[] { "{0} unsupported material(s) are excluded.", "지원하지 않는 마테리얼 {0}개는 제외됩니다.", "非対応マテリアル {0}個は除外されます。" },
     };
     private string T(int i) => UI[i][L];
     private string Tf(int i, params object[] a) => string.Format(UI[i][L], a);
@@ -312,6 +326,18 @@ public class DiNeMaterialTool : EditorWindow
     private bool _vramBulkChangeFormat;
     private bool _vramBulkChangeSize = true;
 
+    // ── Bulk Edit ──
+    private List<MaterialInfo> _bulkMats      = new List<MaterialInfo>();
+    private bool               _bulkScanned   = false;
+    private int                _bulkUnsupported;
+    private GameObject         _bulkScanTarget;
+    private string             _bulkGroup;
+    private MaterialEditor     _bulkEditor;
+    private Material[]         _bulkEditorTargets = System.Array.Empty<Material>();
+    private Shader             _bulkEditorShader;
+    private Vector2            _bulkListScroll;
+    private bool               _bulkListFoldout = true;
+
     // BPP 딕셔너리는 DiNeTextureVRAM 공용 유틸로 이전됨
     // CalcVRAMBytes도 DiNeTextureVRAM.CalcTextureVRAM 위임
 
@@ -364,15 +390,22 @@ public class DiNeMaterialTool : EditorWindow
         }
         LoadSettings();
         ScanLibrary();
+        Undo.undoRedoPerformed += BulkOnUndoRedo;
     }
 
-    void OnDisable() => SaveSettings();
+    void OnDisable()
+    {
+        SaveSettings();
+        Undo.undoRedoPerformed -= BulkOnUndoRedo;
+        BulkReleaseEditor();
+    }
 
     // ══════════════════════════════════════════════════════════════════════════
     //  OnGUI
     // ══════════════════════════════════════════════════════════════════════════
     void OnGUI()
     {
+        _lang = (Lang)Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", L), 0, 2);
         DrawHeader();
         DrawLangBar();
         HLine();
@@ -389,8 +422,10 @@ public class DiNeMaterialTool : EditorWindow
             DrawPresetMode();
         else if (_mode == ToolMode.Diet)
             DrawDietMode();
-        else
+        else if (_mode == ToolMode.VRAMOptimize)
             DrawVRAMMode();
+        else
+            DrawBulkMode();
 
         // === [추가된 부분] 글로벌 스크롤 뷰 끝 ===
         EditorGUILayout.EndScrollView();
@@ -404,8 +439,10 @@ public class DiNeMaterialTool : EditorWindow
     // ══════════════════════════════════════════════════════════════════════════
     private void DrawHeader()
     {
+        var previousBackground = GUI.backgroundColor;
         GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
         EditorGUILayout.BeginVertical("box");
+        GUI.backgroundColor = previousBackground;
         
         EditorGUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
@@ -440,16 +477,24 @@ public class DiNeMaterialTool : EditorWindow
     private void DrawLangBar()
     {
         int idx = L;
-        int next = DrawCustomToolbar(idx, new[] { "English", "한국어", "日本語" }, 26);
-        if (next != idx) { _lang = (Lang)next; SaveSettings(); }
+        GUILayout.Space(5);
+        int next = DrawCustomToolbar(idx, new[] { "English", "한국어", "日本語" }, 35);
+        if (next != idx)
+        {
+            _lang = (Lang)next;
+            EditorPrefs.SetInt("DiNeLang", next);
+            SaveSettings();
+        }
+        GUILayout.Space(15);
     }
 
     private void DrawModeSelector()
     {
         int idx = (int)_mode;
-        int next = DrawCustomToolbar(idx, new[] { T(0), T(1), T(47) }, 30);
+        int next = DrawCustomToolbar(idx, new[] { T(0), T(1), T(47), T(79) }, 35);
         if (next != idx)
         {
+            BulkReleaseEditor();
             _mode = (ToolMode)next;
             _status = "";
             AutoScan();
@@ -512,23 +557,28 @@ public class DiNeMaterialTool : EditorWindow
             
         GUILayout.Space(4);
         
-        // 미리보기 토글 UI 복구
-        bool prevPreview = _previewOnly;
-        _previewOnly = EditorGUILayout.Toggle(T(_previewOnly ? 6 : 7), _previewOnly);
-        if (_previewOnly != prevPreview) AutoScan();
+        // 미리보기 토글 UI 복구 (일괄 조절 모드는 실시간 편집이라 미리보기 개념이 없음)
+        if (_mode != ToolMode.BulkEdit)
+        {
+            bool prevPreview = _previewOnly;
+            _previewOnly = EditorGUILayout.Toggle(T(_previewOnly ? 6 : 7), _previewOnly);
+            if (_previewOnly != prevPreview) AutoScan();
+        }
         
         GUILayout.Space(4);
     }
 
     private void AutoScan()
     {
-        if (_targetObject == null) { _presetMats.Clear(); _presetScanned = false; _dietMats.Clear(); _dietScanned = false; _vramTextures.Clear(); _vramScanned = false; _status = ""; return; }
+        if (_targetObject == null) { _presetMats.Clear(); _presetScanned = false; _dietMats.Clear(); _dietScanned = false; _vramTextures.Clear(); _vramScanned = false; BulkClear(); _status = ""; return; }
         if (_mode == ToolMode.PresetApply)
             PresetScanMaterials();
         else if (_mode == ToolMode.Diet)
             DietScanMaterials();
-        else
+        else if (_mode == ToolMode.VRAMOptimize)
             VRAMScanTextures();
+        else
+            BulkScanMaterials();
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -2077,6 +2127,42 @@ public class DiNeMaterialTool : EditorWindow
 
     private static bool IsSupported(Material mat) => GetFamily(mat) != ShaderFamily.Unsupported;
 
+    private static readonly string[] BulkVariantTokens =
+        { "TwoPassTransparent", "OnePassTransparent", "Transparent", "Cutout", "Outline", "TwoPass", "OnePass" };
+
+    // Bulk-edit group key. lilToon uses a separate shader per rendering mode
+    // ("lilToon", "Hidden/lilToonCutout", "Hidden/lilToonTransparentOutline", ...) while the
+    // properties and inspector stay the same, so those variants collapse into one key
+    // ("lilToon", "lilToonLite", "lilToonFur", ...). Other shaders keep their exact name.
+    private static string GetBulkGroupKey(Shader shader)
+    {
+        if (shader == null) return null;
+        string name = shader.name;
+        string lower = name.ToLower();
+        if (!lower.Contains("liltoon") && !lower.Contains("lil_toon")) return name;
+
+        string key = name;
+        if (key.StartsWith("Hidden/")) key = key.Substring("Hidden/".Length);
+        else if (key.StartsWith("_lil/")) key = key.Substring("_lil/".Length);
+        key = key.Trim();
+
+        bool stripped = true;
+        while (stripped)
+        {
+            stripped = false;
+            foreach (string token in BulkVariantTokens)
+            {
+                if (key.Length > token.Length && key.EndsWith(token, System.StringComparison.Ordinal))
+                {
+                    key = key.Substring(0, key.Length - token.Length);
+                    stripped = true;
+                    break;
+                }
+            }
+        }
+        return key;
+    }
+
     private static bool IsOutlineVariantShader(Shader shader)
     {
         return shader != null && shader.name.Contains("Outline");
@@ -2166,6 +2252,236 @@ public class DiNeMaterialTool : EditorWindow
         DisableOutlineFeature(mat);
     }
 
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  BULK EDIT MODE — native multi-material editing, grouped by exact shader
+    // ══════════════════════════════════════════════════════════════════════════
+    private void DrawBulkMode()
+    {
+        if (_targetObject == null)
+        {
+            GUILayout.Space(8);
+            DrawCenteredHint(T(19));
+            GUILayout.Space(8);
+            return;
+        }
+        if (!_bulkScanned) BulkScanMaterials();
+
+        // Rebuild from current materials so shader changes/Undo cannot leave a stale group.
+        // lilToon swaps the shader per rendering mode (lilToon / Hidden/lilToonCutout / ...Outline ...),
+        // so group by shader family instead of the exact Shader object or every material ends up alone.
+        var groups = _bulkMats.Where(m => IsSupported(m.Material))
+            .Select(m => GetBulkGroupKey(m.Material.shader)).Distinct().OrderBy(k => k).ToList();
+        if (!groups.Contains(_bulkGroup))
+            _bulkGroup = groups.FirstOrDefault();
+
+        if (groups.Count > 1)
+        {
+            EditorGUILayout.HelpBox(T(81), MessageType.Info);
+            GUILayout.Space(4);
+            var labels = groups
+                .Select(k => new GUIContent(k + " (" + _bulkMats.Count(m => m.Material != null && GetBulkGroupKey(m.Material.shader) == k) + ")", k))
+                .ToArray();
+            int cur = groups.IndexOf(_bulkGroup);
+            int next = EditorGUILayout.Popup(new GUIContent(T(86), T(81)), cur, labels);
+            if (next != cur)
+            {
+                _bulkGroup = groups[next];
+                BulkReleaseEditor();
+                _status = "";
+            }
+            HLine();
+        }
+
+        var groupMats = _bulkMats.Where(m => m.Material != null && GetBulkGroupKey(m.Material.shader) == _bulkGroup).ToList();
+        if (_bulkGroup == null || groupMats.Count == 0)
+        {
+            BulkReleaseEditor();
+            GUILayout.Space(8);
+            DrawCenteredHint(T(36));
+            GUILayout.Space(8);
+            return;
+        }
+        if (_bulkUnsupported > 0)
+        {
+            GUILayout.Label(Tf(87, _bulkUnsupported), new GUIStyle(EditorStyles.miniLabel)
+                { normal = { textColor = ColSubText }, wordWrap = true });
+            GUILayout.Space(2);
+        }
+
+        // ── 마테리얼 목록 ──
+        EditorGUILayout.BeginHorizontal();
+        _bulkListFoldout = EditorGUILayout.Foldout(_bulkListFoldout, T(83), true);
+        GUILayout.FlexibleSpace();
+        GUILayout.Label(Tf(82, groupMats.Count, groupMats.Count(m => m.Selected)), new GUIStyle(EditorStyles.miniLabel)
+            { normal = { textColor = ColSubText } });
+        EditorGUILayout.EndHorizontal();
+
+        if (_bulkListFoldout)
+        {
+            GUILayout.Space(2);
+            DrawSelectButtons(groupMats);
+            GUILayout.Space(2);
+            float h = Mathf.Clamp(groupMats.Count * 22f + 8f, 44f, 176f);
+            _bulkListScroll = EditorGUILayout.BeginScrollView(_bulkListScroll, GUILayout.Height(h));
+            foreach (var info in groupMats)
+            {
+                EditorGUILayout.BeginHorizontal();
+                info.Selected = EditorGUILayout.Toggle(info.Selected, GUILayout.Width(18));
+                GUILayout.Label(new GUIContent(info.Material.name, info.Path), EditorStyles.label, GUILayout.ExpandWidth(true));
+                if (GUILayout.Button(new GUIContent("⊙", T(18)), EditorStyles.miniButton, GUILayout.Width(22)))
+                    EditorGUIUtility.PingObject(info.Material);
+                EditorGUILayout.EndHorizontal();
+            }
+            EditorGUILayout.EndScrollView();
+        }
+
+        HLine();
+
+        var selected = groupMats.Where(m => m.Selected).Select(m => m.Material).ToArray();
+        BulkEnsureEditor(selected);
+        if (selected.Length == 0)
+        {
+            GUILayout.Space(8);
+            DrawCenteredHint(T(21));
+            GUILayout.Space(8);
+            return;
+        }
+        var prevBg = GUI.backgroundColor;
+        GUI.backgroundColor = ColCard;
+        EditorGUILayout.BeginVertical("box");
+        GUI.backgroundColor = prevBg;
+
+        SectionLabel(Tf(80, selected.Length));
+        GUILayout.Space(4);
+        EditorGUILayout.HelpBox(T(84), MessageType.Info);
+        GUILayout.Space(4);
+
+        bool prevHierarchy = EditorGUIUtility.hierarchyMode;
+        float prevLabelWidth = EditorGUIUtility.labelWidth;
+        float prevFieldWidth = EditorGUIUtility.fieldWidth;
+        bool prevWideMode = EditorGUIUtility.wideMode;
+        bool prevMixedValue = EditorGUI.showMixedValue;
+        int prevIndent = EditorGUI.indentLevel;
+        bool prevEnabled = GUI.enabled;
+        Color prevColor = GUI.color;
+        var dirtyCounts = selected.Select(m => EditorUtility.GetDirtyCount(m)).ToArray();
+        // PropertiesGUI temporarily closes its immediate vertical group for its version-control bar.
+        // Give it a separate group so the title and controls stay inside the same Di Ne card.
+        EditorGUILayout.BeginVertical();
+        try
+        {
+            EditorGUIUtility.hierarchyMode = true;
+            _bulkEditor.serializedObject.Update();
+            // Every checked material is an editor target. MaterialProperty handles mixed
+            // values, property-specific writes and Undo, including changes equal to target[0].
+            // PropertiesGUI works outside InspectorWindow; OnInspectorGUI may be invisible.
+            if (_bulkEditor.PropertiesGUI())
+            {
+                foreach (var material in selected)
+                    _bulkEditor.customShaderGUI?.ValidateMaterial(material);
+                _bulkEditor.PropertiesChanged();
+            }
+            _bulkEditor.serializedObject.ApplyModifiedProperties();
+            int changedCount = selected.Where((m, i) => EditorUtility.GetDirtyCount(m) != dirtyCounts[i]).Count();
+            if (changedCount > 0)
+                SetStatus(Tf(85, changedCount), false);
+        }
+        finally
+        {
+            EditorGUIUtility.hierarchyMode = prevHierarchy;
+            EditorGUIUtility.labelWidth = prevLabelWidth;
+            EditorGUIUtility.fieldWidth = prevFieldWidth;
+            EditorGUIUtility.wideMode = prevWideMode;
+            EditorGUI.showMixedValue = prevMixedValue;
+            EditorGUI.indentLevel = prevIndent;
+            GUI.enabled = prevEnabled;
+            GUI.color = prevColor;
+            GUI.backgroundColor = prevBg;
+            EditorGUILayout.EndVertical();
+            EditorGUILayout.EndVertical();
+        }
+    }
+
+    private void BulkEnsureEditor(Material[] selected)
+    {
+        var shader = selected.Length > 0 && selected[0] != null ? selected[0].shader : null;
+        if (_bulkEditor != null && _bulkEditorShader == shader && _bulkEditorTargets.SequenceEqual(selected))
+            return;
+
+        BulkReleaseEditor();
+        _status = "";
+        if (selected.Length == 0 || shader == null) return;
+        // Only materials of one group reach here. lilToon rendering-mode variants share one property
+        // set and lilToon's own multi-material editor mixes them, so a mixed-variant editor is fine;
+        // the ShaderGUI is derived from the first material's shader.
+        string group = GetBulkGroupKey(shader);
+        if (selected.Any(m => m == null || m.shader == null || GetBulkGroupKey(m.shader) != group)) return;
+        _bulkEditor = (MaterialEditor)Editor.CreateEditor(selected.Cast<Object>().ToArray(), typeof(MaterialEditor));
+        _bulkEditorTargets = selected;
+        _bulkEditorShader = shader;
+    }
+
+    private void BulkOnUndoRedo()
+    {
+        // No data propagation on refresh: each material keeps its own restored values.
+        if (_mode == ToolMode.BulkEdit) _status = "";
+        Repaint();
+    }
+
+    private void BulkClear()
+    {
+        _bulkMats.Clear();
+        _bulkScanned     = false;
+        _bulkUnsupported = 0;
+        _bulkScanTarget  = null;
+        BulkReleaseEditor();
+    }
+
+    private void BulkReleaseEditor()
+    {
+        if (_bulkEditor != null) DestroyImmediate(_bulkEditor);
+        _bulkEditor        = null;
+        _bulkEditorTargets = System.Array.Empty<Material>();
+        _bulkEditorShader  = null;
+    }
+
+    private void BulkScanMaterials()
+    {
+        var prevSelected = new HashSet<int>(_bulkMats.Where(m => m.Selected && m.Material != null)
+                                                     .Select(m => m.Material.GetInstanceID()));
+        bool hadScan = _bulkScanned && _bulkScanTarget == _targetObject;
+        BulkClear();
+
+        if (_targetObject == null) { SetStatus(T(19), true); return; }
+
+        Renderer[] renderers = _includeChildren
+            ? _targetObject.GetComponentsInChildren<Renderer>(_includeInactive)
+            : _targetObject.GetComponents<Renderer>();
+
+        var seen = new HashSet<int>();
+        foreach (var r in renderers)
+            foreach (var mat in r.sharedMaterials)
+            {
+                if (mat == null || !seen.Add(mat.GetInstanceID())) continue;
+                var fam = GetFamily(mat);
+                if (fam == ShaderFamily.Unsupported) { _bulkUnsupported++; continue; }
+                _bulkMats.Add(new MaterialInfo
+                {
+                    Material   = mat,
+                    Path       = AssetDatabase.GetAssetPath(mat),
+                    ShaderName = mat.shader.name,
+                    Selected   = !hadScan || prevSelected.Contains(mat.GetInstanceID()),
+                });
+            }
+
+        _bulkMats = _bulkMats.OrderBy(m => m.Material.name).ToList();
+        _bulkScanTarget = _targetObject;
+        _bulkScanned = true;
+        SetStatus(Tf(20, _bulkMats.Count), _bulkMats.Count == 0);
+        Repaint();
+    }
+
     private void SetStatus(string msg, bool warn) { _status = msg; _statusWarn = warn; }
 
     private void SectionLabel(string text) =>
@@ -2185,7 +2501,7 @@ public class DiNeMaterialTool : EditorWindow
         GUI.backgroundColor = ColSelect;
         if (GUILayout.Button(T(16), selBtn, GUILayout.Height(28)))
             mats.ForEach(m => m.Selected = !dietMode || m.HasDiet || HasEnabledToggles(m));
-        GUI.backgroundColor = ColDanger;
+        GUI.backgroundColor = prev;
         if (GUILayout.Button(T(17), selBtn, GUILayout.Height(28)))
             mats.ForEach(m => m.Selected = false);
         GUI.backgroundColor = prev;
@@ -2227,12 +2543,13 @@ public class DiNeMaterialTool : EditorWindow
 
     private void LoadSettings()
     {
-        if (EditorPrefs.HasKey("DiNeMaterialTool_Lang"))
-            _lang = (Lang)EditorPrefs.GetInt("DiNeMaterialTool_Lang");
+        int legacyLanguage = EditorPrefs.GetInt("DiNeMaterialTool_Lang", L);
+        _lang = (Lang)Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", legacyLanguage), 0, 2);
+        if (!EditorPrefs.HasKey("DiNeLang")) EditorPrefs.SetInt("DiNeLang", L);
         if (EditorPrefs.HasKey("DiNeMaterialTool_Mode"))
         {
             int savedMode = EditorPrefs.GetInt("DiNeMaterialTool_Mode");
-            _mode = (ToolMode)Mathf.Clamp(savedMode, 0, 2);
+            _mode = (ToolMode)Mathf.Clamp(savedMode, 0, 3);
         }
         if (EditorPrefs.HasKey("DiNeMaterialTool_Children"))
             _includeChildren = EditorPrefs.GetBool("DiNeMaterialTool_Children");

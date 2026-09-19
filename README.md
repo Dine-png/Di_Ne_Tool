@@ -3,7 +3,7 @@
 VRChat 아바타의 편집, 메뉴 제작, 라이팅, 최적화, 아이콘·스크린샷 제작, VRM 변환 준비를 한곳에서 처리하는 **Unity Editor 도구 모음**입니다.
 
 ![Unity 2022.3](https://img.shields.io/badge/Unity-2022.3_LTS%2B-black?logo=unity&style=flat)
-![Version 1.6.4](https://img.shields.io/badge/Version-1.6.4-30D1C2?style=flat)
+![Version 1.7.0](https://img.shields.io/badge/Version-1.7.0-30D1C2?style=flat)
 ![Languages](https://img.shields.io/badge/UI-EN%20%2F%20KO%20%2F%20JP-4C9BD6?style=flat)
 
 > 대부분의 도구는 English / 한국어 / 日本語 UI를 지원합니다. 기능에 따라 lilToon, Poiyomi, NDMF, Modular Avatar, UniVRM을 함께 사용할 수 있습니다.
@@ -302,8 +302,9 @@ Hierarchy에서 하나 이상의 오브젝트를 선택한 뒤 다음 메뉴를 
 2. **정리 대상 종류·보호 설정**에서 검사할 파일 종류를 고릅니다.
 3. 문자열 로딩이나 외부 시스템이 사용하는 라이브러리는 **보호 폴더**에 추가합니다.
 4. **분석 — 미사용 에셋 찾기**를 누릅니다.
-5. 결과의 경로와 용량을 확인하고 삭제할 항목만 체크합니다.
-6. 하단 삭제 버튼을 누르면 OS 휴지통으로 이동합니다.
+5. 필요하면 **완전 미사용 루트 폴더만 보기**를 켜서 `Assets` 바로 아래의 폴더 중 하위 전체에 사용 중인 에셋이 하나도 없는 폴더만 확인합니다.
+6. 결과의 경로와 용량을 확인하고 삭제할 항목만 체크합니다.
+7. 하단 삭제 버튼을 누르면 OS 휴지통으로 이동합니다.
 
 코드, 씬, DLL, asmdef, meta 파일과 Resources, StreamingAssets, Addressables, Gizmos 등 특수 폴더는 자동 보호됩니다. Preset/Data와 Other 유형도 기본적으로 삭제 후보에서 빠집니다.
 

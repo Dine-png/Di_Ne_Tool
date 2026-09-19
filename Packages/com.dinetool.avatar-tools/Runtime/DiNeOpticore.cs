@@ -2,7 +2,7 @@ using UnityEngine;
 
 [AddComponentMenu("Di Ne/Opticore")]
 [DisallowMultipleComponent]
-public sealed class DiNeOpticore : MonoBehaviour
+public sealed class DiNeOpticore : MonoBehaviour, VRC.SDKBase.IEditorOnly
 {
     [Header("Optimization Modules")]
     [SerializeField] private bool _optimizeMeshes = true;

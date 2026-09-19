@@ -8,7 +8,7 @@ using UnityEngine;
 /// </summary>
 [DisallowMultipleComponent]
 [AddComponentMenu("DiNe/Lighting Designer")]
-public sealed class DiNeLightingDesigner : MonoBehaviour
+public sealed class DiNeLightingDesigner : MonoBehaviour, VRC.SDKBase.IEditorOnly
 {
     /// <summary>제어 항목 하나의 사용자 설정.</summary>
     [System.Serializable]

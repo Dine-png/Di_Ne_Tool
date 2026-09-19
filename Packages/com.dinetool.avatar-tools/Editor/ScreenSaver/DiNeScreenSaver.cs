@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using UnityEditor;
@@ -106,14 +106,21 @@ namespace DiNeScreenSaver
                              "좌클릭: 회전   우클릭/휠: 이동   스크롤: 전후 이동   F: 포커스",
                              "左ドラッグ: 回転   右/中ドラッグ: 移動   スクロール: 前後移動   F: フォーカス" },
             /* 51 */ new[] { "Reset Camera", "카메라 초기화", "カメラをリセット" },
-            /* 52 */ new[] { "Focus Selection", "선택 오브젝트 포커스", "選択にフォーカス" },
+            /* 52 */ new[] { "Focus Subject", "대상 포커스", "被写体にフォーカス" },
             /* 53 */ new[] { "Apply to Camera", "카메라에 적용", "カメラに適用" },
             /* 54 */ new[] { "The preview camera is virtual. Capture uses this view; apply it to move the scene camera.",
                              "미리보기 카메라는 가상 카메라입니다. 캡처에는 이 구도가 사용되며, 씬 카메라를 옮기려면 적용하세요.",
                              "プレビューカメラは仮想カメラです。撮影にはこの構図が使われ、シーンカメラを動かすには適用してください。" },
             /* 55 */ new[] { "Select a Camera to preview the Game View.",
                              "게임 뷰를 미리보려면 카메라를 선택하세요.",
-                             "ゲームビューをプレビューするにはカメラを選択してください。" }
+                             "ゲームビューをプレビューするにはカメラを選択してください。" },
+            /* 56 */ new[] { "Field of View", "시야각", "視野角" },
+            /* 57 */ new[] { "Focuses the selected object, or the visible character when no suitable object is selected.",
+                             "선택한 오브젝트를 포커스합니다. 적절한 선택이 없으면 화면에 보이는 캐릭터를 자동으로 찾습니다.",
+                             "選択したオブジェクトにフォーカスします。適切な選択がない場合は、画面内のキャラクターを自動で探します。" },
+            /* 58 */ new[] { "No renderer could be captured from the target object.",
+                             "대상 오브젝트에서 캡처할 수 있는 렌더러를 찾지 못했습니다.",
+                             "対象オブジェクトからキャプチャできるレンダラーが見つかりません。" }
         };
         private static readonly string[][] BG_TEXT =
         {
@@ -125,7 +132,12 @@ namespace DiNeScreenSaver
         private Lang     _lang = Lang.English;
         private int      L     => (int)_lang;
         private string   T(int i) => UI[i][L];
-        private static string GetUIString(int i) => UI[i][EditorPrefs.GetInt("DiNeScreenSaver_Lang", 1)];
+        private const string LANGUAGE_PREF_KEY = "DiNeLang";
+        private const string LEGACY_LANGUAGE_PREF_KEY = "DiNeScreenSaver_Lang";
+        private static int SavedLanguageIndex => Mathf.Clamp(
+            EditorPrefs.GetInt(LANGUAGE_PREF_KEY,
+                EditorPrefs.GetInt(LEGACY_LANGUAGE_PREF_KEY, (int)Lang.English)), 0, 2);
+        private static string GetUIString(int i) => UI[i][SavedLanguageIndex];
         private string[] BgLabels() => new[] { BG_TEXT[0][L], BG_TEXT[1][L], BG_TEXT[2][L] };
 
         // ══════════════════════════════════════════════════════════════════════
@@ -151,11 +163,14 @@ namespace DiNeScreenSaver
         private Quaternion    _gamePreviewRotation = Quaternion.identity;
         private Vector3       _gamePreviewPivot;
         private float         _gamePreviewPivotDistance = 10f;
+        private float         _gamePreviewFieldOfView = 60f;
         private float         _gamePreviewOrthographicSize = 5f;
         private bool          _gamePreviewStateInitialized;
         private bool          _gamePreviewNavigationChanged;
         private bool          _gamePreviewDirty = true;
         private const int     GAME_PREVIEW_MAX_SIZE = 720;
+        private const float   GAME_PREVIEW_MIN_FOV = 1f;
+        private const float   GAME_PREVIEW_MAX_FOV = 179f;
 
         private static readonly Dictionary<ResPreset, Vector2> RES_BASE = new Dictionary<ResPreset, Vector2>
         {
@@ -168,6 +183,7 @@ namespace DiNeScreenSaver
         //  Icon state
         // ══════════════════════════════════════════════════════════════════════
         private GameObject _iconTarget;
+        private bool       _iconPreviewUnavailable;
         private GameObject _prevIconTarget;
         private bool       _iconOutlineEnabled = true;
         private Color      _iconOutlineColor = new Color(0.03f, 0.03f, 0.03f, 1f);
@@ -278,6 +294,7 @@ namespace DiNeScreenSaver
             window._previewPan = Vector2.zero;
             window._zoomFactor = 1f;
             window._previewDirty = true;
+            window._iconPreviewUnavailable = false;
             window._iconOverwriteAssetPath = existingIcon != null
                 ? AssetDatabase.GetAssetPath(existingIcon).Replace('\\', '/')
                 : null;
@@ -326,6 +343,7 @@ namespace DiNeScreenSaver
             window._iconForbiddenBehindObject = smartToggle.IconForbiddenBehindObject;
             window._iconIdlePose = smartToggle.IconIdlePose;
             window._previewDirty = true;
+            window._iconPreviewUnavailable = false;
             window._iconOverwriteAssetPath = smartToggle.Icon != null
                 ? AssetDatabase.GetAssetPath(smartToggle.Icon)
                 : null;
@@ -453,6 +471,10 @@ namespace DiNeScreenSaver
         // ══════════════════════════════════════════════════════════════════════
         void OnGUI()
         {
+            int sharedLanguage = SavedLanguageIndex;
+            if (sharedLanguage != L)
+                _lang = (Lang)sharedLanguage;
+
             GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
 
             // ── 헤더 ──
@@ -483,7 +505,12 @@ namespace DiNeScreenSaver
             GUILayout.Space(5);
 
             // ── 언어 선택 ──
-            _lang = (Lang)DrawToolbar(L, new[] { "English", "한국어", "日本語" }, 28);
+            Lang selectedLanguage = (Lang)DrawToolbar(L, new[] { "English", "한국어", "日本語" }, 28);
+            if (selectedLanguage != _lang)
+            {
+                _lang = selectedLanguage;
+                EditorPrefs.SetInt(LANGUAGE_PREF_KEY, (int)_lang);
+            }
 
             GUILayout.Space(6);
 
@@ -628,7 +655,22 @@ namespace DiNeScreenSaver
         private void DrawGameViewPreview()
         {
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            EditorGUILayout.LabelField(T(49), EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(new GUIContent(T(49), T(50)), EditorStyles.boldLabel);
+
+            if (_camera != null && !_camera.orthographic)
+            {
+                EnsureGamePreviewState();
+                EditorGUI.BeginChangeCheck();
+                float fieldOfView = EditorGUILayout.Slider(
+                    new GUIContent(T(56)), _gamePreviewFieldOfView,
+                    GAME_PREVIEW_MIN_FOV, GAME_PREVIEW_MAX_FOV);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    _gamePreviewFieldOfView = fieldOfView;
+                    MarkGamePreviewNavigationChanged();
+                }
+                GUILayout.Space(3f);
+            }
 
             float availableWidth = Mathf.Max(position.width - 38f, 120f);
             float captureAspect = GetCaptureAspect();
@@ -681,32 +723,18 @@ namespace DiNeScreenSaver
                 GUI.Label(badgeRect, sizeLabel, badgeStyle);
             }
 
-            GUILayout.Label(T(50), new GUIStyle(EditorStyles.centeredGreyMiniLabel)
-            {
-                fontSize = 10,
-                normal = { textColor = new Color(0.55f, 0.55f, 0.58f) }
-            });
-
             EditorGUILayout.BeginHorizontal();
             EditorGUI.BeginDisabledGroup(_camera == null);
             if (GUILayout.Button(T(51), GUILayout.Height(24f)))
                 ResetGamePreviewState();
 
-            EditorGUI.BeginDisabledGroup(Selection.activeGameObject == null);
-            if (GUILayout.Button(T(52), GUILayout.Height(24f)))
-                FocusGamePreviewOnSelection();
-            EditorGUI.EndDisabledGroup();
+            if (GUILayout.Button(new GUIContent(T(52), T(57)), GUILayout.Height(24f)))
+                FocusGamePreviewOnSubject();
 
-            if (GUILayout.Button(T(53), GUILayout.Height(24f)))
+            if (GUILayout.Button(new GUIContent(T(53), T(54)), GUILayout.Height(24f)))
                 ApplyGamePreviewToSourceCamera();
             EditorGUI.EndDisabledGroup();
             EditorGUILayout.EndHorizontal();
-
-            GUILayout.Label(T(54), new GUIStyle(EditorStyles.centeredGreyMiniLabel)
-            {
-                fontSize = 9,
-                wordWrap = true
-            });
             EditorGUILayout.EndVertical();
         }
 
@@ -782,7 +810,7 @@ namespace DiNeScreenSaver
 
             if (e.type == EventType.KeyDown && GUIUtility.keyboardControl == controlId && e.keyCode == KeyCode.F)
             {
-                FocusGamePreviewOnSelection();
+                FocusGamePreviewOnSubject();
                 e.Use();
                 return;
             }
@@ -806,7 +834,7 @@ namespace DiNeScreenSaver
                     unitsPerPixel = 2f * _gamePreviewOrthographicSize / Mathf.Max(_gamePreviewRect.height, 1f);
                 else
                     unitsPerPixel = 2f * _gamePreviewPivotDistance *
-                                    Mathf.Tan(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad) /
+                                    Mathf.Tan(_gamePreviewFieldOfView * 0.5f * Mathf.Deg2Rad) /
                                     Mathf.Max(_gamePreviewRect.height, 1f);
 
                 Vector3 right = _gamePreviewRotation * Vector3.right;
@@ -864,6 +892,8 @@ namespace DiNeScreenSaver
 
             _gamePreviewPosition = _camera.transform.position;
             _gamePreviewRotation = _camera.transform.rotation;
+            _gamePreviewFieldOfView = Mathf.Clamp(
+                _camera.fieldOfView, GAME_PREVIEW_MIN_FOV, GAME_PREVIEW_MAX_FOV);
             _gamePreviewOrthographicSize = Mathf.Max(_camera.orthographicSize, 0.001f);
             _gamePreviewPivotDistance = EstimateGamePreviewPivotDistance(_camera);
             _gamePreviewPivot = _gamePreviewPosition +
@@ -871,10 +901,28 @@ namespace DiNeScreenSaver
             Repaint();
         }
 
-        private static float EstimateGamePreviewPivotDistance(Camera source)
+        private float EstimateGamePreviewPivotDistance(Camera source)
         {
             float near = Mathf.Max(source.nearClipPlane, 0.01f);
             float far = Mathf.Max(source.farClipPlane, near * 2f);
+            Bounds subjectBounds;
+            float subjectScore;
+            if (TryGetSelectedGamePreviewBounds(out subjectBounds) &&
+                IsBoundsNearGamePreview(subjectBounds, out subjectScore))
+            {
+                float subjectDepth = Vector3.Dot(
+                    subjectBounds.center - _gamePreviewPosition,
+                    _gamePreviewRotation * Vector3.forward);
+                return Mathf.Clamp(subjectDepth, near * 2f, far * 0.9f);
+            }
+            if (TryFindVisibleGamePreviewCharacterBounds(out subjectBounds))
+            {
+                float subjectDepth = Vector3.Dot(
+                    subjectBounds.center - _gamePreviewPosition,
+                    _gamePreviewRotation * Vector3.forward);
+                return Mathf.Clamp(subjectDepth, near * 2f, far * 0.9f);
+            }
+
             float fallback = Mathf.Clamp(10f, near * 2f, far * 0.25f);
             Ray ray = new Ray(source.transform.position, source.transform.forward);
             RaycastHit hit;
@@ -890,6 +938,8 @@ namespace DiNeScreenSaver
 
             _gamePreviewPosition = _camera.transform.position;
             _gamePreviewRotation = _camera.transform.rotation;
+            _gamePreviewFieldOfView = Mathf.Clamp(
+                _camera.fieldOfView, GAME_PREVIEW_MIN_FOV, GAME_PREVIEW_MAX_FOV);
             _gamePreviewOrthographicSize = Mathf.Max(_camera.orthographicSize, 0.001f);
             _gamePreviewPivot = _gamePreviewPosition +
                                 (_gamePreviewRotation * Vector3.forward) * _gamePreviewPivotDistance;
@@ -919,6 +969,7 @@ namespace DiNeScreenSaver
             destination.CopyFrom(_camera);
             destination.enabled = false;
             destination.transform.SetPositionAndRotation(_gamePreviewPosition, _gamePreviewRotation);
+            destination.fieldOfView = _gamePreviewFieldOfView;
             destination.orthographicSize = _gamePreviewOrthographicSize;
             destination.aspect = GetCaptureAspect();
             ApplyCameraBackground(destination);
@@ -975,40 +1026,186 @@ namespace DiNeScreenSaver
             }
         }
 
-        private void FocusGamePreviewOnSelection()
+        private void FocusGamePreviewOnSubject()
         {
-            if (!EnsureGamePreviewState() || Selection.activeGameObject == null) return;
+            if (!EnsureGamePreviewState()) return;
 
-            GameObject selected = Selection.activeGameObject;
-            Renderer[] renderers = selected.GetComponentsInChildren<Renderer>(true);
-            Bounds bounds = new Bounds(selected.transform.position, Vector3.zero);
-            bool found = false;
-            foreach (Renderer renderer in renderers)
-            {
-                if (renderer == null) continue;
-                if (!found) { bounds = renderer.bounds; found = true; }
-                else bounds.Encapsulate(renderer.bounds);
-            }
+            Bounds bounds;
+            if (!TryGetSelectedGamePreviewBounds(out bounds) &&
+                !TryFindVisibleGamePreviewCharacterBounds(out bounds))
+                return;
 
             _gamePreviewPivot = bounds.center;
+            Vector3 previewSpaceExtents = GetBoundsExtentsInGamePreviewSpace(bounds);
             float aspect = GetCaptureAspect();
-            float framedHalfHeight = Mathf.Max(bounds.extents.y, bounds.extents.x / Mathf.Max(aspect, 0.01f));
-            framedHalfHeight = Mathf.Max(framedHalfHeight, bounds.extents.z * 0.5f, 0.05f) * 1.2f;
+            float framedHalfHeight = Mathf.Max(
+                previewSpaceExtents.y,
+                previewSpaceExtents.x / Mathf.Max(aspect, 0.01f));
+            framedHalfHeight = Mathf.Max(framedHalfHeight, 0.05f) * 1.2f;
 
             if (_camera.orthographic)
             {
                 _gamePreviewOrthographicSize = framedHalfHeight;
-                _gamePreviewPivotDistance = Mathf.Max(_gamePreviewPivotDistance, bounds.extents.magnitude * 2f, 0.1f);
+                _gamePreviewPivotDistance = Mathf.Max(
+                    _gamePreviewPivotDistance, previewSpaceExtents.z * 2f, 0.1f);
             }
             else
             {
-                float halfFov = Mathf.Max(_camera.fieldOfView * 0.5f * Mathf.Deg2Rad, 0.001f);
-                _gamePreviewPivotDistance = framedHalfHeight / Mathf.Tan(halfFov) + bounds.extents.z;
+                float halfFov = Mathf.Max(_gamePreviewFieldOfView * 0.5f * Mathf.Deg2Rad, 0.001f);
+                float nearPlaneMargin = Mathf.Max(_camera.nearClipPlane * 1.1f, 0.01f);
+                _gamePreviewPivotDistance = framedHalfHeight / Mathf.Tan(halfFov) +
+                                            previewSpaceExtents.z + nearPlaneMargin;
             }
 
             _gamePreviewPosition = _gamePreviewPivot -
                                    (_gamePreviewRotation * Vector3.forward) * _gamePreviewPivotDistance;
             MarkGamePreviewNavigationChanged();
+        }
+
+        private bool TryGetSelectedGamePreviewBounds(out Bounds bounds)
+        {
+            bounds = default(Bounds);
+            GameObject selected = Selection.activeGameObject;
+            if (selected == null || _camera == null || selected == _camera.gameObject ||
+                !selected.scene.IsValid())
+                return false;
+
+            GameObject boundsRoot = selected;
+            Animator animator = selected.GetComponentInParent<Animator>();
+            if (animator != null)
+                boundsRoot = animator.gameObject;
+            else
+            {
+                Renderer parentRenderer = selected.GetComponentInParent<Renderer>();
+                if (parentRenderer != null)
+                    boundsRoot = parentRenderer.gameObject;
+            }
+
+            return TryCalculateGamePreviewBounds(boundsRoot, out bounds);
+        }
+
+        private bool TryFindVisibleGamePreviewCharacterBounds(out Bounds bounds)
+        {
+            bounds = default(Bounds);
+            float bestScore = float.MaxValue;
+            bool found = false;
+            var checkedRoots = new HashSet<GameObject>();
+
+            foreach (Animator animator in FindObjectsOfType<Animator>())
+            {
+                if (animator == null || !animator.gameObject.scene.IsValid() ||
+                    !checkedRoots.Add(animator.gameObject))
+                    continue;
+
+                Bounds candidate;
+                float score;
+                if (!TryCalculateGamePreviewBounds(animator.gameObject, out candidate) ||
+                    !IsBoundsNearGamePreview(candidate, out score) || score >= bestScore)
+                    continue;
+
+                bounds = candidate;
+                bestScore = score;
+                found = true;
+            }
+
+            if (found)
+                return true;
+
+            // Animator가 없는 캐릭터도 처리할 수 있도록 스킨드 메시를 보조 후보로 사용한다.
+            foreach (SkinnedMeshRenderer renderer in FindObjectsOfType<SkinnedMeshRenderer>())
+            {
+                if (!IsUsableGamePreviewRenderer(renderer))
+                    continue;
+
+                float score;
+                if (!IsBoundsNearGamePreview(renderer.bounds, out score) || score >= bestScore)
+                    continue;
+
+                bounds = renderer.bounds;
+                bestScore = score;
+                found = true;
+            }
+
+            return found;
+        }
+
+        private bool TryCalculateGamePreviewBounds(GameObject root, out Bounds bounds)
+        {
+            bounds = default(Bounds);
+            bool found = false;
+            foreach (Renderer renderer in root.GetComponentsInChildren<Renderer>(false))
+            {
+                if (!IsUsableGamePreviewRenderer(renderer))
+                    continue;
+
+                if (!found)
+                {
+                    bounds = renderer.bounds;
+                    found = true;
+                }
+                else
+                {
+                    bounds.Encapsulate(renderer.bounds);
+                }
+            }
+            return found;
+        }
+
+        private bool IsUsableGamePreviewRenderer(Renderer renderer)
+        {
+            return renderer != null && renderer.enabled && renderer.gameObject.activeInHierarchy &&
+                   !(renderer is ParticleSystemRenderer) && !(renderer is TrailRenderer) &&
+                   !(renderer is LineRenderer) &&
+                   renderer.gameObject.scene.IsValid() && _camera != null &&
+                   (_camera.cullingMask & (1 << renderer.gameObject.layer)) != 0;
+        }
+
+        private bool IsBoundsNearGamePreview(Bounds bounds, out float score)
+        {
+            score = float.MaxValue;
+            Vector3 localCenter = Quaternion.Inverse(_gamePreviewRotation) *
+                                  (bounds.center - _gamePreviewPosition);
+            if (localCenter.z <= 0.001f)
+                return false;
+
+            float halfHeight;
+            if (_camera != null && _camera.orthographic)
+                halfHeight = Mathf.Max(_gamePreviewOrthographicSize, 0.001f);
+            else
+                halfHeight = localCenter.z * Mathf.Tan(
+                    Mathf.Clamp(_gamePreviewFieldOfView, GAME_PREVIEW_MIN_FOV, GAME_PREVIEW_MAX_FOV) *
+                    0.5f * Mathf.Deg2Rad);
+
+            float halfWidth = Mathf.Max(halfHeight * GetCaptureAspect(), 0.001f);
+            halfHeight = Mathf.Max(halfHeight, 0.001f);
+            float normalizedX = localCenter.x / halfWidth;
+            float normalizedY = localCenter.y / halfHeight;
+            if (Mathf.Abs(normalizedX) > 1.25f || Mathf.Abs(normalizedY) > 1.25f)
+                return false;
+
+            score = normalizedX * normalizedX + normalizedY * normalizedY + localCenter.z * 0.000001f;
+            return true;
+        }
+
+        private Vector3 GetBoundsExtentsInGamePreviewSpace(Bounds bounds)
+        {
+            Quaternion inverseRotation = Quaternion.Inverse(_gamePreviewRotation);
+            Vector3 worldExtents = bounds.extents;
+            Vector3 previewExtents = Vector3.zero;
+
+            for (int x = -1; x <= 1; x += 2)
+            for (int y = -1; y <= 1; y += 2)
+            for (int z = -1; z <= 1; z += 2)
+            {
+                Vector3 worldOffset = new Vector3(
+                    worldExtents.x * x, worldExtents.y * y, worldExtents.z * z);
+                Vector3 previewOffset = inverseRotation * worldOffset;
+                previewExtents.x = Mathf.Max(previewExtents.x, Mathf.Abs(previewOffset.x));
+                previewExtents.y = Mathf.Max(previewExtents.y, Mathf.Abs(previewOffset.y));
+                previewExtents.z = Mathf.Max(previewExtents.z, Mathf.Abs(previewOffset.z));
+            }
+
+            return previewExtents;
         }
 
         private void ApplyGamePreviewToSourceCamera()
@@ -1019,6 +1216,8 @@ namespace DiNeScreenSaver
             _camera.transform.SetPositionAndRotation(_gamePreviewPosition, _gamePreviewRotation);
             if (_camera.orthographic)
                 _camera.orthographicSize = _gamePreviewOrthographicSize;
+            else
+                _camera.fieldOfView = _gamePreviewFieldOfView;
 
             EditorUtility.SetDirty(_camera);
             EditorUtility.SetDirty(_camera.transform);
@@ -1080,6 +1279,7 @@ namespace DiNeScreenSaver
                 _iconDresserLayerIndex = -1;
                 _iconDresserButtonIndex = -1;
                 _iconLinkedObjects.Clear();
+                _iconPreviewUnavailable = false;
             }
 
             GUILayout.Space(8);
@@ -1108,9 +1308,11 @@ namespace DiNeScreenSaver
             // 프리뷰 텍스처 표시
             if (_previewTex != null && Event.current.type == EventType.Repaint)
                 GUI.DrawTexture(_previewRect, _previewTex, ScaleMode.ScaleToFit);
-            else if (_iconTarget == null && Event.current.type == EventType.Repaint)
-                GUI.Label(_previewRect, T(21), new GUIStyle(EditorStyles.centeredGreyMiniLabel)
-                    { fontSize = 11 });
+            else if (Event.current.type == EventType.Repaint)
+                GUI.Label(_previewRect,
+                    _iconTarget == null ? T(21) : (_iconPreviewUnavailable ? T(58) : string.Empty),
+                    new GUIStyle(EditorStyles.centeredGreyMiniLabel)
+                        { fontSize = 11, wordWrap = true });
 
             // 힌트
             GUILayout.Label(T(19), new GUIStyle(EditorStyles.centeredGreyMiniLabel)
@@ -1705,7 +1907,13 @@ namespace DiNeScreenSaver
 
         private void RenderPreview()
         {
-            if (_iconTarget == null || !EnsureIconPreviewResources()) return;
+            if (_iconTarget == null) return;
+            if (!EnsureIconPreviewResources())
+            {
+                _iconPreviewUnavailable = true;
+                return;
+            }
+            _iconPreviewUnavailable = false;
 
             float dist = Mathf.Max(_previewBoundsCache.extents.magnitude * 2.5f, 0.01f);
             _previewCameraObjectCache.transform.rotation = Quaternion.Euler(_previewEuler.x, _previewEuler.y, 0f);
@@ -1766,6 +1974,10 @@ namespace DiNeScreenSaver
                     { hideFlags = HideFlags.HideAndDontSave };
                 SceneManager.MoveGameObjectToScene(_previewCameraObjectCache, _previewSceneCache);
                 _previewCameraCache = _previewCameraObjectCache.AddComponent<Camera>();
+                // Camera.Render()는 카메라가 지정한 씬만 렌더하므로, 격리된 캡처 복제본과
+                // 카메라가 같은 프리뷰 씬을 바라보게 해야 한다.
+                _previewCameraCache.scene = _previewSceneCache;
+                DiNeIconMaker.AddPreviewLight(_previewCameraObjectCache.transform, _previewCaptureLayer);
                 _previewCameraCache.enabled = false;
                 _previewCameraCache.clearFlags = CameraClearFlags.SolidColor;
                 _previewCameraCache.backgroundColor = Color.clear;
@@ -1883,6 +2095,8 @@ namespace DiNeScreenSaver
                 camObj = new GameObject("_DiNe_Icon_Cam") { hideFlags = HideFlags.HideAndDontSave };
                 SceneManager.MoveGameObjectToScene(camObj, previewScene);
                 var cam = camObj.AddComponent<Camera>();
+                cam.scene = previewScene;
+                DiNeIconMaker.AddPreviewLight(camObj.transform, captureLayer);
                 cam.clearFlags      = CameraClearFlags.SolidColor;
                 cam.backgroundColor = Color.clear;
                 cam.cullingMask     = 1 << captureLayer;
@@ -2236,7 +2450,7 @@ namespace DiNeScreenSaver
         // ══════════════════════════════════════════════════════════════════════
         private void SaveSettings()
         {
-            EditorPrefs.SetInt("DiNeScreenSaver_Lang",        (int)_lang);
+            EditorPrefs.SetInt(LANGUAGE_PREF_KEY,              (int)_lang);
             EditorPrefs.SetInt("DiNeScreenSaver_Mode",        (int)_mode);
             EditorPrefs.SetInt("DiNeScreenSaver_Target",      (int)_captureTarget);
             EditorPrefs.SetInt("DiNeScreenSaver_Res",         (int)_res);
@@ -2263,7 +2477,7 @@ namespace DiNeScreenSaver
 
         private void LoadSettings()
         {
-            _lang          = (Lang)EditorPrefs.GetInt("DiNeScreenSaver_Lang",      (int)Lang.English);
+            _lang          = (Lang)SavedLanguageIndex;
             _mode          = (ToolMode)EditorPrefs.GetInt("DiNeScreenSaver_Mode",  0);
             _captureTarget = (CaptureTarget)EditorPrefs.GetInt("DiNeScreenSaver_Target", 0);
             _res           = (ResPreset)EditorPrefs.GetInt("DiNeScreenSaver_Res",  0);

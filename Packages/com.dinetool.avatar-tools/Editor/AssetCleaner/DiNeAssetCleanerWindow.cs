@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -82,6 +82,7 @@ namespace DiNeTool.AssetCleaner
         }
 
         private bool _analyzed;
+        private bool _unusedRootFoldersOnly;
         private Node _root;
         private long _totalBytes;
         private int  _totalCount;
@@ -187,7 +188,7 @@ namespace DiNeTool.AssetCleaner
 
         private void DrawLangBar()
         {
-            int next = DrawCustomToolbar(L, new[] { "English", "한국어", "日本語" }, 26);
+            int next = DrawCustomToolbar(L, new[] { "English", "한국어", "日本語" }, 35);
             if (next != L) { _lang = (Lang)next; SavePrefs(); }
         }
 
@@ -232,7 +233,10 @@ namespace DiNeTool.AssetCleaner
                 return;
             }
 
-            float h = Mathf.Clamp(_scenes.Count * 18f + 8f, 72f, 300f);
+            // 씬이 많아도 창 높이의 일부만 차지하도록 제한한다.
+            // (제한을 넘으면 목록 자체가 스크롤되므로 아래 버튼들이 화면 밖으로 밀리지 않는다)
+            float maxH = Mathf.Clamp(position.height * 0.22f, 72f, 220f);
+            float h = Mathf.Clamp(_scenes.Count * 18f + 8f, 72f, maxH);
             _sceneScroll = EditorGUILayout.BeginScrollView(_sceneScroll, "box", GUILayout.Height(h));
             foreach (var s in _scenes)
             {
@@ -364,6 +368,7 @@ namespace DiNeTool.AssetCleaner
 
         private void DrawAnalyzeButton()
         {
+            EditorGUILayout.BeginHorizontal();
             using (new EditorGUI.DisabledScope(!_scenes.Any(s => s.Selected)))
             {
                 var prev = GUI.backgroundColor;
@@ -372,14 +377,39 @@ namespace DiNeTool.AssetCleaner
                     Analyze();
                 GUI.backgroundColor = prev;
             }
+
+            // 분석과 무관하게, 프로젝트에 남아있는 빈 폴더만 따로 정리한다.
+            {
+                var prev = GUI.backgroundColor;
+                GUI.backgroundColor = ColWarn;
+                if (GUILayout.Button(T(EMPTY_CLEAN), _bigBtnStyle, GUILayout.Height(30), GUILayout.Width(150)))
+                    CleanEmptyFolders();
+                GUI.backgroundColor = prev;
+            }
+            EditorGUILayout.EndHorizontal();
         }
 
         // ── 2) 결과 툴바 ──────────────────────────────────────────────────────────
         private void DrawResultToolbar()
         {
-            SectionLabel(Tf(SUMMARY, _totalCount, FormatBytes(_totalBytes)));
+            SectionLabel(_unusedRootFoldersOnly
+                ? Tf(ROOT_SUMMARY, RootFolderCount(), _totalCount, FormatBytes(_totalBytes))
+                : Tf(SUMMARY, _totalCount, FormatBytes(_totalBytes)));
             EditorGUILayout.HelpBox(SafetyNoticeLabel(), MessageType.Warning);
 
+            var prevBg = GUI.backgroundColor;
+            GUI.backgroundColor = _unusedRootFoldersOnly
+                ? ColAccent
+                : new Color(0.5f, 0.5f, 0.5f, 1f);
+            bool toggleRootFolderMode = GUILayout.Button(
+                new GUIContent(T(ROOT_ONLY), T(ROOT_ONLY_TIP)),
+                _miniBtnStyle,
+                GUILayout.Height(24));
+            GUI.backgroundColor = prevBg;
+            if (toggleRootFolderMode)
+                SetUnusedRootFoldersOnly(!_unusedRootFoldersOnly);
+
+            GUILayout.Space(3);
             EditorGUILayout.BeginHorizontal();
             if (MiniButton(T(PICK_ALL), ColAccent)) { _selected.Clear(); foreach (var f in AllFiles(_root)) _selected.Add(f.Path); _selVersion++; }
             if (MiniButton(T(PICK_NONE), ColDanger)) { _selected.Clear(); _selVersion++; }
@@ -393,7 +423,7 @@ namespace DiNeTool.AssetCleaner
         {
             if (_totalCount == 0)
             {
-                EditorGUILayout.HelpBox(T(TREE_EMPTY), MessageType.Info);
+                EditorGUILayout.HelpBox(T(_unusedRootFoldersOnly ? ROOT_TREE_EMPTY : TREE_EMPTY), MessageType.Info);
                 GUILayout.FlexibleSpace();
                 return;
             }
@@ -402,9 +432,60 @@ namespace DiNeTool.AssetCleaner
             // 창이 작을 때 삭제 버튼이 화면 아래로 밀리지 않도록 최소 높이는 낮게 둔다.
             _treeScroll = EditorGUILayout.BeginScrollView(_treeScroll, "box",
                 GUILayout.ExpandHeight(true), GUILayout.MinHeight(260));
-            foreach (var folder in _root.Folders.Values) DrawFolder(folder, 0);
-            foreach (var file in _root.Files) DrawFile(file, 0);
+            if (_unusedRootFoldersOnly)
+            {
+                foreach (var folder in _root.Folders.Values) DrawRootFolderOnly(folder);
+                foreach (var folder in _root.Files.Where(f => !f.IsFile)) DrawRootFolderOnly(folder);
+            }
+            else
+            {
+                foreach (var folder in _root.Folders.Values) DrawFolder(folder, 0);
+                foreach (var file in _root.Files) DrawFile(file, 0);
+            }
             EditorGUILayout.EndScrollView();
+        }
+
+        /// <summary>
+        /// 완전 미사용 모드에서는 Assets 바로 아래 폴더만 보여준다.
+        /// 폴더 체크박스는 기존과 같이 현재 정리 후보인 하위 항목 전체를 선택한다.
+        /// </summary>
+        private void DrawRootFolderOnly(Node n)
+        {
+            bool isEmptyFolderCandidate = !n.IsFile && n.Folders.Count == 0 && n.Files.Count == 0;
+            int selected;
+            int total;
+
+            if (isEmptyFolderCandidate)
+            {
+                selected = _selected.Contains(n.Path) ? 1 : 0;
+                total = 1;
+            }
+            else
+            {
+                (selected, total) = FolderSelection(n);
+            }
+
+            EditorGUILayout.BeginHorizontal(GUILayout.Height(18));
+            EditorGUI.showMixedValue = selected > 0 && selected < total;
+            bool all = total > 0 && selected == total;
+            bool next = EditorGUILayout.Toggle(all, GUILayout.Width(16));
+            EditorGUI.showMixedValue = false;
+            if (next != all)
+            {
+                if (isEmptyFolderCandidate) ToggleFile(n.Path, next);
+                else SetSubtree(n, next);
+            }
+
+            Icon16(_folderIcon);
+            GUILayout.Label(n.Name, _folderStyle, GUILayout.Height(18));
+            GUILayout.FlexibleSpace();
+            GUILayout.Label(isEmptyFolderCandidate
+                ? EmptyFolderMetaLabel()
+                : Tf(ROOT_FOLDER_META, n.FileCount, FormatBytes(n.Bytes)), _metaStyle);
+
+            if (GUILayout.Button(T(PING), EditorStyles.miniButton, GUILayout.Width(34)))
+                EditorGUIUtility.PingObject(AssetDatabase.LoadMainAssetAtPath(n.Path));
+            EditorGUILayout.EndHorizontal();
         }
 
         private void DrawFolder(Node n, int depth)
@@ -595,9 +676,14 @@ namespace DiNeTool.AssetCleaner
             _totalCount = 0;
             _sizeByPath.Clear();
 
+            HashSet<string> usedRootFolders = _unusedRootFoldersOnly
+                ? CollectUsedRootFolders()
+                : null;
+
             foreach (var path in AssetDatabase.GetAllAssetPaths())
             {
                 if (!IsAssetsChildPath(path)) continue;
+                if (_unusedRootFoldersOnly && !IsInUnusedRootFolder(path, usedRootFolders)) continue;
                 if (_used.Contains(path)) continue;
                 if (AssetDatabase.IsValidFolder(path)) continue;
                 if (BlockedExt.Contains(Path.GetExtension(path))) continue;
@@ -617,6 +703,7 @@ namespace DiNeTool.AssetCleaner
             {
                 foreach (var folder in FindEmptyFolderRoots())
                 {
+                    if (_unusedRootFoldersOnly && !IsInUnusedRootFolder(folder, usedRootFolders)) continue;
                     if (_used.Contains(folder)) continue;
                     if (IsAlwaysProtectedPath(folder)) continue;
                     if (IsIgnored(folder)) continue;
@@ -628,6 +715,56 @@ namespace DiNeTool.AssetCleaner
             }
 
             ComputeFolderStats(_root);
+        }
+
+        private HashSet<string> CollectUsedRootFolders()
+        {
+            var roots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var path in _used)
+            {
+                string rootFolder = GetAssetsRootFolder(path);
+                if (!string.IsNullOrEmpty(rootFolder)) roots.Add(rootFolder);
+            }
+            return roots;
+        }
+
+        private static bool IsInUnusedRootFolder(string path, HashSet<string> usedRootFolders)
+        {
+            string rootFolder = GetAssetsRootFolder(path);
+            return !string.IsNullOrEmpty(rootFolder) &&
+                   (usedRootFolders == null || !usedRootFolders.Contains(rootFolder));
+        }
+
+        /// <summary>
+        /// Assets/Foo/Bar.asset → Assets/Foo. Assets 바로 아래의 폴더는 그 폴더 자체를 반환한다.
+        /// Assets 바로 아래의 파일은 폴더 기준 모드에서 제외한다.
+        /// </summary>
+        private static string GetAssetsRootFolder(string path)
+        {
+            if (!IsAssetsChildPath(path)) return null;
+
+            string normalized = path.Replace('\\', '/').TrimEnd('/');
+            int nextSlash = normalized.IndexOf('/', "Assets/".Length);
+            if (nextSlash >= 0)
+                return normalized.Substring(0, nextSlash);
+
+            return AssetDatabase.IsValidFolder(normalized) ? normalized : null;
+        }
+
+        private void SetUnusedRootFoldersOnly(bool enabled)
+        {
+            _unusedRootFoldersOnly = enabled;
+            BuildTree();
+            _selected.Clear();
+            _selVersion++;
+            ExpandAll(false);
+            _treeScroll = Vector2.zero;
+        }
+
+        private int RootFolderCount()
+        {
+            if (_root == null) return 0;
+            return _root.Folders.Count + _root.Files.Count(f => !f.IsFile);
         }
 
         private void InsertIntoTree(string assetPath, long bytes)
@@ -737,6 +874,80 @@ namespace DiNeTool.AssetCleaner
             return (bytes, count);
         }
 
+        /// <summary>
+        /// 삭제한 에셋들의 상위 폴더 중 내용물이 완전히 사라진 폴더를 휴지통으로 보낸다.
+        /// 깊은 경로부터 처리하므로 여러 단계가 한 번에 비어도 위로 이어서 정리된다.
+        /// 보호 폴더/Resources 등은 IsEmptyFolderTree 안에서 걸러진다.
+        /// </summary>
+        private int PruneEmptyParentFolders(IEnumerable<string> deletedPaths)
+        {
+            var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var path in deletedPaths)
+            {
+                string parent = ParentAssetPath(path);
+                while (!string.IsNullOrEmpty(parent) && !string.Equals(parent, "Assets", StringComparison.Ordinal))
+                {
+                    candidates.Add(parent);
+                    parent = ParentAssetPath(parent);
+                }
+            }
+            if (candidates.Count == 0) return 0;
+
+            int removed = 0;
+            foreach (var folder in candidates.OrderByDescending(f => f.Count(c => c == '/')))
+            {
+                if (!AssetDatabase.IsValidFolder(folder)) continue; // 상위 폴더와 함께 이미 삭제됨
+                if (!IsEmptyFolderTree(folder)) continue;
+                if (AssetDatabase.MoveAssetToTrash(folder)) removed++;
+            }
+            if (removed > 0) AssetDatabase.Refresh();
+            return removed;
+        }
+
+        /// <summary>
+        /// 분석 결과와 무관하게 프로젝트(Assets) 전체의 빈 폴더를 찾아 정리한다.
+        /// 하위까지 전부 빈 폴더는 최상위 한 번만 지운다(하위는 함께 삭제됨).
+        /// </summary>
+        private void CleanEmptyFolders()
+        {
+            var folders = FindEmptyFolderRoots()
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(f => f.Count(c => c == '/'))
+                .ToList();
+
+            if (folders.Count == 0) { SetStatus(T(EMPTY_NONE), false); return; }
+
+            // 다이얼로그는 일부만 보여주므로, 전체 목록은 콘솔에서 확인할 수 있게 남긴다.
+            Debug.Log($"[Asset Cleaner] Empty folders to clean ({folders.Count}):\n"
+                + string.Join("\n", folders));
+
+            if (!EditorUtility.DisplayDialog("Asset Cleaner",
+                Tf(EMPTY_DLG, folders.Count) + "\n\n" + string.Join("\n", folders.Take(12))
+                    + (folders.Count > 12 ? "\n…" : ""),
+                T(DLG_OK), T(DLG_CANCEL)))
+                return;
+
+            int ok = 0;
+            try
+            {
+                AssetDatabase.StartAssetEditing();
+                foreach (var folder in folders)
+                {
+                    if (!AssetDatabase.IsValidFolder(folder)) continue;
+                    if (!IsEmptyFolderTree(folder)) continue; // 확인 중 파일이 생겼을 수 있으므로 재확인
+                    if (AssetDatabase.MoveAssetToTrash(folder)) ok++;
+                }
+            }
+            finally
+            {
+                AssetDatabase.StopAssetEditing();
+                AssetDatabase.Refresh();
+            }
+
+            SetStatus(Tf(EMPTY_DONE, ok), false);
+            if (_analyzed) Analyze();
+        }
+
         private void DeleteSelected()
         {
             // 안전 이중 검증: 보존 대상(_used)은 절대 삭제하지 않는다.
@@ -746,6 +957,8 @@ namespace DiNeTool.AssetCleaner
                 .Where(p => !_used.Contains(p))
                 .Where(p => !IsAlwaysProtectedPath(p))
                 .Where(p => !IsAddressableAsset(p))
+                // 분석 후 파일이 추가된 빈 폴더를 통째로 지우지 않도록 삭제 직전에 다시 확인한다.
+                .Where(p => !AssetDatabase.IsValidFolder(p) || IsEmptyFolderTree(p))
                 .Distinct()
                 .OrderByDescending(p => p.Count(c => c == '/'))
                 .ToList();
@@ -783,7 +996,12 @@ namespace DiNeTool.AssetCleaner
                 AssetDatabase.Refresh();
             }
 
-            SetStatus(Tf(DELETED, ok, FormatBytes(bytes)) + (failed.Count > 0 ? Tf(FAIL_SUFFIX, failed.Count) : ""),
+            // 파일만 지우면 껍데기 폴더가 남으므로, 비게 된 상위 폴더를 함께 정리한다.
+            int prunedFolders = PruneEmptyParentFolders(paths);
+
+            SetStatus(Tf(DELETED, ok, FormatBytes(bytes))
+                    + (prunedFolders > 0 ? Tf(PRUNED_SUFFIX, prunedFolders) : "")
+                    + (failed.Count > 0 ? Tf(FAIL_SUFFIX, failed.Count) : ""),
                 failed.Count > 0);
             Analyze(); // 트리 갱신
         }
@@ -892,7 +1110,9 @@ namespace DiNeTool.AssetCleaner
 
         private void LoadPrefs()
         {
-            _lang          = (Lang)EditorPrefs.GetInt(PK + "lang", (int)Lang.Korean);
+            int langValue = EditorPrefs.GetInt("DiNeLang", EditorPrefs.GetInt(PK + "lang", (int)Lang.Korean));
+            if (langValue < 0 || langValue > 2) langValue = (int)Lang.English;
+            _lang          = (Lang)langValue;
             _includeCats   = (Cat)EditorPrefs.GetInt(PK + "cats", (int)DefaultCats);
             _includeEmptyFolders = EditorPrefs.GetBool(PK + "emptyFolders", true);
             _ignoreFolders.Clear();
@@ -902,7 +1122,7 @@ namespace DiNeTool.AssetCleaner
 
         private void SavePrefs()
         {
-            EditorPrefs.SetInt(PK + "lang", (int)_lang);
+            EditorPrefs.SetInt("DiNeLang", (int)_lang);
             EditorPrefs.SetInt(PK + "cats", (int)_includeCats);
             EditorPrefs.SetBool(PK + "emptyFolders", _includeEmptyFolders);
             EditorPrefs.SetString(PK + "ignore", string.Join("\n", _ignoreFolders));
@@ -1084,7 +1304,9 @@ namespace DiNeTool.AssetCleaner
             NOTHING = 23, DELETED = 24, FAIL_SUFFIX = 25, FILES_N = 26, FILTER_TITLE = 27, FILTER_HINT = 28,
             CAT_TEX = 29, CAT_MODEL = 30, CAT_MAT = 31, CAT_PREFAB = 32, CAT_AUDIO = 33, CAT_ANIM = 34,
             CAT_PRESET = 35, CAT_OTHER = 36, IGN_TITLE = 37, IGN_ADD = 38, IGN_EMPTY = 39,
-            IGN_PICK_TITLE = 40, PROTECT_NOTE = 41;
+            IGN_PICK_TITLE = 40, PROTECT_NOTE = 41, ROOT_ONLY = 42, ROOT_ONLY_TIP = 43,
+            ROOT_SUMMARY = 44, ROOT_TREE_EMPTY = 45, ROOT_FOLDER_META = 46,
+            PRUNED_SUFFIX = 47, EMPTY_CLEAN = 48, EMPTY_NONE = 49, EMPTY_DLG = 50, EMPTY_DONE = 51;
 
         private static readonly string[][] UI =
         {
@@ -1130,6 +1352,16 @@ namespace DiNeTool.AssetCleaner
             /*IGN_EMPTY*/  new[]{ "No protected folders.", "등록된 보호 폴더가 없습니다.", "保護フォルダはありません。" },
             /*IGN_PICK_TITLE*/new[]{ "Select a folder to protect", "보호할 폴더 선택", "保護するフォルダを選択" },
             /*PROTECT_NOTE*/new[]{ "Presets and 'Other' are protected by default. Register your reusable library as protected folders.", "프리셋·기타는 기본 보호됩니다. 재사용 라이브러리는 보호 폴더로 등록하세요.", "プリセット·その他は既定で保護されます。再利用ライブラリは保護フォルダに登録してください。" },
+            /*ROOT_ONLY*/  new[]{ "Only fully unused root folders", "완전 미사용 루트 폴더만 보기", "完全未使用の直下フォルダのみ" },
+            /*ROOT_ONLY_TIP*/new[]{ "Shows only first-level folders under Assets whose entire subtree has no assets referenced by the selected scenes. Type and protection filters still apply to selectable items.", "Assets 바로 아래의 1단계 폴더 중, 선택한 씬이 참조하는 에셋이 하위 전체에 하나도 없는 폴더만 보여줍니다. 선택 가능한 항목에는 종류·보호 필터가 그대로 적용됩니다.", "Assets直下の第1階層フォルダのうち、選択したシーンから参照されるアセットが下位全体に1つもないものだけを表示します。選択可能な項目には種類・保護フィルターが引き続き適用されます。" },
+            /*ROOT_SUMMARY*/new[]{ "Fully unused root folders: {0}  ·  candidates: {1}  ·  total ≈ {2}", "완전 미사용 루트 폴더: {0}개  ·  정리 후보: {1}개  ·  합계 ≈ {2}", "完全未使用の直下フォルダ: {0}個  ·  整理候補: {1}個  ·  合計 ≈ {2}" },
+            /*ROOT_TREE_EMPTY*/new[]{ "No first-level folder under Assets is completely unused with the current filters.", "현재 필터 기준으로 Assets 바로 아래에 완전히 미사용인 폴더가 없습니다.", "現在のフィルターでは、Assets直下に完全に未使用のフォルダはありません。" },
+            /*ROOT_FOLDER_META*/new[]{ "{0} candidates  ·  {1}", "후보 {0}개  ·  {1}", "候補 {0}個  ·  {1}" },
+            /*PRUNED_SUFFIX*/new[]{ " · {0} empty folders removed", " · 빈 폴더 {0}개 정리", " · 空フォルダ{0}個を整理" },
+            /*EMPTY_CLEAN*/new[]{ "Clean empty folders", "빈 폴더 정리", "空フォルダ整理" },
+            /*EMPTY_NONE*/ new[]{ "No empty folders to clean.", "정리할 빈 폴더가 없습니다.", "整理する空フォルダはありません。" },
+            /*EMPTY_DLG*/  new[]{ "Move {0} empty folders to the trash?\nYou can restore them from the OS trash.", "빈 폴더 {0}개를 휴지통으로 보냅니다.\nOS 휴지통에서 복구할 수 있습니다.", "空フォルダ{0}個をゴミ箱に移動します。\nOSのゴミ箱から復元できます。" },
+            /*EMPTY_DONE*/ new[]{ "Cleaned {0} empty folders", "빈 폴더 {0}개 정리 완료", "空フォルダ{0}個を整理しました" },
         };
     }
 }

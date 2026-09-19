@@ -1,4 +1,4 @@
-#if UNITY_EDITOR
+﻿#if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -310,7 +310,7 @@ public static class DiNeIconMaker
             if (usePreviewScene)
             {
                 camera.scene = previewScene;
-                AddPreviewLight(cameraObject.transform);
+                AddPreviewLight(cameraObject.transform, captureLayer);
             }
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = Color.clear;
@@ -391,16 +391,31 @@ public static class DiNeIconMaker
     }
 
     // 프리뷰 씬에는 씬 조명이 없으므로 캡처가 새까맣게 나오지 않도록 카메라에 조명을 붙인다.
-    private static void AddPreviewLight(Transform cameraTransform)
+    // captureLayer를 넘기면 조명도 같은 레이어에 둔다. 카메라의 cullingMask는 Renderer뿐 아니라
+    // Light 컬링에도 적용되므로, 레이어가 다르면 조명이 통째로 무시돼 결과가 새까맣게 나온다.
+    internal static void AddPreviewLight(Transform cameraTransform, int captureLayer = -1)
     {
-        var lightObject = new GameObject("DiNe_IconLight") { hideFlags = HideFlags.HideAndDontSave };
+        AddPreviewLight(cameraTransform, captureLayer, "DiNe_IconLight",
+            new Vector3(25f, -20f, 0f), 1.05f, Color.white);
+        // 키 라이트만으로는 반대편이 검게 남으므로 보조광을 함께 둔다.
+        AddPreviewLight(cameraTransform, captureLayer, "DiNe_IconFillLight",
+            new Vector3(-10f, 150f, 0f), 0.45f, new Color(0.86f, 0.89f, 1f));
+    }
+
+    private static void AddPreviewLight(
+        Transform cameraTransform, int captureLayer, string name,
+        Vector3 localEuler, float intensity, Color color)
+    {
+        var lightObject = new GameObject(name) { hideFlags = HideFlags.HideAndDontSave };
         lightObject.transform.SetParent(cameraTransform, false);
-        lightObject.transform.localRotation = Quaternion.Euler(25f, -20f, 0f);
+        lightObject.transform.localRotation = Quaternion.Euler(localEuler);
+        if (captureLayer >= 0 && captureLayer < 32)
+            lightObject.layer = captureLayer;
 
         Light light = lightObject.AddComponent<Light>();
         light.type = LightType.Directional;
-        light.intensity = 1f;
-        light.color = Color.white;
+        light.intensity = intensity;
+        light.color = color;
         light.shadows = LightShadows.None;
         light.cullingMask = ~0;
     }

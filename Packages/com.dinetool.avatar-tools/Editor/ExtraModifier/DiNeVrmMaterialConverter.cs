@@ -23,6 +23,23 @@ namespace DiNeTool.ExtraModifier.Editor
         public bool KeepRim;
         public bool SaveAsAssets;
 
+        /// <summary>
+        /// 기본값. 맷캡과 림라이트는 가져오지 않는다.
+        /// lilToon/Poiyomi와 MToon은 이 둘의 계산 방식과 의도가 달라서,
+        /// 값을 옮겨 담으면 원본보다 오히려 이상하게 보이는 경우가 많다.
+        /// </summary>
+        public static DiNeVrmMaterialOptions Default => new DiNeVrmMaterialOptions
+        {
+            KeepNormalMap = true,
+            KeepMatcap = false,
+            KeepEmission = true,
+            KeepShadeColor = true,
+            KeepOutline = true,
+            KeepRim = false,
+            SaveAsAssets = true
+        };
+
+        /// <summary>맷캡·림라이트까지 포함해 옮길 수 있는 값은 전부 옮긴다. ("모두 유지")</summary>
         public static DiNeVrmMaterialOptions Preserve => new DiNeVrmMaterialOptions
         {
             KeepNormalMap = true,
@@ -56,7 +73,7 @@ namespace DiNeTool.ExtraModifier.Editor
     /// </summary>
     internal static class DiNeVrmMaterialConverter
     {
-        private const string OutputRoot = "Assets/DiNe/VRM Materials";
+        private const string OutputRoot = "Assets/Di Ne/VRM Materials";
 
         // 소스 셰이더에서 찾을 프로퍼티 후보들 (앞에 있을수록 우선).
         private static readonly string[] MainTexNames = { "_MainTex", "_BaseMap", "_BaseColorMap", "_MainTexture", "_Diffuse" };
@@ -262,8 +279,13 @@ namespace DiNeTool.ExtraModifier.Editor
                 }
                 else
                 {
+                    ClearMatcap(target, isMToon10);
                     report.DroppedMaterialFeatures++;
                 }
+            }
+            else
+            {
+                ClearMatcap(target, isMToon10);
             }
 
             // 이미시브.
@@ -303,12 +325,13 @@ namespace DiNeTool.ExtraModifier.Editor
                 }
                 else
                 {
+                    ClearRim(target, isMToon10);
                     report.DroppedMaterialFeatures++;
                 }
             }
             else
             {
-                SetColor(target, "_RimColor", Color.black);
+                ClearRim(target, isMToon10);
             }
 
             // 아웃라인.
@@ -352,6 +375,31 @@ namespace DiNeTool.ExtraModifier.Editor
         }
 
         /// <summary>곱 연산 맷캡인지. MToon에는 대응 슬롯이 없어 그대로 옮기면 색이 망가진다.</summary>
+        /// <summary>맷캡을 확실히 꺼 둔다. MToon은 텍스처가 비어 있어도 색만 남아 빛나는 경우가 있다.</summary>
+        private static void ClearMatcap(Material target, bool isMToon10)
+        {
+            if (isMToon10)
+            {
+                SetTexture(target, "_MatcapTex", null);
+                SetColor(target, "_MatcapColor", Color.black);
+            }
+            else
+            {
+                SetTexture(target, "_SphereAdd", null);
+            }
+        }
+
+        /// <summary>림라이트를 확실히 꺼 둔다.</summary>
+        private static void ClearRim(Material target, bool isMToon10)
+        {
+            SetColor(target, "_RimColor", Color.black);
+            SetTexture(target, isMToon10 ? "_RimMultiplyTex" : "_RimTexture", null);
+            if (isMToon10)
+                SetFloat(target, "_RimLightingMixFactor", 0f);
+            else
+                SetFloat(target, "_RimLightingMix", 0f);
+        }
+
         private static bool IsMultiplyMatcap(Material source)
         {
             var name = FindName(source, MatcapBlendNames);

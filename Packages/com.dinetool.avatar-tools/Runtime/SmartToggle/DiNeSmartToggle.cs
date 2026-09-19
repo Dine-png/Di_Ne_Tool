@@ -3,7 +3,7 @@ using UnityEngine;
 
 [DisallowMultipleComponent]
 [AddComponentMenu("DiNe/Smart Toggle")]
-public sealed class DiNeSmartToggle : MonoBehaviour
+public sealed class DiNeSmartToggle : MonoBehaviour, VRC.SDKBase.IEditorOnly
 {
     public enum MenuPlacement
     {

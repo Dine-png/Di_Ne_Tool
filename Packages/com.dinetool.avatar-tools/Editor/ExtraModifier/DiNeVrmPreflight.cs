@@ -23,7 +23,9 @@ namespace DiNeTool.ExtraModifier.Editor
         /// <summary>UniVRM이 그대로 내보내지 못하는 셰이더.</summary>
         UnsupportedShaders,
         /// <summary>VRMMeta가 없음(내보내기 창에서 입력 가능).</summary>
-        NoVrmMeta
+        NoVrmMeta,
+        /// <summary>SpringBone이 내보내기 루트 밖이거나 비활성인 오브젝트를 참조함.</summary>
+        SpringBoneReferences
     }
 
     internal enum DiNeVrmIssueSeverity
@@ -122,6 +124,18 @@ namespace DiNeTool.ExtraModifier.Editor
                     Kind = DiNeVrmIssueKind.PhysBones,
                     Severity = DiNeVrmIssueSeverity.Warning,
                     Count = physBones
+                });
+            }
+
+            // UniVRM 내보내기 검사에서 "is out of hierarchy" / "is not active"로 막히는 참조.
+            var brokenSpringBones = DiNeVrmUtility.CountBrokenSpringBones(avatarRoot);
+            if (brokenSpringBones > 0)
+            {
+                issues.Add(new DiNeVrmIssue
+                {
+                    Kind = DiNeVrmIssueKind.SpringBoneReferences,
+                    Severity = DiNeVrmIssueSeverity.Error,
+                    Count = brokenSpringBones
                 });
             }
 

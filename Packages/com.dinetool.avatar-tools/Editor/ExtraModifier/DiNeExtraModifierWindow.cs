@@ -80,7 +80,7 @@ namespace DiNeTool.ExtraModifier.Editor
             new[] { "Delete All PhysBones", "모든 PhysBone 삭제", "すべてのPhysBoneを削除" },
             new[] { "Keep PhysBones (no action)", "PhysBone 유지 (동작 없음)", "PhysBoneを維持（処理なし）" },
             new[] { "4. Convert Materials to MToon", "4. 머티리얼 MToon 변환", "4. マテリアルをMToon変換" },
-            new[] { "Replaces lilToon, Poiyomi, and Standard materials with VRM MToon. Checked data is carried over; unchecked data is dropped during conversion.", "lilToon, Poiyomi, Standard 계열 머티리얼을 VRM MToon으로 교체합니다. 체크한 데이터는 살려서 옮기고, 체크를 해제한 데이터는 변환하면서 버립니다.", "lilToon、Poiyomi、Standard系マテリアルをVRM MToonへ置き換えます。チェックしたデータは引き継ぎ、外したデータは変換時に破棄します。" },
+            new[] { "Replaces lilToon, Poiyomi, and Standard materials with VRM MToon. Checked data is carried over; unchecked data is dropped during conversion. MatCap and rim light are off by default because MToon computes them differently and the result usually looks worse than the original.", "lilToon, Poiyomi, Standard 계열 머티리얼을 VRM MToon으로 교체합니다. 체크한 데이터는 살려서 옮기고, 체크를 해제한 데이터는 변환하면서 버립니다. 맷캡과 림라이트는 MToon의 계산 방식이 달라 옮기면 오히려 이상해지는 경우가 많아 기본적으로 끕니다.", "lilToon、Poiyomi、Standard系マテリアルをVRM MToonへ置き換えます。チェックしたデータは引き継ぎ、外したデータは変換時に破棄します。マットキャップとリムライトはMToonの計算方式が異なり、引き継ぐとかえって崩れやすいため既定でオフです。" },
             new[] { "Convert Materials", "머티리얼 변환", "マテリアルを変換" },
             new[] { "Normal map", "노말맵", "ノーマルマップ" },
             new[] { "MatCap (sphere add)", "맷캡 (가산 스피어)", "マットキャップ（加算スフィア）" },
@@ -91,7 +91,7 @@ namespace DiNeTool.ExtraModifier.Editor
             new[] { "Keep All", "모두 유지", "すべて維持" },
             new[] { "Drop All", "모두 제거", "すべて破棄" },
             new[] { "MToon shader was not found. Install UniVRM to convert materials.", "MToon 셰이더를 찾을 수 없습니다. 머티리얼 변환에는 UniVRM이 필요합니다.", "MToonシェーダーが見つかりません。マテリアル変換にはUniVRMが必要です。" },
-            new[] { "Save converted materials under Assets/DiNe/VRM Materials", "변환한 머티리얼을 Assets/DiNe/VRM Materials에 저장", "変換したマテリアルをAssets/DiNe/VRM Materialsに保存" },
+            new[] { "Save converted materials under Assets/Di Ne/VRM Materials", "변환한 머티리얼을 Assets/Di Ne/VRM Materials에 저장", "変換したマテリアルをAssets/Di Ne/VRM Materialsに保存" },
             new[] { "Include material conversion in the full automatic preparation", "전체 자동 처리에 머티리얼 변환 포함", "全自動処理にマテリアル変換を含める" },
             new[] { "UniVRM Integration", "UniVRM 연동", "UniVRM連携" },
             new[] { "This tool prepares the avatar; T-Pose freezing, mesh utilities, meta input, and the actual export are handed over to UniVRM's own windows.", "이 툴은 아바타를 준비하는 역할만 하고, T-Pose 고정·메시 유틸리티·메타 입력·실제 내보내기는 UniVRM의 창에 그대로 넘깁니다.", "このツールはアバターの準備を担当し、T-Pose固定・メッシュユーティリティ・メタ入力・実際の書き出しはUniVRM側のウィンドウに任せます。" },
@@ -113,7 +113,12 @@ namespace DiNeTool.ExtraModifier.Editor
             new[] { "VRM-incompatible components remain: {0}", "VRM 비호환 컴포넌트가 {0}개 남아 있습니다.", "VRM非互換コンポーネントが{0}個残っています。" },
             new[] { "UniVRM cannot export {0} material(s) as-is ({1}); they would fall back to a flat material.", "UniVRM이 그대로 내보낼 수 없는 머티리얼이 {0}개 있습니다 ({1}). 변환하지 않으면 단순 머티리얼로 나갑니다.", "UniVRMがそのまま書き出せないマテリアルが{0}個あります（{1}）。変換しないと簡易マテリアルになります。" },
             new[] { "No VRMMeta yet. You can fill in the title and author in UniVRM's export window.", "아직 VRMMeta가 없습니다. UniVRM 내보내기 창에서 제목·제작자를 입력할 수 있습니다.", "まだVRMMetaがありません。UniVRMの書き出しウィンドウでタイトルや作者を入力できます。" },
-            new[] { "Finish with UniVRM's Freeze T-Pose (runs last, after PhysBone conversion)", "마지막에 UniVRM의 T-Pose 고정 실행 (PhysBone 변환 이후)", "最後にUniVRMのT-Pose固定を実行（PhysBone変換の後）" }
+            new[] { "Finish with UniVRM's Freeze T-Pose (runs last, after PhysBone conversion)", "마지막에 UniVRM의 T-Pose 고정 실행 (PhysBone 변환 이후)", "最後にUniVRMのT-Pose固定を実行（PhysBone変換の後）" },
+            new[] { "{0} SpringBone(s) reference objects that are inactive or outside the export root. UniVRM blocks the export with \"is not active\" / \"is out of hierarchy\". Fixing drops those references; activate the objects first if you want them exported.", "SpringBone {0}개가 비활성이거나 내보내기 루트 밖에 있는 오브젝트를 참조합니다. UniVRM이 \"is not active\" / \"is out of hierarchy\" 오류로 내보내기를 막습니다. 고치기를 누르면 해당 참조를 제거합니다. 그 오브젝트도 내보내려면 먼저 활성화하고 다시 변환하세요.", "SpringBoneが{0}個、非アクティブまたは書き出しルート外のオブジェクトを参照しています。UniVRMは\"is not active\" / \"is out of hierarchy\"で書き出しを止めます。修正すると該当参照を削除します。書き出したい場合は先にオブジェクトを有効化してください。" },
+            new[] { "5. Remove Empty Objects", "5. 빈 오브젝트 정리", "5. 空オブジェクトの整理" },
+            new[] { "Removes objects that have no component other than Transform, no children, and are not referenced by anything. Humanoid bones, mesh bones, SpringBone roots, collider groups, and constraint targets are kept. Deleted names are listed in the Console.", "Transform 외에 컴포넌트가 없고, 자식도 없고, 어디에서도 참조하지 않는 오브젝트를 지웁니다. 휴머노이드 본, 메시 본, SpringBone 루트, 콜라이더 그룹, Constraint 대상은 남깁니다. 지운 이름은 콘솔에 남습니다.", "Transform以外のコンポーネントがなく、子もなく、どこからも参照されていないオブジェクトを削除します。Humanoidボーン、メッシュボーン、SpringBoneのルート、コライダーグループ、Constraint対象は残します。削除した名前はコンソールに出力します。" },
+            new[] { "Remove Empty Objects", "빈 오브젝트 지우기", "空オブジェクトを削除" },
+            new[] { "Remove empty objects at the end of the full automatic preparation", "전체 자동 처리 마지막에 빈 오브젝트 정리", "全自動処理の最後に空オブジェクトを整理" }
         };
 
         private Language language;
@@ -124,9 +129,10 @@ namespace DiNeTool.ExtraModifier.Editor
         private MessageType vrmStatusType = MessageType.Info;
         private bool advanced;
         private DiNeVrmPhysBoneMode physBoneMode = DiNeVrmPhysBoneMode.Convert;
-        private DiNeVrmMaterialOptions materialOptions = DiNeVrmMaterialOptions.Preserve;
+        private DiNeVrmMaterialOptions materialOptions = DiNeVrmMaterialOptions.Default;
         private bool convertMaterialsInAuto = true;
         private bool freezeTPoseInAuto;
+        private bool removeEmptyObjectsInAuto;
         private List<DiNeVrmIssue> preflightIssues;
         private Vector2 scroll;
         private Texture2D windowIcon;
@@ -391,6 +397,7 @@ namespace DiNeTool.ExtraModifier.Editor
                 EditorGUILayout.HelpBox(T(33), MessageType.Error);
 
             convertMaterialsInAuto = EditorGUILayout.ToggleLeft(T(63), convertMaterialsInAuto);
+            removeEmptyObjectsInAuto = EditorGUILayout.ToggleLeft(T(89), removeEmptyObjectsInAuto);
             using (new EditorGUI.DisabledScope(!DiNeUniVrmBridge.IsAvailable(DiNeUniVrmAction.FreezeTPose)))
                 freezeTPoseInAuto = EditorGUILayout.ToggleLeft(T(84), freezeTPoseInAuto);
 
@@ -405,7 +412,8 @@ namespace DiNeTool.ExtraModifier.Editor
                         PhysBoneMode = physBoneMode,
                         ConvertMaterials = convertMaterialsInAuto && DiNeVrmMaterialConverter.IsMToonAvailable,
                         MaterialOptions = materialOptions,
-                        FreezeTPose = freezeTPoseInAuto && DiNeUniVrmBridge.IsAvailable(DiNeUniVrmAction.FreezeTPose)
+                        FreezeTPose = freezeTPoseInAuto && DiNeUniVrmBridge.IsAvailable(DiNeUniVrmAction.FreezeTPose),
+                        RemoveEmptyObjects = removeEmptyObjectsInAuto
                     };
                     var report = DiNeVrmUtility.RunAll(vrmAvatar, options, out var copy);
                     if (copy != null)
@@ -424,6 +432,8 @@ namespace DiNeTool.ExtraModifier.Editor
             DrawVrmActionSection(34, 35, 36, true, () => DiNeVrmUtility.CleanupForVrm(vrmAvatar));
             GUILayout.Space(8f);
             DrawMaterialSection();
+            GUILayout.Space(8f);
+            DrawVrmActionSection(86, 87, 88, true, () => DiNeVrmUtility.RemoveEmptyObjects(vrmAvatar));
             GUILayout.Space(10f);
             DrawUniVrmSection();
 
@@ -638,6 +648,7 @@ namespace DiNeTool.ExtraModifier.Editor
                 case DiNeVrmIssueKind.VrcComponents: return string.Format(T(81), issue.Count);
                 case DiNeVrmIssueKind.UnsupportedShaders: return string.Format(T(82), issue.Count, issue.Detail);
                 case DiNeVrmIssueKind.NoVrmMeta: return T(83);
+                case DiNeVrmIssueKind.SpringBoneReferences: return string.Format(T(85), issue.Count);
                 default: return issue.Kind.ToString();
             }
         }
@@ -658,6 +669,8 @@ namespace DiNeTool.ExtraModifier.Editor
                     return () => ShowVrmReport(DiNeVrmUtility.CleanupForVrm(vrmAvatar));
                 case DiNeVrmIssueKind.PhysBones:
                     return () => ShowVrmReport(DiNeVrmUtility.ProcessPhysBones(vrmAvatar, physBoneMode));
+                case DiNeVrmIssueKind.SpringBoneReferences:
+                    return () => ShowVrmReport(DiNeVrmUtility.RepairSpringBones(vrmAvatar));
                 case DiNeVrmIssueKind.UnsupportedShaders:
                     return DiNeVrmMaterialConverter.IsMToonAvailable
                         ? (Action)(() => ShowVrmReport(DiNeVrmMaterialConverter.ConvertToMToon(vrmAvatar, materialOptions)))
