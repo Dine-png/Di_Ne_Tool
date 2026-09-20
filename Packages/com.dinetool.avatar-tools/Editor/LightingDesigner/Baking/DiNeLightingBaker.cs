@@ -30,7 +30,9 @@ internal sealed class DiNeLightingDesignerCaptureHook : IVRCSDKPreprocessAvatarC
         }
         catch (Exception e)
         {
-            Debug.LogError($"[DiNe 라이팅 디자이너] 빌드 스냅샷 캡처 중 예외: {e.Message}\n{e.StackTrace}");
+            Debug.LogError($"[DiNe 라이팅 디자이너] 빌드 스냅샷 캡처에 실패하여 아바타 빌드를 중단합니다: {e.Message}\n{e.StackTrace}");
+            DiNeMultiDresserAutoApply.OnAvatarBuildFailed();
+            return false;
         }
 
         return true;
@@ -142,60 +144,60 @@ public static class DiNeLightingBaker
 
         DiNeLightingBakeSession session = null;
         int normalizedCount = 0;
+        var replacements = new Dictionary<Renderer, Material[]>();
 
-        try
+        foreach (var renderer in renderers)
         {
-            foreach (var renderer in renderers)
+            var materials = renderer.sharedMaterials;
+            if (materials == null || materials.Length == 0) continue;
+
+            Material[] replacement = null;
+
+            for (int i = 0; i < materials.Length; i++)
             {
-                var materials = renderer.sharedMaterials;
-                if (materials == null || materials.Length == 0) continue;
+                var original = materials[i];
+                if (original == null || original.shader == null) continue;
 
-                Material[] replacement = null;
+                var profile = DiNeShaderProfile.All.FirstOrDefault(item =>
+                    (targetShaders & item.Flag) != 0 && item.IsTarget(original.shader));
+                if (profile == null) continue;
+                if (!profile.RequiresMaterialPreparation(controls)) continue;
 
-                for (int i = 0; i < materials.Length; i++)
+                if (session == null)
+                    session = new DiNeLightingBakeSession();
+
+                var clone = session.GetOrCloneMaterial(original);
+                if (clone == null) continue;
+
+                // 같은 머티리얼이 여러 렌더러에 붙어 있으면 복제본은 하나뿐이므로,
+                // 준비/정규화도 처음 한 번만 돌린다.
+                if (session.MarkPrepared(clone))
                 {
-                    var original = materials[i];
-                    if (original == null || original.shader == null) continue;
-
-                    var profile = DiNeShaderProfile.All.FirstOrDefault(item =>
-                        (targetShaders & item.Flag) != 0 && item.IsTarget(original.shader));
-                    if (profile == null) continue;
-                    if (!profile.RequiresMaterialPreparation(controls)) continue;
-
-                    if (session == null)
-                        session = new DiNeLightingBakeSession();
-
-                    var clone = session.GetOrCloneMaterial(original);
-                    if (clone == null) continue;
-
-                    // 같은 머티리얼이 여러 렌더러에 붙어 있으면 복제본은 하나뿐이므로,
-                    // 준비/정규화도 처음 한 번만 돌린다.
-                    if (session.MarkPrepared(clone))
-                    {
-                        profile.PrepareMaterial(clone, controls);
-                        if (profile.NormalizeMaterial(clone, controls, session))
-                            normalizedCount++;
-                    }
-
-                    if (replacement == null)
-                        replacement = (Material[])materials.Clone();
-                    replacement[i] = clone;
+                    profile.PrepareMaterial(clone, controls);
+                    if (profile.NormalizeMaterial(clone, controls, session))
+                        normalizedCount++;
                 }
 
-                if (replacement != null)
-                    renderer.sharedMaterials = replacement;
+                if (replacement == null)
+                    replacement = (Material[])materials.Clone();
+                replacement[i] = clone;
             }
 
-            if (session != null)
-            {
-                session.Save();
-                Debug.Log(
-                    $"[DiNe 라이팅 디자이너] 머티리얼 정규화 완료: 복제 {session.ClonedMaterialCount}개, 베이킹 {normalizedCount}개.");
-            }
+            if (replacement != null)
+                replacements.Add(renderer, replacement);
         }
-        catch (Exception e)
+
+        // Do not install any material arrays until every bake and asset save
+        // succeeds. A failure propagates to the build/play-mode entry point,
+        // which aborts that operation and schedules temporary-asset cleanup.
+        if (session != null)
         {
-            Debug.LogError($"[DiNe 라이팅 디자이너] 머티리얼 정규화 중 예외: {e.Message}\n{e.StackTrace}");
+            session.Save();
+            foreach (var replacement in replacements)
+                replacement.Key.sharedMaterials = replacement.Value;
+
+            Debug.Log(
+                $"[DiNe 라이팅 디자이너] 머티리얼 정규화 완료: 복제 {session.ClonedMaterialCount}개, 베이킹 {normalizedCount}개.");
         }
     }
 

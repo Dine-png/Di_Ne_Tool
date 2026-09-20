@@ -176,7 +176,22 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
                 .Any(designer => designer != null && designer.enabled))
                 continue;
 
-            DiNeLightingBaker.NormalizeForPlayMode(descriptor.gameObject);
+            try
+            {
+                DiNeLightingBaker.NormalizeForPlayMode(descriptor.gameObject);
+            }
+            catch (Exception e)
+            {
+                // The temporary FX curves already expect normalized textures.
+                // Leaving them on unbaked materials would show a corrupt preview.
+                // Exiting play mode lets the existing edit-mode hook restore FX
+                // and remove all temporary assets after the play clones are gone.
+                Debug.LogError(
+                    $"[DiNe 라이팅 디자이너] '{descriptor.name}'의 머티리얼 정규화에 실패하여 플레이 모드 미리보기를 중단합니다: {e.Message}\n{e.StackTrace}",
+                    descriptor);
+                EditorApplication.isPlaying = false;
+                return;
+            }
         }
     }
 
@@ -248,7 +263,9 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         }
         catch (Exception e)
         {
-            Debug.LogError($"[DiNe] Failed to normalize build avatar materials: {e.Message}\n{e.StackTrace}");
+            Debug.LogError($"[DiNe] Avatar build stopped because material normalization failed: {e.Message}\n{e.StackTrace}");
+            OnAvatarBuildFailed();
+            return false;
         }
 
         return true;
@@ -319,6 +336,15 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
     {
         BuildInProgress = false;
         EditorApplication.delayCall += () => TryRestoreIfIdle("avatar build postprocess");
+    }
+
+    // A rejected preprocess callback may never reach SDK postprocess, and test
+    // tools may not dispatch builder events. Clear the guard here and clean up
+    // after the SDK has unwound; play-mode sessions still wait for edit mode.
+    internal static void OnAvatarBuildFailed()
+    {
+        BuildInProgress = false;
+        EditorApplication.delayCall += () => TryRestoreIfIdle("avatar preprocess failed");
     }
 
     // 더미는 (1) 빌드/업로드가 끝나고 (2) 플레이 모드도 아닐 때만 안전하게 제거할 수 있다.

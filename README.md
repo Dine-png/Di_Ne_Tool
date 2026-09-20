@@ -3,10 +3,17 @@
 VRChat 아바타의 편집, 메뉴 제작, 라이팅, 최적화, 아이콘·스크린샷 제작, VRM 변환 준비를 한곳에서 처리하는 **Unity Editor 도구 모음**입니다.
 
 ![Unity 2022.3](https://img.shields.io/badge/Unity-2022.3_LTS%2B-black?logo=unity&style=flat)
-![Version 1.7.0](https://img.shields.io/badge/Version-1.7.0-30D1C2?style=flat)
+![Version 1.7.1](https://img.shields.io/badge/Version-1.7.1-30D1C2?style=flat)
 ![Languages](https://img.shields.io/badge/UI-EN%20%2F%20KO%20%2F%20JP-4C9BD6?style=flat)
 
 > 대부분의 도구는 English / 한국어 / 日本語 UI를 지원합니다. 기능에 따라 lilToon, Poiyomi, NDMF, Modular Avatar, UniVRM을 함께 사용할 수 있습니다.
+
+### 1.7.1 변경 사항
+
+- Lighting Designer의 Play Mode·업로드용 텍스처 처리에서 알파를 보존해 반투명 머티리얼이 불투명하게 변하는 문제를 수정했습니다.
+- lilToon의 원래 색 보정 값과 적용 순서를 유지해 색온도 사용 시 색감이 달라지는 문제를 수정했습니다.
+- 색온도 제어에 필요한 베이크에 머티리얼별 알파를 보존해 같은 렌더러의 여러 머티리얼 슬롯에서도 개별 투명도를 유지합니다.
+- 생성된 텍스처의 필터·랩·밉맵 설정을 원본에 맞춰 유지합니다.
 
 ## 📥 설치
 
@@ -393,4 +400,4 @@ Hierarchy의 각 GameObject 오른쪽에는 `● / ○` 활성화 버튼이 표�
 
 **Made with ❤️ for avatar creators**
 
-_Last updated: 2026-08-22_
+_Last updated: 2026-09-21_

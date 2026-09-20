@@ -62,48 +62,104 @@ internal sealed class DiNeLightingBakeSession
             width = Mathf.Max(32, source.width);
             height = Mathf.Max(32, source.height);
         }
+        // Keep textures authored without mipmaps from gaining distance-dependent
+        // filtering after normalization. White fallbacks retain the default chain.
+        bool useMipMaps = !(source is Texture2D sourceTexture) || sourceTexture.mipmapCount > 1;
 
-        var renderTexture = RenderTexture.GetTemporary(width, height);
+        // The baker outputs shader colors, so store them as sRGB color data in both
+        // the render target and the resulting Texture2D. An explicit RGBA target
+        // also avoids platform defaults that can discard the baked alpha channel.
+        var renderTexture = RenderTexture.GetTemporary(
+            width, height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
         var previous = RenderTexture.active;
+        bool previousSrgbWrite = GL.sRGBWrite;
+        Texture2D baked = null;
+        string assetPath = null;
         try
         {
+            // Blit can inherit sRGB write state from an earlier editor render.
+            // Encoding here must match the sRGB Texture2D read after GPU readback.
+            GL.sRGBWrite = QualitySettings.activeColorSpace == ColorSpace.Linear;
             // Graphics.Blit assigns its source to _MainTex. Passing null can therefore
             // overwrite the baker material's white fallback with an undefined texture.
             Graphics.Blit(source != null ? source : Texture2D.whiteTexture, renderTexture, blitMaterial);
 
-            var baked = new Texture2D(width, height, TextureFormat.RGBA32, true)
+            baked = new Texture2D(width, height, TextureFormat.RGBA32, useMipMaps, false)
             {
                 name = (source != null ? source.name : "DiNeBaked")
             };
+            if (source != null)
+            {
+                baked.wrapModeU = source.wrapModeU;
+                baked.wrapModeV = source.wrapModeV;
+                baked.wrapModeW = source.wrapModeW;
+                baked.filterMode = source.filterMode;
+                baked.anisoLevel = source.anisoLevel;
+                baked.mipMapBias = source.mipMapBias;
+            }
 
-            var request = AsyncGPUReadback.Request(renderTexture, 0, TextureFormat.RGBA32);
-            request.WaitForCompletion();
-            if (request.hasError)
+            bool readbackComplete = false;
+            if (SystemInfo.supportsAsyncGPUReadback)
+            {
+                var request = AsyncGPUReadback.Request(renderTexture, 0, TextureFormat.RGBA32);
+                request.WaitForCompletion();
+                if (!request.hasError)
+                {
+                    // This is a non-owning view into request memory. Copy it while
+                    // the request is alive, and never dispose the returned array.
+                    var data = request.GetData<Color32>();
+                    baked.SetPixelData(data, 0);
+                    readbackComplete = true;
+                }
+            }
+            if (!readbackComplete)
             {
                 // GPU 읽기가 실패하면 동기 ReadPixels로 대체한다.
                 RenderTexture.active = renderTexture;
                 baked.ReadPixels(new Rect(0f, 0f, width, height), 0, 0, false);
             }
-            else
+
+            // The caller's hasAlpha hint describes material tint, not texture
+            // transparency. The actual result is authoritative: even one
+            // non-opaque pixel requires an alpha-capable compression format.
+            // GetPixelData is another borrowed view and must not be disposed.
+            bool bakedHasAlpha = false;
+            var pixels = baked.GetPixelData<Color32>(0);
+            for (int i = 0; i < pixels.Length; i++)
             {
-                // GetData returns a non-owning view into AsyncGPUReadbackRequest memory.
-                // Disposing that NativeArray can throw on Unity versions that reject
-                // disposal of externally owned buffers, so copy it without a using block.
-                var data = request.GetData<Color32>();
-                baked.SetPixelData(data, 0);
+                if (pixels[i].a == byte.MaxValue) continue;
+                bakedHasAlpha = true;
+                break;
             }
-            baked.Apply(true);
+            baked.Apply(useMipMaps);
 
             // DXT는 4의 배수 크기에서만 안전하다. 아니면 비압축으로 둔다.
             if (width % 4 == 0 && height % 4 == 0)
-                EditorUtility.CompressTexture(baked, hasAlpha ? TextureFormat.DXT5 : TextureFormat.DXT1, 50);
-            AssetDatabase.CreateAsset(baked, AssetDatabase.GenerateUniqueAssetPath($"{_folder}/{SafeName(baked.name)}_baked.asset"));
+                EditorUtility.CompressTexture(baked, bakedHasAlpha ? TextureFormat.DXT5 : TextureFormat.DXT1, 50);
+            assetPath = AssetDatabase.GenerateUniqueAssetPath($"{_folder}/{SafeName(baked.name)}_baked.asset");
+            AssetDatabase.CreateAsset(baked, assetPath);
+            if (AssetDatabase.GetAssetPath(baked) != assetPath)
+                throw new InvalidOperationException($"Could not save baked texture: {assetPath}");
 
             _bakedTextures.Add(hash, baked);
             return baked;
         }
+        catch
+        {
+            // Only publish a usable texture after the bake and asset creation
+            // succeed. Failed readback/compression must not leak editor objects.
+            if (baked != null)
+            {
+                if (assetPath != null && AssetDatabase.GetAssetPath(baked) == assetPath)
+                    AssetDatabase.DeleteAsset(assetPath);
+                else
+                    UnityEngine.Object.DestroyImmediate(baked);
+            }
+            throw;
+        }
         finally
         {
+            GL.sRGBWrite = previousSrgbWrite;
             RenderTexture.active = previous;
             RenderTexture.ReleaseTemporary(renderTexture);
         }

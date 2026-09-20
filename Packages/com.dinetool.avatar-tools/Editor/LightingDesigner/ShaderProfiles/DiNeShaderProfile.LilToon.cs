@@ -214,6 +214,9 @@ internal sealed class DiNeShaderProfileLilToon : DiNeShaderProfile
     /// <summary>0이 차가운 색, 0.5가 원본, 1이 따뜻한 색. (LLC와 동일한 곡선)</summary>
     private static void WriteColorTemperature(DiNeLightingSink sink, string property)
     {
+        // Unity writes a renderer-wide color property block even for RGB-only
+        // curves, whose missing alpha can become zero. Each material's original
+        // opacity is therefore baked into its own texture, with neutral alpha here.
         sink.SetColor(0f, property, new Color(0.6f, 0.95f, 1f, 1f));
         sink.SetColor(0.5f, property, Color.white);
         sink.SetColor(1f, property, new Color(1f, 0.8f, 0.6f, 1f));
@@ -247,14 +250,6 @@ internal sealed class DiNeShaderProfileLilToon : DiNeShaderProfile
         if (material == null || !NeedsNormalization(controls))
             return false;
 
-        if (BakerShader == null)
-        {
-            Debug.LogWarning(
-                "[DiNe 라이팅 디자이너] lilToon의 베이커 셰이더(Hidden/ltsother_baker)를 찾지 못해 머티리얼 정규화를 건너뜁니다. " +
-                "채도/색온도 결과가 원본과 달라질 수 있습니다.");
-            return false;
-        }
-
         bool bakeColorAdjust = controls.Contains(DiNeLightingControl.Saturation)
             || controls.Contains(DiNeLightingControl.Hue)
             || controls.Contains(DiNeLightingControl.Brightness)
@@ -282,8 +277,6 @@ internal sealed class DiNeShaderProfileLilToon : DiNeShaderProfile
             return false;
 
         var source = material.GetTexture(MainTex);
-        if (source is RenderTexture)
-            return false;   // 런타임 생성 텍스처는 구울 수 없다.
 
         var bakeColorValue = Color.white;
         var bakeHsvg = NeutralHSVG;
@@ -302,7 +295,11 @@ internal sealed class DiNeShaderProfileLilToon : DiNeShaderProfile
             }
         }
 
-        if (bakeColorAdjust)
+        // lilToon applies tone correction and gradation BEFORE multiplying the tint.
+        // If tint moves into the texture, bake those preceding operations too;
+        // leaving them on the material would apply tone(tint * texture) instead.
+        bool bakeTone = bakeColorAdjust || needed;
+        if (bakeTone)
         {
             if (material.HasProperty(MainTexHSVG))
             {
@@ -332,25 +329,22 @@ internal sealed class DiNeShaderProfileLilToon : DiNeShaderProfile
         if (!needed)
             return false;
 
+        // A changing texture cannot be flattened without freezing its content.
+        // Abort instead of leaving a tint that generated neutral curves overwrite.
+        if (source is RenderTexture)
+            throw new InvalidOperationException($"Cannot normalize live texture '{source.name}' on material '{material.name}'.");
+
         Texture mask = null;
         if (colorAdjusted && material.HasProperty(MainColorAdjustMask))
             mask = material.GetTexture(MainColorAdjustMask);
 
-        var baker = new Material(BakerShader);
-        baker.SetTexture(MainTex, source != null ? source : Texture2D.whiteTexture);
-        baker.SetColor(ColorMain, bakeColorValue);
-        baker.SetVector(MainTexHSVG, bakeHsvg);
-        baker.SetTexture(MainGradationTex, gradationTexture != null ? gradationTexture : Texture2D.whiteTexture);
-        baker.SetFloat(MainGradationStrength, gradationStrength);
-        baker.SetTexture(MainColorAdjustMask, mask != null ? mask : Texture2D.whiteTexture);
-
         int hash = HashOf(source, bakeColorValue, bakeHsvg, gradationTexture, gradationStrength, mask);
-        var baked = session.Bake(hash, source, baker, bakeColorValue.a < 1f);
-        UnityEngine.Object.DestroyImmediate(baker);
+        var baked = BakeTexture(session, hash, source, bakeColorValue, bakeHsvg,
+            gradationTexture, gradationStrength, mask);
 
         material.SetTexture(MainTex, baked);
-        if (material.HasProperty(ColorMain)) material.SetColor(ColorMain, Color.white);
-        if (material.HasProperty(MainTexHSVG)) material.SetVector(MainTexHSVG, NeutralHSVG);
+        if (bakeColor && material.HasProperty(ColorMain)) material.SetColor(ColorMain, Color.white);
+        if (bakeTone && material.HasProperty(MainTexHSVG)) material.SetVector(MainTexHSVG, NeutralHSVG);
         if (gradationTexture != null)
         {
             material.SetTexture(MainGradationTex, null);
@@ -376,23 +370,39 @@ internal sealed class DiNeShaderProfileLilToon : DiNeShaderProfile
 
         var source = material.GetTexture(textureProperty);
         if (source is RenderTexture)
-            return false;
-
-        var baker = new Material(BakerShader);
-        baker.SetTexture(MainTex, source != null ? source : Texture2D.whiteTexture);
-        baker.SetColor(ColorMain, color);
-        baker.SetVector(MainTexHSVG, NeutralHSVG);
-        baker.SetTexture(MainGradationTex, Texture2D.whiteTexture);
-        baker.SetFloat(MainGradationStrength, 0f);
-        baker.SetTexture(MainColorAdjustMask, Texture2D.whiteTexture);
+            throw new InvalidOperationException($"Cannot normalize live texture '{source.name}' on material '{material.name}'.");
 
         int hash = HashOf(source, color, NeutralHSVG, null, 0f, null);
-        var baked = session.Bake(hash, source, baker, color.a < 1f);
-        UnityEngine.Object.DestroyImmediate(baker);
+        var baked = BakeTexture(session, hash, source, color, NeutralHSVG, null, 0f, null);
 
         material.SetTexture(textureProperty, baked);
         material.SetColor(colorProperty, Color.white);
         return true;
+    }
+
+    private static Texture2D BakeTexture(
+        DiNeLightingBakeSession session, int hash, Texture source, Color color,
+        Vector4 hsvg, Texture gradation, float gradationStrength, Texture mask)
+    {
+        var shader = BakerShader;
+        if (shader == null || !shader.isSupported)
+            throw new InvalidOperationException("lilToon color normalization requires a supported Hidden/ltsother_baker shader.");
+
+        var baker = new Material(shader);
+        try
+        {
+            baker.SetTexture(MainTex, source != null ? source : Texture2D.whiteTexture);
+            baker.SetColor(ColorMain, color);
+            baker.SetVector(MainTexHSVG, hsvg);
+            baker.SetTexture(MainGradationTex, gradation != null ? gradation : Texture2D.whiteTexture);
+            baker.SetFloat(MainGradationStrength, gradationStrength);
+            baker.SetTexture(MainColorAdjustMask, mask != null ? mask : Texture2D.whiteTexture);
+            return session.Bake(hash, source, baker, color.a < 1f);
+        }
+        finally
+        {
+            UnityEngine.Object.DestroyImmediate(baker);
+        }
     }
 
     private static int HashOf(Texture source, Color color, Vector4 hsvg, Texture gradation, float strength, Texture mask)
