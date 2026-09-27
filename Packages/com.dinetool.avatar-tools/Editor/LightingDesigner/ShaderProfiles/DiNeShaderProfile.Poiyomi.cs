@@ -236,8 +236,26 @@ internal sealed class DiNeShaderProfilePoiyomi : DiNeShaderProfile
         {
             // float만 바꿔서는 안 되고 키워드를 켜야 실제로 색 보정 블록이 컴파일된다.
             material.EnableKeyword(ColorAdjustKeyword);
+
+            // 섹션이 꺼져 있었다면 화면에 적용되지 않던 잔여 값이다. 켜면서 같이 구워지지 않도록 중립으로 되돌린다.
+            bool sectionWasOff = material.HasProperty(MainColorAdjustToggle) && material.GetFloat(MainColorAdjustToggle) < 0.5f;
+            if (sectionWasOff)
+            {
+                ResetFloat(material, "_Saturation", 0f);
+                ResetFloat(material, "_MainBrightness", 0f);
+                ResetFloat(material, "_MainGamma", 1f);
+            }
             if (material.HasProperty(MainColorAdjustToggle))
                 material.SetFloat(MainColorAdjustToggle, 1f);
+
+            // Poiyomi는 _MainHueShiftToggle == 1 일 때만 색조를 적용한다.
+            if (material.HasProperty("_MainHueShiftToggle"))
+            {
+                if (sectionWasOff || material.GetFloat("_MainHueShiftToggle") < 0.5f)
+                    ResetFloat(material, "_MainHueShift", 0f);
+                if (controls.Contains(DiNeLightingControl.Hue))
+                    material.SetFloat("_MainHueShiftToggle", 1f);
+            }
         }
 
         // 잠긴(최적화된) 머티리얼에서도 프로퍼티가 유니폼으로 남도록 표시한다.
@@ -249,6 +267,11 @@ internal sealed class DiNeShaderProfilePoiyomi : DiNeShaderProfile
                     material.SetOverrideTag(property + AnimatedTagSuffix, "1");
             }
         }
+    }
+
+    private static void ResetFloat(Material material, string property, float value)
+    {
+        if (material.HasProperty(property)) material.SetFloat(property, value);
     }
 
     /// <summary>해당 항목이 실제로 애니메이션하는 Poiyomi 프로퍼티들.</summary>

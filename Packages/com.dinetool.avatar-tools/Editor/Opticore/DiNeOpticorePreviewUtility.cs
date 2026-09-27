@@ -685,6 +685,10 @@ public static class DiNeOpticorePreviewUtility
             if (mesh == null)
                 continue;
 
+            // 기본 형상에서 접혀 있다가 BlendShape로 펼쳐지는 폴리곤이 있을 수 있다.
+            if (mesh.blendShapeCount > 0)
+                continue;
+
             Vector3[] vertices = mesh.vertices;
             if (vertices == null || vertices.Length == 0)
                 continue;
@@ -741,12 +745,37 @@ public static class DiNeOpticorePreviewUtility
             return 0;
 
         int frozenCount = 0;
+        var descriptor = root.GetComponentInChildren<VRC.SDK3.Avatars.Components.VRCAvatarDescriptor>(true);
         foreach (SkinnedMeshRenderer renderer in root.GetComponentsInChildren<SkinnedMeshRenderer>(true))
         {
             if (renderer == null || renderer.GetComponent<Cloth>() != null)
                 continue;
 
             Mesh mesh = meshMutations.GetMutableMesh(renderer);
+
+            // 립싱크/눈깜빡임은 클립이 아니라 디스크립터가 이름·인덱스로 직접 구동한다. 프리즈하면 안 된다.
+            var descriptorShapes = new HashSet<string>();
+            string[] eyelidNames = null;
+            if (descriptor != null && mesh != null)
+            {
+                if (descriptor.VisemeSkinnedMesh == renderer && descriptor.VisemeBlendShapes != null)
+                    descriptorShapes.UnionWith(descriptor.VisemeBlendShapes);
+                if (descriptor.VisemeSkinnedMesh == renderer && !string.IsNullOrEmpty(descriptor.MouthOpenBlendShapeName))
+                    descriptorShapes.Add(descriptor.MouthOpenBlendShapeName);
+
+                var eyeLook = descriptor.customEyeLookSettings;
+                if (eyeLook.eyelidsSkinnedMesh == renderer && eyeLook.eyelidsBlendshapes != null)
+                {
+                    eyelidNames = new string[eyeLook.eyelidsBlendshapes.Length];
+                    for (int e = 0; e < eyelidNames.Length; e++)
+                    {
+                        int shapeIndex = eyeLook.eyelidsBlendshapes[e];
+                        if (shapeIndex < 0 || shapeIndex >= mesh.blendShapeCount) continue;
+                        eyelidNames[e] = mesh.GetBlendShapeName(shapeIndex);
+                        descriptorShapes.Add(eyelidNames[e]);
+                    }
+                }
+            }
             if (mesh == null || mesh.blendShapeCount == 0)
                 continue;
 
@@ -758,6 +787,9 @@ public static class DiNeOpticorePreviewUtility
             {
                 string name = mesh.GetBlendShapeName(i);
                 float currentWeight = renderer.GetBlendShapeWeight(i);
+
+                if (descriptorShapes.Contains(name))
+                    continue;
 
                 if (rendererAnimationMap == null || !rendererAnimationMap.TryGetValue(name, out BlendShapeAnimationInfo info) || !info.HasAnimation)
                 {
@@ -795,6 +827,16 @@ public static class DiNeOpticorePreviewUtility
 
             Mesh rebuilt = RebuildMeshWithoutBlendShapes(mesh, vertices, hasNormals ? normals : null, hasTangents ? tangents : null, removedBlendShapes);
             meshMutations.ReplaceMutableMesh(renderer, rebuilt);
+
+            // 앞쪽 셰이프가 빠지면 인덱스가 밀린다. 눈꺼풀 인덱스를 이름으로 다시 맞춘다.
+            if (eyelidNames != null)
+            {
+                for (int e = 0; e < eyelidNames.Length; e++)
+                {
+                    if (eyelidNames[e] != null)
+                        descriptor.customEyeLookSettings.eyelidsBlendshapes[e] = rebuilt.GetBlendShapeIndex(eyelidNames[e]);
+                }
+            }
 
             for (int newBlendShapeIndex = 0; newBlendShapeIndex < retainedWeights.Count; newBlendShapeIndex++)
                 renderer.SetBlendShapeWeight(newBlendShapeIndex, retainedWeights[newBlendShapeIndex]);
@@ -1171,14 +1213,30 @@ public static class DiNeOpticorePreviewUtility
 
     private static bool IsZeroSizedTriangle(Vector3 a, Vector3 b, Vector3 c)
     {
-        Vector3 cross = Vector3.Cross(b - a, c - a);
-        return cross.sqrMagnitude <= 1e-10f;
+        // 면적 임계값은 메시 스케일(scale 100 FBX 등)에 따라 정상 폴리곤까지 지운다. 정점이 정확히 겹친 경우만 제거한다.
+        return a.Equals(b) || b.Equals(c) || a.Equals(c);
     }
 
     private static int RemoveUnusedLeafBones(GameObject root, HashSet<Transform> protectedTransforms)
     {
         int removed = 0;
         bool changed;
+
+        // 웨이트 없는 PhysBone 체인 끝 본(*_end)을 지우면 마지막 마디가 흔들리지 않는다.
+        // 끝 본 정리는 PhysBone 단계(endpointPosition 대체)에서만 한다.
+        var physBoneAffected = new HashSet<Transform>();
+        Type physBoneType = FindType("VRC.Dynamics.VRCPhysBoneBase")
+            ?? FindType("VRC.SDK3.Dynamics.PhysBone.Components.VRCPhysBoneBase");
+        if (physBoneType != null)
+        {
+            foreach (Component physBone in root.GetComponentsInChildren(physBoneType, true))
+            {
+                Transform target = GetPhysBoneTarget(physBone);
+                if (target == null) continue;
+                foreach (Transform affected in EnumerateAffectedTransforms(target, GetIgnoredTransformSet(physBone)))
+                    physBoneAffected.Add(affected);
+            }
+        }
 
         do
         {
@@ -1193,7 +1251,7 @@ public static class DiNeOpticorePreviewUtility
                 if (current.childCount > 0)
                     continue;
 
-                if (protectedTransforms.Contains(current))
+                if (protectedTransforms.Contains(current) || physBoneAffected.Contains(current))
                     continue;
 
                 Component[] components = current.GetComponents<Component>();
@@ -1360,6 +1418,7 @@ public static class DiNeOpticorePreviewUtility
         // renderer to behave identically: visibility, root bone, and rendering settings.
         var builder = new StringBuilder(256);
         builder.Append(renderer.gameObject.activeInHierarchy ? '1' : '0').Append('|');
+        builder.Append(renderer.enabled ? '1' : '0').Append('|');
         builder.Append(renderer.rootBone.GetInstanceID()).Append('|');
         builder.Append((int)renderer.shadowCastingMode).Append('|');
         builder.Append(renderer.receiveShadows ? '1' : '0').Append('|');
@@ -1670,7 +1729,13 @@ public static class DiNeOpticorePreviewUtility
         targetRenderer.sharedMaterials = mergedMaterials;
         targetRenderer.bones = unionBones.ToArray();
         targetRenderer.rootBone = group[0].rootBone;
-        targetRenderer.localBounds = mergedMesh.bounds;
+        // localBounds는 rootBone 공간이다(mesh.bounds는 메시 공간). 그룹은 같은 rootBone을 쓰므로 그대로 합친다.
+        Bounds mergedBounds = group[0].localBounds;
+        for (int i = 1; i < group.Count; i++)
+        {
+            if (group[i] != null) mergedBounds.Encapsulate(group[i].localBounds);
+        }
+        targetRenderer.localBounds = mergedBounds;
         meshMutations.ReplaceMutableMesh(targetRenderer, mergedMesh);
 
         // Restore blendShape weights on the merged renderer (indices changed, so match by name).
@@ -1872,16 +1937,9 @@ public static class DiNeOpticorePreviewUtility
     // (toggles, enable, transform, material swaps) are the ones that make a renderer unsafe to merge.
     private static void AddHardAnimatedTransforms(GameObject root, HashSet<Transform> set)
     {
-        foreach (var animator in root.GetComponentsInChildren<Animator>(true))
+        foreach (var entry in EnumerateAnimatorControllers(root))
         {
-            if (animator == null)
-                continue;
-
-            RuntimeAnimatorController controller = animator.runtimeAnimatorController;
-            if (controller == null)
-                continue;
-
-            foreach (AnimationClip clip in controller.animationClips)
+            foreach (AnimationClip clip in entry.Value.animationClips)
             {
                 if (clip == null)
                     continue;
@@ -1890,11 +1948,11 @@ public static class DiNeOpticorePreviewUtility
                 {
                     if (IsBlendShapeBinding(binding))
                         continue;
-                    AddBoundTransform(animator.transform, binding.path, set);
+                    AddBoundTransform(entry.Key, binding.path, set);
                 }
 
                 foreach (EditorCurveBinding binding in AnimationUtility.GetObjectReferenceCurveBindings(clip))
-                    AddBoundTransform(animator.transform, binding.path, set);
+                    AddBoundTransform(entry.Key, binding.path, set);
             }
         }
 
@@ -1936,13 +1994,10 @@ public static class DiNeOpticorePreviewUtility
         if (root == null)
             return map;
 
-        foreach (Animator animator in root.GetComponentsInChildren<Animator>(true))
+        foreach (var entry in EnumerateAnimatorControllers(root))
         {
-            if (animator == null || animator.runtimeAnimatorController == null)
-                continue;
-
-            foreach (AnimationClip clip in animator.runtimeAnimatorController.animationClips)
-                RecordBlendShapeBindings(animator.transform, clip, map);
+            foreach (AnimationClip clip in entry.Value.animationClips)
+                RecordBlendShapeBindings(entry.Key, clip, map);
         }
 
         foreach (Animation animation in root.GetComponentsInChildren<Animation>(true))
@@ -2062,27 +2117,42 @@ public static class DiNeOpticorePreviewUtility
         }
     }
 
-    private static void AddAnimatedTransforms(GameObject root, HashSet<Transform> protectedTransforms)
+    // VRChat 아바타의 애니메이션은 Animator가 아니라 VRCAvatarDescriptor의 플레이어블 레이어(FX 등)에 들어 있다.
+    private static IEnumerable<KeyValuePair<Transform, RuntimeAnimatorController>> EnumerateAnimatorControllers(GameObject root)
     {
         foreach (var animator in root.GetComponentsInChildren<Animator>(true))
         {
-            if (animator == null)
-                continue;
+            if (animator != null && animator.runtimeAnimatorController != null)
+                yield return new KeyValuePair<Transform, RuntimeAnimatorController>(animator.transform, animator.runtimeAnimatorController);
+        }
 
-            RuntimeAnimatorController runtimeController = animator.runtimeAnimatorController;
-            if (runtimeController == null)
-                continue;
+        foreach (var descriptor in root.GetComponentsInChildren<VRC.SDK3.Avatars.Components.VRCAvatarDescriptor>(true))
+        {
+            var layers = new List<VRC.SDK3.Avatars.Components.VRCAvatarDescriptor.CustomAnimLayer>();
+            if (descriptor.baseAnimationLayers != null) layers.AddRange(descriptor.baseAnimationLayers);
+            if (descriptor.specialAnimationLayers != null) layers.AddRange(descriptor.specialAnimationLayers);
+            foreach (var layer in layers)
+            {
+                if (!layer.isDefault && layer.animatorController != null)
+                    yield return new KeyValuePair<Transform, RuntimeAnimatorController>(descriptor.transform, layer.animatorController);
+            }
+        }
+    }
 
-            foreach (AnimationClip clip in runtimeController.animationClips)
+    private static void AddAnimatedTransforms(GameObject root, HashSet<Transform> protectedTransforms)
+    {
+        foreach (var entry in EnumerateAnimatorControllers(root))
+        {
+            foreach (AnimationClip clip in entry.Value.animationClips)
             {
                 if (clip == null)
                     continue;
 
                 foreach (EditorCurveBinding binding in AnimationUtility.GetCurveBindings(clip))
-                    AddBoundTransform(animator.transform, binding.path, protectedTransforms);
+                    AddBoundTransform(entry.Key, binding.path, protectedTransforms);
 
                 foreach (EditorCurveBinding binding in AnimationUtility.GetObjectReferenceCurveBindings(clip))
-                    AddBoundTransform(animator.transform, binding.path, protectedTransforms);
+                    AddBoundTransform(entry.Key, binding.path, protectedTransforms);
             }
         }
 

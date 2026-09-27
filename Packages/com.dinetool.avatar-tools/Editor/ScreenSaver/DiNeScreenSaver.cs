@@ -2349,7 +2349,7 @@ namespace DiNeScreenSaver
 
         private void SaveScreenshot(Texture2D tex, int w, int h)
         {
-            string path = Application.dataPath.Replace("Assets", "") + SCREENSHOT_ASSET_PATH;
+            string path = System.IO.Path.GetDirectoryName(Application.dataPath).Replace('\\', '/') + "/" + SCREENSHOT_ASSET_PATH;
             string fileName = System.DateTime.Now.ToString($"yyyy-MM-dd_HH-mm-ss ({w}x{h})") + ".png";
             string fullPath = path + fileName;
             
@@ -2389,14 +2389,14 @@ namespace DiNeScreenSaver
 
         private static void EnsureDir(string assetPath)
         {
-            string abs = Application.dataPath.Replace("Assets", "") + assetPath;
+            string abs = System.IO.Path.GetDirectoryName(Application.dataPath).Replace('\\', '/') + "/" + assetPath;
             if (!Directory.Exists(abs)) Directory.CreateDirectory(abs);
         }
 
         private static void OpenFolder(string assetPath)
         {
             EnsureDir(assetPath);
-            string absPath = Application.dataPath.Replace("Assets", "") + assetPath;
+            string absPath = System.IO.Path.GetDirectoryName(Application.dataPath).Replace('\\', '/') + "/" + assetPath;
             Application.OpenURL("file://" + absPath);
         }
 
@@ -2450,7 +2450,6 @@ namespace DiNeScreenSaver
         // ══════════════════════════════════════════════════════════════════════
         private void SaveSettings()
         {
-            EditorPrefs.SetInt(LANGUAGE_PREF_KEY,              (int)_lang);
             EditorPrefs.SetInt("DiNeScreenSaver_Mode",        (int)_mode);
             EditorPrefs.SetInt("DiNeScreenSaver_Target",      (int)_captureTarget);
             EditorPrefs.SetInt("DiNeScreenSaver_Res",         (int)_res);

@@ -64,7 +64,7 @@ public static class DiNeMultiMenuGenerator
             // ✅ 경로 변경: DiNe/MultiDresser/LayerName
             string paramName = $"DiNe/MultiDresser/{safeLayerName}";
 
-            string layerMenuPath = $"{folder}/{safeLayerName}_Menu.asset";
+            string layerMenuPath = $"{folder}/{string.Join("_", safeLayerName.Split(System.IO.Path.GetInvalidFileNameChars()))}_Menu.asset";
             var layerMenu = AssetDatabase.LoadAssetAtPath<VRCExpressionsMenu>(layerMenuPath);
             if (layerMenu == null)
             {

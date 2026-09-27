@@ -7,13 +7,24 @@ public class DiNeMultiCleaner
 {
     static DiNeMultiCleaner()
     {
-        EditorApplication.update += CheckEditorOnlyTag;
+        EditorApplication.hierarchyChanged += QueueCheck;
+        QueueCheck();
+    }
+
+    private static bool checkQueued;
+
+    private static void QueueCheck()
+    {
+        if (checkQueued) return;
+        checkQueued = true;
+        EditorApplication.delayCall += CheckEditorOnlyTag;
     }
 
     private static void CheckEditorOnlyTag()
     {
-        // DiNeMultiDresser를 찾도록 변경됨
-        var allDresserObjects = GameObject.FindObjectsOfType<DiNeMultiDresser>();
+        checkQueued = false;
+        if (EditorApplication.isPlayingOrWillChangePlaymode) return;
+        var allDresserObjects = GameObject.FindObjectsOfType<DiNeMultiDresser>(true);
         foreach (var dresser in allDresserObjects)
         {
             var go = dresser.gameObject;

@@ -131,6 +131,23 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
 
         AssemblyReloadEvents.beforeAssemblyReload -= OnBeforeAssemblyReload;
         AssemblyReloadEvents.beforeAssemblyReload += OnBeforeAssemblyReload;
+
+        EditorSceneManager.sceneOpened -= OnSceneOpened;
+        EditorSceneManager.sceneOpened += OnSceneOpened;
+        EditorApplication.delayCall += RecoverAfterReload;
+    }
+
+    private static void OnSceneOpened(Scene scene, OpenSceneMode mode)
+    {
+        EditorApplication.delayCall += RecoverAfterReload;
+    }
+
+    private static void RecoverAfterReload()
+    {
+        // Builder subscriptions are lost on domain reload, but SessionState is not.
+        if (BuildInProgress)
+            EnsureBuilderHooks();
+        TryRestoreIfIdle("editor/scene loaded");
     }
 
     private static void OnBeforeAssemblyReload()
@@ -142,6 +159,10 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
     {
         if (state == PlayModeStateChange.ExitingEditMode)
         {
+            // Restore editor previews before Unity copies object states into play mode.
+            // Do this here as well as the preview hook so event registration order is irrelevant.
+            DiNeMultiSupporter.ClearAllActivePreviews();
+
             // 실제 SDK 업로드는 플레이 모드를 거치지 않는다. 따라서 플레이 모드로 진입하는
             // 시점에 BuildInProgress가 켜져 있다면, 종료 콜백을 보내지 않는 테스트 툴
             // (Av3Emulator/Gesture Manager 등)이 남긴 잔여 상태다. 그대로 두면 플레이 모드
@@ -160,6 +181,9 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         }
         else if (state == PlayModeStateChange.EnteredEditMode)
         {
+            // Emulator preprocess calls do not necessarily deliver SDK end events.
+            // The play scene has now been discarded, so its guard must not block restoration.
+            BuildInProgress = false;
             EditorApplication.delayCall += () => TryRestoreIfIdle("play mode ended");
         }
     }
@@ -196,7 +220,7 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
     }
 
     // 업로드 흐름(씬 원본은 건드리지 않는다):
-    //   OnBuildRequested          : 이전 잔여 세션 정리, 빌드 진행 플래그만 켠다.
+    //   OnBuildRequested          : 미리보기/이전 잔여 세션 정리, 빌드 진행 플래그를 켠다.
     //   Preprocess(-12000, 클론)   : SDK가 만든 빌드 클론에만 임시 FX/메뉴/파라미터를 만들어 붙인다.
     //   Preprocess(0, 클론)        : 라이팅 디자이너 머티리얼 정규화(NDMF/MA가 머티리얼을 바꾼 뒤).
     //   Postprocess / 빌더 종료    : 클론은 SDK가 버리므로 임시 폴더만 지우면 끝. 복원할 게 없다.
@@ -208,6 +232,10 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
 
         try
         {
+            // The SDK clones the scene avatar after this callback. A preview must never
+            // become the uploaded object's initial state or an icon capture's source state.
+            DiNeMultiSupporter.ClearAllActivePreviews();
+
             // 플레이 모드 테스트 등이 남긴 임시 세션이 씬에 남아 있으면 먼저 원본으로 되돌린다.
             // 그래야 클론이 진짜 원본을 복사해 오고, 더미 위에 더미가 쌓이지 않는다.
             BuildInProgress = false;
@@ -230,10 +258,13 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
     /// 오브젝트는 DiNeMultiCleaner가 EditorOnly 태그를 강제하므로 그보다 먼저 돌아야 드레서가 살아 있다.
     /// 또 이 순서여야 Modular Avatar 등이 우리 레이어/메뉴/파라미터까지 함께 병합해 준다.
     /// </summary>
-    internal static void ApplyToBuildAvatar(GameObject avatarGameObject)
+    internal static bool ApplyToBuildAvatar(GameObject avatarGameObject)
     {
         try
         {
+            // Also cover preprocess invoked directly by editor test/emulation tools.
+            DiNeMultiSupporter.ClearAllActivePreviews();
+
             // 플레이 모드에서 호출되는 preprocess는 테스트 툴(Av3Emulator/Gesture Manager 등)이
             // 부르는 것으로, SDK 빌드 종료 콜백이 오지 않는다. 이때 BuildInProgress를 켜면
             // 플레이 모드 종료 후 복원이 영구히 막히므로, 에디트 모드(실제 업로드)에서만 켠다.
@@ -246,10 +277,13 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             // 플레이 모드에서는 ExitingEditMode에서 씬 아바타에 이미 적용돼 있으므로
             // ApplyTemporarySession의 활성 세션 가드가 중복 적용을 막는다.
             ApplyDressersForAvatarRoot(avatarGameObject);
+            return true;
         }
         catch (Exception e)
         {
             Debug.LogError($"[DiNe] Failed to apply temporary Multi Dresser data to build avatar: {e.Message}\n{e.StackTrace}");
+            OnAvatarBuildFailed();
+            return false;
         }
     }
 
@@ -310,6 +344,9 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
     // 복원할 세션이 없으면 아무 일도 하지 않으므로 항상 호출해도 안전하다.
     public static void ForceRestoreNow(string reason)
     {
+        // 플레이 중에는 임시 세션이 정상적으로 활성화된 상태다. 여기서 지우면 종료 후 원본이 Missing이 된다.
+        if (EditorApplication.isPlayingOrWillChangePlaymode) return;
+
         // 빌드가 비정상 종료되어 플래그가 묶여 있으면(이 상태가 복원을 막는다) 해제한다.
         BuildInProgress = false;
 
@@ -365,8 +402,8 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
     {
         RestoreAllSessions("refresh temporary session");
 
-        var dressers = UnityEngine.Object.FindObjectsOfType<DiNeMultiDresser>()
-            .Where(dresser => dresser != null && dresser.gameObject.activeInHierarchy)
+        var dressers = UnityEngine.Object.FindObjectsOfType<DiNeMultiDresser>(true)
+            .Where(dresser => dresser != null && dresser.enabled)
             .ToArray();
 
         var smartToggles = UnityEngine.Object.FindObjectsOfType<DiNeSmartToggle>(true)
@@ -523,8 +560,8 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             // 다만 그 임시 폴더를 책임지는 세션이 아예 없으면(유니티 재시작/크래시로 세션 기록이
             // 날아간 '고아' 상태) 여기서 건너뛰는 순간 아바타는 영원히 더미를 가리킨 채 남고,
             // 업로드할 때마다 아무것도 설치되지 않는다. 임시 폴더에 남겨둔 매니페스트로 원본을
-            // 되돌린 뒤 정상 경로로 계속 진행하고, 매니페스트조차 없으면(구버전이 남긴 폴더)
-            // 지금 가리키는 에셋을 기준으로 진행한다. 진짜 세션이 살아 있을 때만 건너뛴다.
+            // 되돌린 뒤 정상 경로로 계속 진행한다. 매니페스트가 없는 구버전 폴더는
+            // 원본 후보가 확정되는 경우만 복구하고, 실패하면 다시 캡처하지 않는다.
             if (!TryRecoverOrphanTempSession(descriptor))
             {
                 Debug.LogWarning($"[DiNe] Multi Dresser: '{descriptor.name}'가 이미 임시(_DiNe) 에셋을 가리키고 있어 중복 적용을 건너뜁니다. 진짜 원본은 영속 세션에 보존됩니다.");
@@ -546,6 +583,10 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             GenerateDresser(binding.Dresser, session.TempFolderPath, clearExistingGeneratedData);
         }
 
+        DiNeSmartToggleGenerator.ApplyDresserTogglesToTemporaryAvatar(
+            descriptor, session.TempAnimatorController, session.TempExpressionsMenu, session.TempExpressionParameters,
+            session.Dressers.Select(binding => binding.Dresser).ToList(), session.TempFolderPath + "/IndependentToggles");
+
         if (smartToggles.Count > 0)
         {
             DiNeSmartToggleGenerator.ApplyToTemporaryAvatar(
@@ -566,6 +607,14 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
                 session.TempExpressionParameters,
                 lightingDesigners,
                 session.TempFolderPath + "/LightingDesigner");
+        }
+
+        // 임시 파라미터는 SDK 검증이 끝난 뒤에 만들어지므로 예산 초과를 여기서 직접 알려야 한다.
+        if (session.TempExpressionParameters != null)
+        {
+            int cost = session.TempExpressionParameters.CalcTotalCost();
+            if (cost > VRCExpressionParameters.MAX_PARAMETER_COST)
+                Debug.LogError($"[DiNe] '{descriptor.name}'의 Expression 파라미터 예산을 초과했습니다: {cost} / {VRCExpressionParameters.MAX_PARAMETER_COST} bits. 인게임에서 일부 파라미터가 동기화되지 않습니다.");
         }
     }
 
@@ -782,11 +831,8 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
     }
 
     // 고아 임시 세션을 매니페스트로 되돌린다.
-    // true를 돌려주면 정상 경로로 계속 진행해도 된다는 뜻이다:
-    //  - 매니페스트로 원본을 되돌렸거나,
-    //  - 되돌릴 기록이 없는 고아 폴더뿐이라 보호할 '진짜 세션'이 없는 경우.
-    //    (이때는 지금 가리키는 에셋을 기준으로 진행한다. 건너뛰면 업로드마다 아무것도 설치되지 않는다.)
-    // false는 살아 있는 세션이 그 폴더를 책임지고 있어 다시 캡처하면 원본이 덮어써지는 경우다.
+    // 원본 복구가 끝난 경우만 true. 살아 있는 세션 또는 복구할 수 없는 임시
+    // 참조가 있으면 false로 새 캡처를 막아 원본 기록이 덮어써지지 않게 한다.
     private static bool TryRecoverOrphanTempSession(VRCAvatarDescriptor descriptor)
     {
         if (descriptor == null)
@@ -821,10 +867,10 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
                 }
                 else
                 {
-                    Debug.LogWarning(
+                    Debug.LogError(
                         $"[DiNe] Multi Dresser: '{descriptor.name}'가 남겨진 임시 폴더({folder})를 가리키는데 원본 기록이 없어 " +
-                        "지금 가리키는 에셋을 기준으로 계속 진행합니다. 업로드는 정상 동작하지만, " +
-                        "FX 컨트롤러 / Expressions 메뉴 / 파라미터를 직접 원본으로 되돌리는 것을 권장합니다.");
+                        "임시 데이터를 원본으로 다시 저장하지 않습니다. " +
+                        "FX 컨트롤러 / Expressions 메뉴 / 파라미터를 직접 원본으로 지정하세요.");
                 }
                 continue;
             }
@@ -847,7 +893,8 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             RestorePersistedSession(recovered);
         }
 
-        return !ownedByLiveSession;
+        // Never capture an unresolved generated asset as a new original.
+        return !ownedByLiveSession && !DescriptorPointsToTempAsset(descriptor);
     }
 
     // 디스크립터가 들고 있는 더미 참조를 더미 체인/이름 추정으로 진짜 원본에 되돌린다.
@@ -901,14 +948,21 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             if (descriptor == null)
                 continue;
 
+            // A missing recorded asset is not an originally empty slot. Leave
+            // this record to persisted restoration, which retains failed paths.
+            if (!TryResolveOriginal(null, ps.originalFxControllerPath, OriginalKind.Fx, out RuntimeAnimatorController originalFx) ||
+                !TryResolveOriginal(null, ps.originalMenuPath, OriginalKind.Menu, out VRCExpressionsMenu originalMenu) ||
+                !TryResolveOriginal(null, ps.originalParametersPath, OriginalKind.Parameters, out VRCExpressionParameters originalParameters))
+                continue;
+
             var session = new TemporarySession
             {
                 DescriptorStateVersion = ps.descriptorStateVersion,
                 Descriptor = descriptor,
                 TempFolderPath = ps.tempFolderPath,
-                OriginalFxController = LoadAssetByPath<RuntimeAnimatorController>(ps.originalFxControllerPath),
-                OriginalMenu = LoadAssetByPath<VRCExpressionsMenu>(ps.originalMenuPath),
-                OriginalParameters = LoadAssetByPath<VRCExpressionParameters>(ps.originalParametersPath),
+                OriginalFxController = originalFx,
+                OriginalMenu = originalMenu,
+                OriginalParameters = originalParameters,
                 OriginalCustomizeAnimationLayers = ps.originalCustomizeAnimationLayers,
                 OriginalFxLayerExisted = ps.originalFxLayerExisted,
                 OriginalFxLayerWasInBase = ps.originalFxLayerWasInBase,
@@ -974,11 +1028,6 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         session.TempExpressionParameters = CloneOrCreateExpressionParameters(descriptor.expressionParameters, sessionFolder);
         SanitizeAnimatorController(session.TempAnimatorController);
 
-        SetDescriptorFxController(descriptor, session.TempAnimatorController, true);
-        descriptor.expressionsMenu = session.TempExpressionsMenu;
-        descriptor.expressionParameters = session.TempExpressionParameters;
-        EditorUtility.SetDirty(descriptor);
-
         foreach (var dresser in dressers)
         {
             var binding = new DresserBinding
@@ -988,14 +1037,25 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
                 OriginalExpressionsMenu = dresser.expressionsMenu
             };
 
-            dresser.animatorController = session.TempAnimatorController;
-            dresser.expressionsMenu = session.TempExpressionsMenu;
-            EditorUtility.SetDirty(dresser);
-
             session.Dressers.Add(binding);
         }
 
+        // Record the complete baseline before any scene reference changes or asset
+        // refresh can invoke callbacks/reload the domain.
+        ActiveSessions[descriptor.GetInstanceID()] = session;
+        PersistSessions();
         WriteSessionManifest(session);
+
+        SetDescriptorFxController(descriptor, session.TempAnimatorController, true);
+        descriptor.expressionsMenu = session.TempExpressionsMenu;
+        descriptor.expressionParameters = session.TempExpressionParameters;
+        EditorUtility.SetDirty(descriptor);
+        foreach (var binding in session.Dressers)
+        {
+            binding.Dresser.animatorController = session.TempAnimatorController;
+            binding.Dresser.expressionsMenu = session.TempExpressionsMenu;
+            EditorUtility.SetDirty(binding.Dresser);
+        }
 
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
@@ -1006,6 +1066,35 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
     private static void RestoreAllSessions(string reason)
     {
         var persisted = LoadPersistedState();
+        // SessionState disappears on editor restart. Recover manifests for loaded
+        // avatars before sweeping folders so saved temporary references can be repaired.
+        if (AssetDatabase.IsValidFolder(TempRootFolder))
+        {
+            foreach (var folder in AssetDatabase.GetSubFolders(TempRootFolder))
+            {
+                if (persisted.sessions.Any(s => s.tempFolderPath == folder) ||
+                    !AnyLoadedObjectReferencesFolder(folder))
+                    continue;
+                string manifestPath = GetSessionManifestPath(folder);
+                if (!File.Exists(manifestPath))
+                    continue;
+                try
+                {
+                    var recovered = JsonUtility.FromJson<PersistedSession>(File.ReadAllText(manifestPath));
+                    if (recovered != null)
+                    {
+                        recovered.tempFolderPath = folder;
+                        persisted.sessions.Add(recovered);
+                    }
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"[DiNe] Cannot read original references from '{manifestPath}': {e.Message}");
+                }
+            }
+        }
+        // Keep disk recovery records available if restoration below fails.
+        SessionState.SetString(SessionStateKey, JsonUtility.ToJson(persisted));
         bool hadInMemory = false;
         bool anyFailed = false;
 
@@ -1094,6 +1183,10 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             if (!IsOrphanTempFolder(normalized))
                 continue;
             if (AnyLoadedObjectReferencesFolder(normalized))
+                continue;
+            // A disk-only recovery record can belong to a saved scene that is
+            // not currently loaded. Startup recovery must not delete its assets.
+            if (File.Exists(GetSessionManifestPath(normalized)))
                 continue;
 
             try
@@ -1418,19 +1511,22 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
 
     private static void PersistSessions()
     {
-        var state = new PersistedState();
+        // A reload may leave no live objects (unsaved scenes and destroyed build
+        // clones cannot always be resolved by GlobalObjectId). Only successful
+        // restoration may erase their originals; an empty/partial cache cannot.
+        var state = LoadPersistedState();
 
         foreach (var session in ActiveSessions.Values)
         {
             if (session == null || session.Descriptor == null)
                 continue;
 
-            state.sessions.Add(ToPersistedSession(session));
+            if (!state.sessions.Any(item => item.tempFolderPath == session.TempFolderPath))
+                state.sessions.Add(ToPersistedSession(session));
         }
 
         if (state.sessions.Count == 0)
         {
-            SessionState.EraseString(SessionStateKey);
             return;
         }
 
@@ -2108,8 +2204,7 @@ internal sealed class DiNeAvatarToolsBuildApplyHook : IVRCSDKPreprocessAvatarCal
 
     public bool OnPreprocessAvatar(GameObject avatarGameObject)
     {
-        DiNeMultiDresserAutoApply.ApplyToBuildAvatar(avatarGameObject);
-        return true;
+        return DiNeMultiDresserAutoApply.ApplyToBuildAvatar(avatarGameObject);
     }
 }
 

@@ -73,7 +73,7 @@ Shader "Hidden/DiNe/LightingDesigner/PoiyomiColorAdjustBaker"
                 }
 
                 albedo.rgb = lerp(albedo.rgb, dot(albedo.rgb, float3(0.3, 0.59, 0.11)), -_Saturation * mask.b);
-                albedo.rgb = saturate(albedo.rgb + _MainBrightness * mask.g);
+                albedo.rgb = saturate(lerp(albedo.rgb, albedo.rgb * (_MainBrightness + 1), mask.g));
 
                 return albedo;
             }

@@ -8,16 +8,22 @@ public sealed class DiNeSmartToggle : MonoBehaviour, VRC.SDKBase.IEditorOnly
     public enum MenuPlacement
     {
         Root,
-        Group
+        Group,
+        MultiDresser,
+        DresserCategory,
+        ExistingMenu
     }
 
     [SerializeField] private string displayName;
     [SerializeField] private string parameterName;
     [SerializeField] private bool defaultOn = true;
     [SerializeField] private bool saved = true;
-    [SerializeField] private MenuPlacement menuPlacement = MenuPlacement.Group;
+    [SerializeField] private MenuPlacement menuPlacement = MenuPlacement.Root;
     [SerializeField] private string groupName = "Smart Toggles";
     [SerializeField] private Texture2D icon;
+    [SerializeField] private DiNeMultiDresser dresser;
+    [SerializeField] private string menuPath = "";
+    [SerializeField] private bool generatedMenuDestination;
 
     [SerializeField, HideInInspector] private Vector2 iconEuler = new Vector2(0f, 180f);
     [SerializeField, HideInInspector] private Vector2 iconPan = Vector2.zero;
@@ -38,6 +44,9 @@ public sealed class DiNeSmartToggle : MonoBehaviour, VRC.SDKBase.IEditorOnly
     public MenuPlacement Placement { get => menuPlacement; set => menuPlacement = value; }
     public string GroupName { get => groupName; set => groupName = value; }
     public Texture2D Icon { get => icon; set => icon = value; }
+    public DiNeMultiDresser Dresser { get => dresser; set => dresser = value; }
+    public string MenuPath { get => menuPath; set => menuPath = value; }
+    public bool GeneratedMenuDestination { get => generatedMenuDestination; set => generatedMenuDestination = value; }
     public Vector2 IconEuler { get => iconEuler; set => iconEuler = value; }
     public Vector2 IconPan { get => iconPan; set => iconPan = value; }
     public float IconZoom { get => iconZoom; set => iconZoom = value; }

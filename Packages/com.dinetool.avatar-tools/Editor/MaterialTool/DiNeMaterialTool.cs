@@ -331,6 +331,7 @@ public class DiNeMaterialTool : EditorWindow
     private bool               _bulkScanned   = false;
     private int                _bulkUnsupported;
     private GameObject         _bulkScanTarget;
+    private GameObject         _dietScanTarget;
     private string             _bulkGroup;
     private MaterialEditor     _bulkEditor;
     private Material[]         _bulkEditorTargets = System.Array.Empty<Material>();
@@ -391,6 +392,8 @@ public class DiNeMaterialTool : EditorWindow
         LoadSettings();
         ScanLibrary();
         Undo.undoRedoPerformed += BulkOnUndoRedo;
+        // 리컴파일 후 스캔 결과 리스트는 비워지지만 대상은 남는다. 다시 스캔한다.
+        if (_targetObject != null) EditorApplication.delayCall += AutoScan;
     }
 
     void OnDisable()
@@ -558,7 +561,7 @@ public class DiNeMaterialTool : EditorWindow
         GUILayout.Space(4);
         
         // 미리보기 토글 UI 복구 (일괄 조절 모드는 실시간 편집이라 미리보기 개념이 없음)
-        if (_mode != ToolMode.BulkEdit)
+        if (_mode != ToolMode.BulkEdit && _mode != ToolMode.VRAMOptimize)
         {
             bool prevPreview = _previewOnly;
             _previewOnly = EditorGUILayout.Toggle(T(_previewOnly ? 6 : 7), _previewOnly);
@@ -1282,7 +1285,8 @@ public class DiNeMaterialTool : EditorWindow
                 // 텍스쳐 제거 대상이거나 기능이 켜져있으면 자동 선택
                 // (재스캔 시 이전에 선택 해제한 것은 유지)
                 bool hasAction = info.HasDiet || HasEnabledToggles(info);
-                bool prevDeselected = prevSelected.Count > 0 && !prevSelected.Contains(mat.GetInstanceID());
+                // 대상이 바뀌었으면 이전 선택 상태는 다른 아바타의 것이므로 무시한다.
+                bool prevDeselected = _dietScanTarget == _targetObject && prevSelected.Count > 0 && !prevSelected.Contains(mat.GetInstanceID());
                 info.Selected = hasAction && !prevDeselected;
                 _dietMats.Add(info);
             }
@@ -1292,6 +1296,7 @@ public class DiNeMaterialTool : EditorWindow
             .ThenBy(m => m.Material.name)
             .ToList();
         _dietScanned = true;
+        _dietScanTarget = _targetObject;
         int affected = _dietMats.Count(m => m.HasDiet);
         SetStatus(Tf(38, _dietMats.Count, affected), affected > 0);
         Repaint();
@@ -1547,7 +1552,9 @@ public class DiNeMaterialTool : EditorWindow
 
         bool editable = IsVRAMTextureEditable(info);
         EditorGUI.BeginDisabledGroup(!editable);
-        info.Selected = EditorGUILayout.Toggle(info.Selected, GUILayout.Width(18));
+        // 썸네일 높이(40) 안에서 큰 체크박스를 그린다 → 카드 크기는 그대로.
+        Rect toggleRect = GUILayoutUtility.GetRect(34, 40, GUILayout.Width(34), GUILayout.Height(40));
+        info.Selected = DiNePackageSelectWindow.RowToggle(toggleRect, info.Selected);
         EditorGUI.EndDisabledGroup();
 
         // 1. 썸네일 영역
@@ -1882,7 +1889,7 @@ public class DiNeMaterialTool : EditorWindow
             name = platform,
             overridden = true,
             format = info.SuggestedFormat,
-            maxTextureSize = importer.maxTextureSize,
+            maxTextureSize = GetEffectiveMaxTextureSize(importer, platform),
             compressionQuality = 100
         });
         importer.SaveAndReimport();
@@ -2059,7 +2066,7 @@ public class DiNeMaterialTool : EditorWindow
                     name = platform, 
                     overridden = true,
                     format = info.SuggestedFormat,
-                    maxTextureSize = importer.maxTextureSize,
+                    maxTextureSize = GetEffectiveMaxTextureSize(importer, platform),
                     compressionQuality = 100
                 });
                 changed = true;

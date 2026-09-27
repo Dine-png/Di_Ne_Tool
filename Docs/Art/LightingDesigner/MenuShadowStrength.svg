@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" stroke-linecap="round" stroke-linejoin="round"><defs>
+  <clipPath id="left"><rect width="128" height="256"/></clipPath>
+  <clipPath id="right"><rect x="128" width="128" height="256"/></clipPath>
+</defs><path d="M 72 96 a 56 56 0 1 0 112 0 a 56 56 0 1 0 -112 0 Z" fill="white" fill-rule="evenodd" stroke="white" stroke-width="10" clip-path="url(#left)"/><path d="M 72 96 a 56 56 0 1 0 112 0 a 56 56 0 1 0 -112 0 Z" fill="none" stroke="white" stroke-width="10" clip-path="url(#right)"/><ellipse cx="128" cy="190" rx="86" ry="21" fill="white" clip-path="url(#left)"/><ellipse cx="128" cy="190" rx="86" ry="21" fill="none" stroke="white" stroke-width="9" clip-path="url(#right)"/></svg>

@@ -128,7 +128,7 @@ public static class DiNeTextureVRAM
         {
             if (!BPP.TryGetValue(cm.format, out float bpp)) bpp = 16f;
             long s = TextureToBytesUsingBPP(tex, bpp);
-            return cm.dimension == UnityEngine.Rendering.TextureDimension.Tex3D ? s * 6 : s;
+            return s * 6;
         }
         if (tex is RenderTexture rt)
         {

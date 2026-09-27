@@ -85,7 +85,7 @@ public sealed class DiNeLightingControlDef
         new DiNeLightingControlDef(DiNeLightingControl.Gamma, "감마", "Gamma", DiNeLightingControlKind.Radial, 0.5f,
             "0.5가 원본. 중간톤의 밝기를 조절한다."),
         new DiNeLightingControlDef(DiNeLightingControl.ColorTemperature, "색온도", "ColorTemp", DiNeLightingControlKind.Radial, 0.5f,
-            "0.5가 원본. 낮추면 따뜻하게(주황), 올리면 차갑게(파랑)."),
+            "0.5가 원본. 낮추면 차갑게(파랑), 올리면 따뜻하게(주황)."),
         new DiNeLightingControlDef(DiNeLightingControl.Monochrome, "흑백화", "Monochrome", DiNeLightingControlKind.Radial, 0f,
             "라이팅의 색 성분을 제거해 조명 색에 덜 물들게 한다."),
         new DiNeLightingControlDef(DiNeLightingControl.Emission, "에미션 강도", "Emission", DiNeLightingControlKind.Radial, 1f,

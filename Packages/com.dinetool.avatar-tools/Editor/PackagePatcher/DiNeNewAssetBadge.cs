@@ -194,9 +194,15 @@ internal static class DiNeNewAssetBadge
         return changed;
     }
 
+    private static double _nextFolderCheck;
+
     private static void OnEditorUpdate()
     {
         if (_newGuids.Count == 0) return;
+        // Project-browser reflection and window discovery need not run on every editor tick.
+        double now = EditorApplication.timeSinceStartup;
+        if (now < _nextFolderCheck) return;
+        _nextFolderCheck = now + 0.25;
 
         var folder = GetCurrentProjectBrowserFolder();
         if (string.IsNullOrEmpty(folder) || folder == _lastProjectFolder) return;

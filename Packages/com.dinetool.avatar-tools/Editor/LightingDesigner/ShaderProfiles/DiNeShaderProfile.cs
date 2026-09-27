@@ -71,6 +71,15 @@ internal abstract class DiNeShaderProfile
     }
 
     /// <summary>
+    /// 벡터 프로퍼티의 일부 성분만 키잉하면 나머지 성분이 0으로 초기화될 수 있다.
+    /// 이 항목과 같은 벡터를 공유하지만 켜지지 않은 성분의 중립값을 함께 기록한다.
+    /// </summary>
+    public virtual void WriteCompanions(DiNeLightingSink defaultSink, DiNeLightingSink sink,
+        DiNeLightingControl control, ISet<DiNeLightingControl> enabledControls)
+    {
+    }
+
+    /// <summary>
     /// 이 항목이 실제로 화면에 나타나려면 머티리얼에서 켜져 있어야 하는 기능 토글 프로퍼티.
     /// (예: lilToon의 아웃라인은 _UseOutline이 꺼져 있으면 두께를 애니메이션해도 아무 일도 없다.)
     /// 없으면 null. 사용자가 의도적으로 끈 기능을 마음대로 켜지는 않고, 인스펙터에서 경고만 띄운다.

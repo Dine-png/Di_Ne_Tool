@@ -10,6 +10,7 @@ public static class DiNeMultiIconGenerator
         if (context == null || context.layers == null)
             return;
 
+        Undo.RecordObject(context, "Generate Multi Dresser Icons");
         foreach (DiNeMultiDresser.DresserLayer layer in context.layers)
         {
             if (layer?.targets == null)
@@ -22,36 +23,67 @@ public static class DiNeMultiIconGenerator
             {
                 if (layer.targets[i] == null || layer.icons[i] != null)
                     continue;
-                RegenerateIcon(layer, i);
+                EnsureIcon(layer, i);
             }
         }
 
+        PrefabUtility.RecordPrefabInstancePropertyModifications(context);
         EditorUtility.SetDirty(context);
         AssetDatabase.SaveAssets();
         Debug.Log("[DiNe] Multi Dresser 256px 아이콘 생성을 완료했습니다.");
     }
 
-    public static void RegenerateIcon(DiNeMultiDresser.DresserLayer layer, int buttonIdx)
+    // Automatic assignment must reuse an existing asset before capturing again.
+    public static void EnsureIcon(DiNeMultiDresser.DresserLayer layer, int buttonIdx)
     {
-        if (layer == null || buttonIdx < 0)
+        if (layer?.targets == null || buttonIdx <= 0 || buttonIdx >= layer.targets.Count)
             return;
 
         while (layer.icons.Count <= buttonIdx)
             layer.icons.Add(null);
 
-        layer.icons[buttonIdx] = null;
-        if (buttonIdx == 0 || layer.targets == null || buttonIdx >= layer.targets.Count)
+        GameObject target = layer.targets[buttonIdx];
+        if (target == null)
+        {
+            layer.icons[buttonIdx] = null;
             return;
+        }
 
+        string path = GetIconAssetPath(target.name);
+        Texture2D existing = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+        if (existing != null)
+            layer.icons[buttonIdx] = existing;
+        else
+            RegenerateIcon(layer, buttonIdx, path);
+    }
+
+    public static void RegenerateIcon(DiNeMultiDresser.DresserLayer layer, int buttonIdx,
+        string outputAssetPath = null)
+    {
+        if (layer?.targets == null || buttonIdx <= 0 || buttonIdx >= layer.targets.Count)
+            return;
         GameObject target = layer.targets[buttonIdx];
         if (target == null)
             return;
 
-        layer.icons[buttonIdx] = DiNeIconMaker.GenerateIcon(
+        while (layer.icons.Count <= buttonIdx)
+            layer.icons.Add(null);
+
+        string path = outputAssetPath;
+        if (string.IsNullOrEmpty(path))
+        {
+            path = AssetDatabase.GetAssetPath(layer.icons[buttonIdx]);
+            if (!DiNeIconMaker.CanOverwriteAsset(path))
+                path = GetIconAssetPath(target.name);
+        }
+
+        Texture2D generated = DiNeIconMaker.GenerateIcon(
             target,
             null,
-            GetIconAssetPath(target.name),
+            path,
             new DiNeIconMaker.Settings { outlineEnabled = false });
+        if (generated != null)
+            layer.icons[buttonIdx] = generated;
     }
 
     public static void ReleaseIconReference(ref Texture2D icon)

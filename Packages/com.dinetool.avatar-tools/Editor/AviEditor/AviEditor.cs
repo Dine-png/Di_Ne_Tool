@@ -77,7 +77,7 @@ public class ArmatureScalerEditor : EditorWindow
     // ?????? Expression ????ш끽維????????
     private SkinnedMeshRenderer      _bodySmr;
     private RenderTexture            _faceRT;
-    private PreviewRenderUtility     _facePreview;
+    private DiNeAviHeadPreview        _headPreview;
     private bool                     _facePreviewDirty = true;
     private AnimationClip            _exprClip;
     private string                   _exprNewClipName = "New Expression";
@@ -117,8 +117,12 @@ public class ArmatureScalerEditor : EditorWindow
     // ??ш끽諭욥걡??
     private RenderTexture         _skePreviewRT;
     private bool                  _skePreviewDirty       = true;
-    private float[]               _skeOrigWeights;
-    private bool                  _skeHasPreviewWeights  = false;
+    private readonly Dictionary<int, float> _skePreviewWeights = new Dictionary<int, float>();
+    private Mesh                  _skePreviewMesh;
+    private Mesh                  _skeSourceMesh;
+    private SkinnedMeshRenderer   _skePreviewSource;
+    private GUIStyle              _skeRowStyle;
+    private GUIStyle              _skeSelectedRowStyle;
     // ??????ш낄援???域밸Ŧ遊얕짆??
     private string                _skeSearch             = "";
     private Vector2               _skeSKListScroll;
@@ -185,6 +189,7 @@ public class ArmatureScalerEditor : EditorWindow
         EditorApplication.update += OnEditorUpdate;
         EditorApplication.projectChanged += OnProjectAssetsChanged;
         Undo.undoRedoPerformed += OnUndoRedo;
+        EditorApplication.playModeStateChanged += OnPreviewPlayModeChanged;
     }
 
     void OnDisable()
@@ -192,6 +197,7 @@ public class ArmatureScalerEditor : EditorWindow
         EditorApplication.update -= OnEditorUpdate;
         EditorApplication.projectChanged -= OnProjectAssetsChanged;
         Undo.undoRedoPerformed -= OnUndoRedo;
+        EditorApplication.playModeStateChanged -= OnPreviewPlayModeChanged;
 
         if (_faceRT != null)
         {
@@ -206,6 +212,22 @@ public class ArmatureScalerEditor : EditorWindow
             _skePreviewRT = null;
         }
         SkeRestoreAndClearPreview();
+        ReleaseHeadPreview();
+    }
+
+    private void ReleaseHeadPreview()
+    {
+        _headPreview?.Dispose();
+        _headPreview = null;
+        _facePreviewDirty = true;
+        _skePreviewDirty = true;
+    }
+
+    private void OnPreviewPlayModeChanged(PlayModeStateChange state)
+    {
+        SkeRestoreAndClearPreview();
+        ReleaseHeadPreview();
+        Repaint();
     }
 
     private string Tr(string english, string korean, string japanese)
@@ -220,6 +242,9 @@ public class ArmatureScalerEditor : EditorWindow
 
     private void OnUndoRedo()
     {
+        SkeRestoreAndClearPreview();
+        _skeModifyScale = 100f;
+        ReleaseHeadPreview();
         if (currentMode != EditorMode.ShapeKey || animationClip == null || targetAvatarRoot == null)
         {
             Repaint();
@@ -770,9 +795,27 @@ public class ArmatureScalerEditor : EditorWindow
         SceneView.RepaintAll();
         Repaint();
     }
+    private GameObject _boneMappingRoot;
+
     private void DrawArmatureGUI()
     {
-        
+        // 다른 탭에서 대상 아바타가 바뀌었으면 본 매핑을 다시 만든다.
+        if (targetAvatarRoot != _boneMappingRoot && Event.current.type == EventType.Layout)
+        {
+            _boneMappingRoot = targetAvatarRoot;
+            selectedPart = HumanoidBodyPart.None;
+            if (targetAvatarRoot != null)
+            {
+                boneMapping = ArmatureScalerCore.AssignBoneMappings(targetAvatarRoot);
+                LoadCurrentValues();
+            }
+            else
+            {
+                boneMapping = null;
+                InitializeValues();
+            }
+        }
+
         EditorGUILayout.BeginHorizontal();
         EditorGUI.BeginChangeCheck();
         targetAvatarRoot = (GameObject)EditorGUILayout.ObjectField(UI_TEXT[0], targetAvatarRoot, typeof(GameObject), true);
@@ -1312,7 +1355,7 @@ public class ArmatureScalerEditor : EditorWindow
             if (targetAvatarRoot != null)
             {
                 TakeSnapshot();
-                Debug.Log("[Avi Editor] ???怨좊룴???縕?猿녿뎨???????????ш낄援????????궈??關履????怨?????덊렡.");
+                Debug.Log("[Avi Editor] " + Tr("Snapshot refreshed.", "현재 상태를 원본 스냅샷으로 다시 저장했습니다.", "現在の状態をスナップショットとして保存し直しました。"));
             }
         }
         GUI.backgroundColor = _prevBg;
@@ -1538,21 +1581,13 @@ public class ArmatureScalerEditor : EditorWindow
     {
         if (targetAvatarRoot == null || !_hasSnapshot) return;
 
-        if (PrefabUtility.IsPartOfPrefabInstance(targetAvatarRoot))
+        foreach (var kvp in _snapTransforms)
         {
-            foreach (var tr in targetAvatarRoot.GetComponentsInChildren<Transform>(true))
-                PrefabUtility.RevertObjectOverride(tr, InteractionMode.UserAction);
-        }
-        else
-        {
-            foreach (var kvp in _snapTransforms)
-            {
-                if (kvp.Key == null) continue;
-                kvp.Key.localPosition = kvp.Value.pos;
-                kvp.Key.localRotation = kvp.Value.rot;
-                kvp.Key.localScale    = kvp.Value.scl;
-                ForceUpdateScene(kvp.Key);
-            }
+            if (kvp.Key == null) continue;
+            kvp.Key.localPosition = kvp.Value.pos;
+            kvp.Key.localRotation = kvp.Value.rot;
+            kvp.Key.localScale    = kvp.Value.scl;
+            ForceUpdateScene(kvp.Key);
         }
 
         if (SceneView.lastActiveSceneView != null)
@@ -1594,42 +1629,27 @@ public class ArmatureScalerEditor : EditorWindow
     {
         if (targetAvatarRoot == null) return;
 
-        bool isPrefab = PrefabUtility.IsPartOfPrefabInstance(targetAvatarRoot);
-
-        if (isPrefab)
+        foreach (var smr in targetAvatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
         {
-            foreach (var smr in targetAvatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            if (smr.sharedMesh == null) continue;
+            Undo.RecordObject(smr, "Avi Editor Restore SMR");
+            int count = smr.sharedMesh.blendShapeCount;
+            _snapShapeKeys.TryGetValue(smr, out var snap);
+            for (int i = 0; i < count; i++)
             {
-                PrefabUtility.RevertObjectOverride(smr, InteractionMode.UserAction);
+                smr.SetBlendShapeWeight(i, snap != null && i < snap.Length ? snap[i] : 0f);
             }
-            foreach (var tr in targetAvatarRoot.GetComponentsInChildren<Transform>(true))
-            {
-                PrefabUtility.RevertObjectOverride(tr, InteractionMode.UserAction);
-            }
+            ForceUpdateScene(smr);
         }
-        else
-        {
-            foreach (var smr in targetAvatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
-            {
-                if (smr.sharedMesh == null) continue;
-                Undo.RecordObject(smr, "Avi Editor Restore SMR");
-                int count = smr.sharedMesh.blendShapeCount;
-                for (int i = 0; i < count; i++)
-                {
-                    smr.SetBlendShapeWeight(i, 0f);
-                }
-                ForceUpdateScene(smr);
-            }
 
-            foreach (var kvp in _snapTransforms)
-            {
-                if (kvp.Key == null) continue;
-                Undo.RecordObject(kvp.Key, "Avi Editor Restore Pose");
-                kvp.Key.localPosition = kvp.Value.pos;
-                kvp.Key.localRotation = kvp.Value.rot;
-                kvp.Key.localScale    = kvp.Value.scl;
-                ForceUpdateScene(kvp.Key);
-            }
+        foreach (var kvp in _snapTransforms)
+        {
+            if (kvp.Key == null) continue;
+            Undo.RecordObject(kvp.Key, "Avi Editor Restore Pose");
+            kvp.Key.localPosition = kvp.Value.pos;
+            kvp.Key.localRotation = kvp.Value.rot;
+            kvp.Key.localScale    = kvp.Value.scl;
+            ForceUpdateScene(kvp.Key);
         }
 
         if (SceneView.lastActiveSceneView != null)
@@ -2548,7 +2568,6 @@ public class ArmatureScalerEditor : EditorWindow
         GUILayout.Space(5);
 
         _exprMainScroll = EditorGUILayout.BeginScrollView(_exprMainScroll);
-
         DrawExpressionClipSection(prevBg);
         GUILayout.Space(5);
 
@@ -2562,9 +2581,9 @@ public class ArmatureScalerEditor : EditorWindow
     }
     private void DrawFacePreview()
     {
-        float size = Mathf.Min(position.width - 20f, 260f);
+        float size = HeadPreviewSize;
         Rect previewRect = GUILayoutUtility.GetRect(size, size, GUILayout.ExpandWidth(false));
-        previewRect.x = (position.width - size) * 0.5f;
+        previewRect.x = Mathf.Max(0f, (position.width - size) * 0.5f);
 
         Color bgCol = EditorGUIUtility.isProSkin ? new Color(0.22f, 0.22f, 0.22f) : new Color(0.76f, 0.76f, 0.76f);
         EditorGUI.DrawRect(previewRect, bgCol);
@@ -2596,13 +2615,21 @@ public class ArmatureScalerEditor : EditorWindow
 
         if (_faceRT == null || _faceRT.width != size)
         {
-            if (_faceRT != null) _faceRT.Release();
-            _faceRT = new RenderTexture(size, size, 24, RenderTextureFormat.ARGB32);
+            if (_faceRT != null)
+            {
+                _faceRT.Release();
+                DestroyImmediate(_faceRT);
+            }
+            _faceRT = new RenderTexture(size, size, 24, RenderTextureFormat.ARGB32)
+                { hideFlags = HideFlags.HideAndDontSave };
             _faceRT.antiAliasing = 2;
             _faceRT.Create();
         }
 
-        RenderHeadPreviewTo(_faceRT, _bodySmr);
+        var weights = new Dictionary<int, float>();
+        if (_exprShapeValues != null)
+            for (int i = 0; i < _exprShapeValues.Length; i++) weights[i] = _exprShapeValues[i];
+        RenderHeadPreviewTo(_faceRT, _bodySmr, weights);
     }
 
     // ── 얼굴 미리보기 공용 로직 (표정 / 쉐이프키 탭 공용) ──────────────
@@ -2616,10 +2643,12 @@ public class ArmatureScalerEditor : EditorWindow
         headSize = 0.25f;
 
         Transform head = null, leftEye = null, rightEye = null, leftArm = null, rightArm = null;
-        Transform root = targetAvatarRoot != null ? targetAvatarRoot.transform : null;
+        Transform root = targetAvatarRoot != null && fallbackRenderer != null &&
+                         fallbackRenderer.transform.IsChildOf(targetAvatarRoot.transform)
+            ? targetAvatarRoot.transform : fallbackRenderer != null ? fallbackRenderer.transform.root : null;
 
         // 1) 휴머노이드 아바타가 있으면 본 이름 추측보다 우선한다.
-        var animator = targetAvatarRoot != null ? targetAvatarRoot.GetComponentInChildren<Animator>(true) : null;
+        var animator = root != null ? root.GetComponentInChildren<Animator>(true) : null;
         if (animator != null && animator.avatar != null && animator.isHuman)
         {
             head     = animator.GetBoneTransform(HumanBodyBones.Head);
@@ -2630,18 +2659,17 @@ public class ArmatureScalerEditor : EditorWindow
         }
 
         // 2) 이름 기반 매핑으로 보완 (표정 탭에서는 boneMapping 이 아직 비어 있을 수 있다)
-        if (targetAvatarRoot != null && (head == null || leftArm == null || rightArm == null))
+        if (root != null && (head == null || leftEye == null || rightEye == null || leftArm == null || rightArm == null))
         {
-            if (boneMapping == null)
-                boneMapping = ArmatureScalerCore.AssignBoneMappings(targetAvatarRoot);
-            if (boneMapping != null)
+            var previewBones = ArmatureScalerCore.AssignBoneMappings(root.gameObject);
+            if (previewBones != null)
             {
                 Transform t;
-                if (head     == null && boneMapping.TryGetValue(HumanBodyBones.Head,          out t)) head     = t;
-                if (leftEye  == null && boneMapping.TryGetValue(HumanBodyBones.LeftEye,       out t)) leftEye  = t;
-                if (rightEye == null && boneMapping.TryGetValue(HumanBodyBones.RightEye,      out t)) rightEye = t;
-                if (leftArm  == null && boneMapping.TryGetValue(HumanBodyBones.LeftUpperArm,  out t)) leftArm  = t;
-                if (rightArm == null && boneMapping.TryGetValue(HumanBodyBones.RightUpperArm, out t)) rightArm = t;
+                if (head     == null && previewBones.TryGetValue(HumanBodyBones.Head,          out t)) head     = t;
+                if (leftEye  == null && previewBones.TryGetValue(HumanBodyBones.LeftEye,       out t)) leftEye  = t;
+                if (rightEye == null && previewBones.TryGetValue(HumanBodyBones.RightEye,      out t)) rightEye = t;
+                if (leftArm  == null && previewBones.TryGetValue(HumanBodyBones.LeftUpperArm,  out t)) leftArm  = t;
+                if (rightArm == null && previewBones.TryGetValue(HumanBodyBones.RightUpperArm, out t)) rightArm = t;
             }
         }
 
@@ -2678,7 +2706,7 @@ public class ArmatureScalerEditor : EditorWindow
             headSize = est;
             if (fallbackRenderer != null)
             {
-                float measured = fallbackRenderer.bounds.max.y - headPos.y;
+                float measured = GetHeadFramingBounds(fallbackRenderer).max.y - headPos.y;
                 if (measured > 0.01f)
                     headSize = Mathf.Clamp(measured, est * 0.6f, est * 2.5f);
             }
@@ -2690,7 +2718,7 @@ public class ArmatureScalerEditor : EditorWindow
         }
         else if (fallbackRenderer != null)
         {
-            var b = fallbackRenderer.bounds;
+            var b = GetHeadFramingBounds(fallbackRenderer);
             headSize = Mathf.Max(0.05f, b.size.y * 0.16f);
             focus    = new Vector3(b.center.x, b.max.y - headSize * 0.5f, b.center.z);
         }
@@ -2700,6 +2728,31 @@ public class ArmatureScalerEditor : EditorWindow
         }
 
         return true;
+    }
+
+    // Renderer bounds may be enlarged for culling (often to several metres).
+    // Measure the posed vertices without changing the renderer or its source mesh.
+    private static Bounds GetHeadFramingBounds(Renderer renderer)
+    {
+        if (!(renderer is SkinnedMeshRenderer skin) || skin.sharedMesh == null)
+            return renderer.bounds;
+
+        var baked = new Mesh { hideFlags = HideFlags.HideAndDontSave };
+        try
+        {
+            skin.BakeMesh(baked, false);
+            Vector3[] vertices = baked.vertices;
+            if (vertices.Length == 0) return renderer.bounds;
+            Matrix4x4 toWorld = skin.transform.localToWorldMatrix;
+            var bounds = new Bounds(toWorld.MultiplyPoint3x4(vertices[0]), Vector3.zero);
+            for (int i = 1; i < vertices.Length; i++)
+                bounds.Encapsulate(toWorld.MultiplyPoint3x4(vertices[i]));
+            return bounds;
+        }
+        finally
+        {
+            DestroyImmediate(baked);
+        }
     }
 
     // 좌(왼쪽 본) → 우(오른쪽 본) 벡터에서 정면 방향을 구한다.
@@ -2712,7 +2765,8 @@ public class ArmatureScalerEditor : EditorWindow
         return Vector3.Cross(r.normalized, Vector3.up).normalized;
     }
 
-    private void RenderHeadPreviewTo(RenderTexture rt, Renderer fallbackRenderer)
+    private void RenderHeadPreviewTo(RenderTexture rt, SkinnedMeshRenderer fallbackRenderer,
+        IReadOnlyDictionary<int, float> weights = null, Mesh previewMesh = null)
     {
         if (rt == null) return;
 
@@ -2732,27 +2786,13 @@ public class ArmatureScalerEditor : EditorWindow
 
         Vector3 camPos = focus + dir.normalized * dist;
 
-        var camGo = new GameObject("__DiNeHeadPreviewCam__") { hideFlags = HideFlags.HideAndDontSave };
-        var cam   = camGo.AddComponent<Camera>();
-        cam.backgroundColor = new Color(0, 0, 0, 0);
-        cam.clearFlags      = CameraClearFlags.SolidColor;
-        cam.orthographic    = false;
-        cam.fieldOfView     = fov;
-        cam.nearClipPlane   = Mathf.Max(0.001f, dist * 0.02f);
-        cam.farClipPlane    = dist * 10f + 100f;
-        cam.targetTexture   = rt;
-        cam.cullingMask     = -1;
-        cam.enabled         = false;
+        Quaternion camRotation = Quaternion.LookRotation((focus - camPos).normalized, Vector3.up);
+        camPos += camRotation * Vector3.right * (_headPrevPan.x * headSize)
+                + camRotation * Vector3.up * (_headPrevPan.y * headSize);
 
-        cam.transform.position = camPos;
-        cam.transform.rotation = Quaternion.LookRotation((focus - camPos).normalized, Vector3.up);
-        cam.transform.position = camPos
-                               + cam.transform.right * (_headPrevPan.x * headSize)
-                               + cam.transform.up    * (_headPrevPan.y * headSize);
-
-        cam.Render();
-        cam.targetTexture = null;
-        DestroyImmediate(camGo);
+        if (_headPreview == null) _headPreview = new DiNeAviHeadPreview();
+        _headPreview.Render(targetAvatarRoot, fallbackRenderer, weights, previewMesh, rt,
+            camPos, camRotation, fov, Mathf.Max(0.001f, dist * 0.02f), dist * 10f + 100f);
     }
 
     // 드래그 = 회전, 휠 = 확대/축소, 가운데 버튼(또는 Alt+드래그) = 이동
@@ -2903,6 +2943,7 @@ public class ArmatureScalerEditor : EditorWindow
                 if (layerNames.Length > 0)
                 {
                     GUILayout.Space(4);
+                    _exprFxLayerSel = Mathf.Clamp(_exprFxLayerSel, 0, layerNames.Length - 1);
                     _exprFxLayerSel = GUILayout.Toolbar(_exprFxLayerSel, layerNames);
                     GUILayout.Space(4);
 
@@ -3014,11 +3055,9 @@ public class ArmatureScalerEditor : EditorWindow
                         : language == LanguagePreset.Japanese ? "全てリセット" : "Reset All";
         if (GUILayout.Button(resetAll, GUILayout.Width(90), GUILayout.Height(22)))
         {
-            Undo.RecordObject(_bodySmr, "Expr Reset ShapeKeys");
             for (int i = 0; i < count; i++)
             {
                 _exprShapeValues[i] = 0f;
-                _bodySmr.SetBlendShapeWeight(i, 0f);
             }
             _facePreviewDirty = true;
         }
@@ -3041,8 +3080,6 @@ public class ArmatureScalerEditor : EditorWindow
             if (EditorGUI.EndChangeCheck())
             {
                 _exprShapeValues[i] = newVal;
-                Undo.RecordObject(_bodySmr, "Expr ShapeKey");
-                _bodySmr.SetBlendShapeWeight(i, newVal);
                 _facePreviewDirty = true;
                 Repaint();
             }
@@ -3064,11 +3101,9 @@ public class ArmatureScalerEditor : EditorWindow
     private void RestoreWorkingValues()
     {
         if (_bodySmr == null || _exprWorkingValues == null) return;
-        Undo.RecordObject(_bodySmr, "Avi Editor FX Preview Restore");
         int cnt = Mathf.Min(_exprWorkingValues.Length, _bodySmr.sharedMesh.blendShapeCount);
         for (int i = 0; i < cnt; i++)
         {
-            _bodySmr.SetBlendShapeWeight(i, _exprWorkingValues[i]);
             if (_exprShapeValues != null && i < _exprShapeValues.Length)
                 _exprShapeValues[i] = _exprWorkingValues[i];
         }
@@ -3079,15 +3114,15 @@ public class ArmatureScalerEditor : EditorWindow
     private void PreviewFxClip(AnimationClip clip)
     {
         if (clip == null || _bodySmr == null || _bodySmr.sharedMesh == null) return;
-        Undo.RecordObject(_bodySmr, "Avi Editor FX Preview");
         int cnt = _bodySmr.sharedMesh.blendShapeCount;
-
-        for (int i = 0; i < cnt; i++)
+        if (_exprShapeValues == null || _exprShapeValues.Length != cnt)
         {
-            _bodySmr.SetBlendShapeWeight(i, 0f);
-            if (_exprShapeValues != null && i < _exprShapeValues.Length)
-                _exprShapeValues[i] = 0f;
+            _exprShapeValues = new float[cnt];
+            for (int i = 0; i < cnt; i++) _exprShapeValues[i] = _bodySmr.GetBlendShapeWeight(i);
         }
+        // Start every FX preview from the user's working expression; absent curves keep it.
+        if (_exprWorkingValues != null)
+            System.Array.Copy(_exprWorkingValues, _exprShapeValues, Mathf.Min(cnt, _exprWorkingValues.Length));
 
         string smrPath = AnimationUtility.CalculateTransformPath(_bodySmr.transform, targetAvatarRoot.transform);
         foreach (var b in AnimationUtility.GetCurveBindings(clip))
@@ -3100,7 +3135,6 @@ public class ArmatureScalerEditor : EditorWindow
             int idx = _bodySmr.sharedMesh.GetBlendShapeIndex(skName);
             if (idx < 0) continue;
             float val = curve.Evaluate(0f);
-            _bodySmr.SetBlendShapeWeight(idx, val);
             if (_exprShapeValues != null && idx < _exprShapeValues.Length)
                 _exprShapeValues[idx] = val;
         }
@@ -3113,6 +3147,9 @@ public class ArmatureScalerEditor : EditorWindow
     {
         _bodySmr = null;
         _exprShapeValues = null;
+        _exprWorkingValues = null;
+        _exprFxPreviewMode = false;
+        ReleaseHeadPreview();
         if (targetAvatarRoot == null) return;
 
         if (boneMapping == null)
@@ -3155,11 +3192,12 @@ public class ArmatureScalerEditor : EditorWindow
     {
         if (_exprClip == null || _bodySmr == null || _bodySmr.sharedMesh == null) return;
 
-        Undo.RecordObject(_bodySmr, "Load Expression Clip");
-
         int cnt = _bodySmr.sharedMesh.blendShapeCount;
         if (_exprShapeValues == null || _exprShapeValues.Length != cnt)
+        {
             _exprShapeValues = new float[cnt];
+            for (int i = 0; i < cnt; i++) _exprShapeValues[i] = _bodySmr.GetBlendShapeWeight(i);
+        }
 
         foreach (var b in AnimationUtility.GetCurveBindings(_exprClip))
         {
@@ -3177,7 +3215,6 @@ public class ArmatureScalerEditor : EditorWindow
 
             float val = curve.Evaluate(0f);
             _exprShapeValues[idx] = val;
-            _bodySmr.SetBlendShapeWeight(idx, val);
         }
 
         _facePreviewDirty = true;
@@ -3243,7 +3280,7 @@ public class ArmatureScalerEditor : EditorWindow
 
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
-        Debug.Log($"[Avi Editor] Expression saved ??{path}");
+        Debug.Log($"[Avi Editor] Expression saved → {path}");
     }
 
     /// <summary>
@@ -3434,11 +3471,12 @@ public class ArmatureScalerEditor : EditorWindow
             if (layer.name != layerName) continue;
             if (stateIndex < layer.stateMachine.states.Length)
             {
-                Undo.RecordObject(ctrl, "Replace FX Clip");
-                layer.stateMachine.states[stateIndex].state.motion = targetClip;
-                EditorUtility.SetDirty(ctrl);
+                var fxState = layer.stateMachine.states[stateIndex].state;
+                Undo.RecordObject(fxState, "Replace FX Clip");
+                fxState.motion = targetClip;
+                EditorUtility.SetDirty(fxState);
                 AssetDatabase.SaveAssets();
-                Debug.Log($"[Avi Editor] Replaced clip in {layerName}[{stateIndex}] ??{targetClip.name}");
+                Debug.Log($"[Avi Editor] Replaced clip in {layerName}[{stateIndex}] → {targetClip.name}");
             }
             break;
         }
@@ -3469,6 +3507,7 @@ public class ArmatureScalerEditor : EditorWindow
             _skePrevTarget = targetAvatarRoot;
             SkeRestoreAndClearPreview();
             _skeSmr = DiNeShapeKeyEditorCore.FindBodySmr(targetAvatarRoot);
+            SkeResetTarget();
             _skeStatus = "";
             _skePreviewDirty = true;
         }
@@ -3479,6 +3518,7 @@ public class ArmatureScalerEditor : EditorWindow
         {
             SkeRestoreAndClearPreview();
             _skeSmr = DiNeShapeKeyEditorCore.FindBodySmr(targetAvatarRoot);
+            SkeResetTarget();
             _skeStatus = "";
             _skePreviewDirty = true;
         }
@@ -3493,13 +3533,19 @@ public class ArmatureScalerEditor : EditorWindow
             _skeSmr, typeof(SkinnedMeshRenderer), true);
         if (EditorGUI.EndChangeCheck())
         {
-            SkeRestoreAndClearPreview();
+            SkeResetTarget();
             _skeStatus = "";
             _skePreviewDirty = true;
         }
 
         EditorGUILayout.EndVertical();
         GUILayout.Space(5);
+
+        if (_skePreviewSource != _skeSmr) SkeResetTarget();
+        if (_skeSmr != null && _skeSourceMesh != _skeSmr.sharedMesh)
+        {
+            SkeResetTarget();
+        }
 
         if (_skeSmr == null || _skeSmr.sharedMesh == null)
         {
@@ -3533,13 +3579,17 @@ public class ArmatureScalerEditor : EditorWindow
         GUILayout.Space(5);
 
         string[] shapeNames = DiNeShapeKeyEditorCore.GetShapeKeyNames(_skeSmr);
+        _skeModifyIndex = Mathf.Clamp(_skeModifyIndex, 0, shapeNames.Length - 1);
 
         // ─ 프리뷰 ────────────────────────────────────────────────────────────
         DrawSkePreview();
-        GUILayout.Space(5);
-
-        // ─ 모드별 내용 (아래 전체를 스크롤 가능하게) ──────────────────────────
         _skeOuterScroll = EditorGUILayout.BeginScrollView(_skeOuterScroll);
+        EditorGUILayout.LabelField(Tr(
+            "Preview stays in this window. Create / Apply saves the mesh to the avatar.",
+            "미리보기는 이 창에서만 표시됩니다. 생성 / 적용을 누르면 아바타에 반영됩니다.",
+            "プレビューはこのウィンドウ内だけに表示されます。作成 / 適用でアバターに反映します。"),
+            EditorStyles.wordWrappedMiniLabel);
+        GUILayout.Space(5);
 
         if (_skeSubMode == 0)
             DrawSkeCreateMix(shapeNames, prevBg);
@@ -3555,11 +3605,15 @@ public class ArmatureScalerEditor : EditorWindow
         GUILayout.Space(8);
         EditorGUILayout.EndScrollView();
     }
+    // Keep the face visible while controls scroll, with room left for controls in short windows.
+    private float HeadPreviewSize => Mathf.Max(1f, Mathf.Min(position.width - 20f, 360f,
+        Mathf.Max(180f, position.height * 0.38f)));
+
     private void DrawSkePreview()
     {
-        float size = Mathf.Min(position.width - 20f, 200f);
+        float size = HeadPreviewSize;
         Rect previewRect = GUILayoutUtility.GetRect(size, size, GUILayout.ExpandWidth(false));
-        previewRect.x = (position.width - size) * 0.5f;
+        previewRect.x = Mathf.Max(0f, (position.width - size) * 0.5f);
 
         Color bgCol = EditorGUIUtility.isProSkin ? new Color(0.18f, 0.18f, 0.18f) : new Color(0.76f, 0.76f, 0.76f);
         EditorGUI.DrawRect(previewRect, bgCol);
@@ -3591,22 +3645,37 @@ public class ArmatureScalerEditor : EditorWindow
 
         if (_skePreviewRT == null || _skePreviewRT.width != size)
         {
-            if (_skePreviewRT != null) _skePreviewRT.Release();
-            _skePreviewRT = new RenderTexture(size, size, 24, RenderTextureFormat.ARGB32);
+            if (_skePreviewRT != null)
+            {
+                _skePreviewRT.Release();
+                DestroyImmediate(_skePreviewRT);
+            }
+            _skePreviewRT = new RenderTexture(size, size, 24, RenderTextureFormat.ARGB32)
+                { hideFlags = HideFlags.HideAndDontSave };
             _skePreviewRT.antiAliasing = 2;
             _skePreviewRT.Create();
         }
 
         // 머리 위치·크기·정면 방향은 표정 탭과 동일한 공용 로직으로 계산한다.
-        RenderHeadPreviewTo(_skePreviewRT, _skeSmr);
+        RenderHeadPreviewTo(_skePreviewRT, _skeSmr, _skePreviewWeights, _skePreviewMesh);
     }
 
     // listMode: 0=create(??⑤베堉??類????  1=modify-select(???????ャ뀕??  2=modify-select+雅?퍔瑗????뽱돯??
     private void DrawSkeShapeKeyList(string[] shapeNames, int listMode, Color prevBg)
     {
+        if (_skeRowStyle == null)
+        {
+            _skeRowStyle = new GUIStyle(GUI.skin.button) { alignment = TextAnchor.MiddleLeft, fontSize = 11 };
+            _skeSelectedRowStyle = new GUIStyle(_skeRowStyle)
+                { fontStyle = FontStyle.Bold, normal = { textColor = Color.white } };
+        }
         _skeSearch = EditorGUILayout.TextField("", _skeSearch, EditorStyles.toolbarSearchField);
         GUILayout.Space(2);
         string searchLower = _skeSearch.ToLower();
+        string modifyPreviewTooltip = Tr(
+            "Preview this key while keeping the avatar's other values. Click again to restore its original value.",
+            "아바타의 다른 값은 유지하고 이 키만 미리 봅니다. 다시 누르면 원래 값으로 돌아갑니다.",
+            "アバターの他の値を維持して、このキーだけをプレビューします。もう一度押すと元の値に戻ります。");
 
         _skeSKListScroll = EditorGUILayout.BeginScrollView(_skeSKListScroll, GUILayout.Height(210));
         for (int i = 0; i < shapeNames.Length; i++)
@@ -3614,7 +3683,7 @@ public class ArmatureScalerEditor : EditorWindow
             string name = shapeNames[i];
             if (!string.IsNullOrEmpty(searchLower) && !name.ToLower().Contains(searchLower)) continue;
 
-            bool isTarget   = (listMode >= 1) && _skeModifyIndex == i;
+            bool isTarget   = (listMode >= 1) && _skeModifyIndex == i && _skePreviewWeights.ContainsKey(i);
             bool isInCreate = listMode == 0 && _skeMixEntries.Any(e => e.index == i);
             bool isInModMix = listMode == 2 && _skeModifyMixEntries.Any(e => e.index == i);
 
@@ -3622,39 +3691,38 @@ public class ArmatureScalerEditor : EditorWindow
 
             if (listMode == 0) // ─ 새로 만들기: 레이블 + [추가] ─
             {
-                GUI.backgroundColor = isInCreate ? new Color(0.15f, 0.45f, 0.15f) : prevBg;
                 GUILayout.Label(name, GUILayout.ExpandWidth(true));
-                GUI.backgroundColor = isInCreate ? new Color(0.15f, 0.45f, 0.15f) : new Color(0.25f, 0.55f, 0.25f);
+                GUI.backgroundColor = isInCreate ? new Color(0.30f, 0.82f, 0.76f) : prevBg;
                 string addL = language == LanguagePreset.Korean ? "추가" : language == LanguagePreset.Japanese ? "追加" : "Add";
+                EditorGUI.BeginDisabledGroup(isInCreate);
                 if (GUILayout.Button(addL, GUILayout.Width(42), GUILayout.Height(19)))
                 {
                     _skeMixEntries.Add(new DiNeSkeMixEntry { index = i, weight = 100f });
                     SkeApplyMixPreview(_skeMixEntries);
                 }
+                EditorGUI.EndDisabledGroup();
                 GUI.backgroundColor = prevBg;
             }
             else // ─ 수정하기: 클릭으로 대상 선택 (+ 믹스 추가 버튼) ─
             {
                 GUI.backgroundColor = isTarget ? new Color(0.30f, 0.82f, 0.76f) : prevBg;
-                GUIStyle rowStyle = new GUIStyle(GUI.skin.button)
+                GUIStyle rowStyle = isTarget ? _skeSelectedRowStyle : _skeRowStyle;
+                if (GUILayout.Button(new GUIContent(name, modifyPreviewTooltip), rowStyle,
+                        GUILayout.ExpandWidth(true), GUILayout.Height(20)))
                 {
-                    alignment = TextAnchor.MiddleLeft, fontSize = 11,
-                    fontStyle = isTarget ? FontStyle.Bold : FontStyle.Normal,
-                    normal    = { textColor = isTarget ? Color.white : GUI.skin.label.normal.textColor },
-                };
-                if (GUILayout.Button(name, rowStyle, GUILayout.ExpandWidth(true), GUILayout.Height(20)))
-                {
-                    _skeModifyIndex = i;
-                    SkeApplyModifyPreview(i);
+                    SkeSelectModifyTarget(i);
                 }
                 if (listMode == 2) // 믹스 추가 버튼
                 {
-                    GUI.backgroundColor = isInModMix ? new Color(0.15f, 0.45f, 0.15f) : new Color(0.25f, 0.55f, 0.25f);
-                    if (GUILayout.Button("+", GUILayout.Width(24), GUILayout.Height(20)))
+                    GUI.backgroundColor = isInModMix ? new Color(0.30f, 0.82f, 0.76f) : prevBg;
+                    EditorGUI.BeginDisabledGroup(isInModMix);
+                    if (GUILayout.Button(new GUIContent("+", Tr("Add to mix", "믹스에 추가", "ミックスに追加")),
+                            GUILayout.Width(24), GUILayout.Height(20)))
                     {
                         _skeModifyMixEntries.Add(new DiNeSkeMixEntry { index = i, weight = 100f });
                         SkeApplyMixPreview(_skeModifyMixEntries);
                     }
+                    EditorGUI.EndDisabledGroup();
                 }
                 GUI.backgroundColor = prevBg;
             }
@@ -3678,8 +3746,8 @@ public class ArmatureScalerEditor : EditorWindow
             EditorGUI.BeginChangeCheck();
             entry.weight = EditorGUILayout.Slider(entry.weight, 0f, 200f);
             if (EditorGUI.EndChangeCheck()) changed = true;
-            GUI.backgroundColor = new Color(0.8f, 0.3f, 0.3f);
-            if (GUILayout.Button("R", GUILayout.Width(22), GUILayout.Height(18)))
+            if (GUILayout.Button(new GUIContent("−", Tr("Remove from mix", "믹스에서 제거", "ミックスから削除")),
+                    GUILayout.Width(22), GUILayout.Height(18)))
                 removeAt = i;
             GUI.backgroundColor = prevBg;
             EditorGUILayout.EndHorizontal();
@@ -3743,7 +3811,11 @@ public class ArmatureScalerEditor : EditorWindow
                 ? (language == LanguagePreset.Korean ? $"✅ '{_skeNewName}' 생성 완료" : language == LanguagePreset.Japanese ? $"✅ '{_skeNewName}' 生成完了" : $"✅ '{_skeNewName}' created")
                 : err;
             _skeStatusIsError = !ok;
-            if (ok) _skeNewName = "";
+            if (ok)
+            {
+                _skeNewName = "";
+                SkeMeshApplied();
+            }
         }
         GUI.backgroundColor = prevBg;
         EditorGUI.EndDisabledGroup();
@@ -3781,9 +3853,9 @@ public class ArmatureScalerEditor : EditorWindow
         DrawSkeShapeKeyList(shapeNames, listMode, prevBg);
         if (_skeModifySubMode == 1)
         {
-            string hint = language == LanguagePreset.Korean  ? "클릭: 대상 선택(파란색)  /  [+]: 교체할 믹스에 추가(초록색)"
+            string hint = language == LanguagePreset.Korean  ? "클릭: 대상 선택  /  [+]: 교체할 믹스에 추가"
                         : language == LanguagePreset.Japanese ? "クリック: 対象選択  /  [+]: ミックスに追加"
-                        : "Click: select target (blue)  /  [+]: add to mix (green)";
+                        : "Click: select target  /  [+]: add to mix";
             EditorGUILayout.HelpBox(hint, MessageType.None);
         }
         EditorGUILayout.EndVertical();
@@ -3798,14 +3870,36 @@ public class ArmatureScalerEditor : EditorWindow
                 EditorStyles.boldLabel);
             GUILayout.Space(3);
             string scaleLabel = language == LanguagePreset.Korean ? "새 배율 (%)" : language == LanguagePreset.Japanese ? "新しい倍率 (%)" : "New Scale (%)";
+            EditorGUI.BeginChangeCheck();
             _skeModifyScale = EditorGUILayout.Slider(scaleLabel, _skeModifyScale, 0f, 200f);
+            if (EditorGUI.EndChangeCheck())
+            {
+                if (!_skePreviewWeights.ContainsKey(_skeModifyIndex))
+                    _skePreviewWeights[_skeModifyIndex] = 100f;
+                SkeUpdateScalePreviewMesh();
+                Repaint();
+            }
+
+            float previewWeight = _skePreviewWeights.TryGetValue(_skeModifyIndex, out float weight)
+                ? weight : _skeSmr.GetBlendShapeWeight(_skeModifyIndex);
+            EditorGUI.BeginChangeCheck();
+            previewWeight = EditorGUILayout.Slider(new GUIContent(
+                Tr("Preview weight", "미리보기 값", "プレビュー値"),
+                Tr("Test this key at different weights without changing the scene.",
+                    "씬을 변경하지 않고 이 키를 여러 값으로 확인합니다.",
+                    "シーンを変更せず、このキーを異なる値で確認します。")), previewWeight, 0f, 100f);
+            if (EditorGUI.EndChangeCheck())
+            {
+                _skePreviewWeights[_skeModifyIndex] = previewWeight;
+                _skePreviewDirty = true;
+                Repaint();
+            }
             if (!Mathf.Approximately(_skeModifyScale, 100f))
             {
-                string info = language == LanguagePreset.Korean
-                    ? $"기존 100% 값이 새 100% 기준 {_skeModifyScale:F0}%로 변경됩니다"
-                    : language == LanguagePreset.Japanese
-                    ? $"既存の100%が新しい基準で{_skeModifyScale:F0}%に変更されます"
-                    : $"Existing 100% will become {_skeModifyScale:F0}% of the new maximum";
+                string info = Tr(
+                    $"At weight 100, deformation becomes {_skeModifyScale:F0}% of the current mesh. Apply saves this change.",
+                    $"키 값 100일 때 변형이 현재 메쉬의 {_skeModifyScale:F0}%가 됩니다. 적용을 누르면 저장됩니다.",
+                    $"キー値100の変形が現在のメッシュの{_skeModifyScale:F0}%になります。適用すると保存します。");
                 EditorGUILayout.HelpBox(info, MessageType.None);
             }
             GUILayout.Space(4);
@@ -3814,18 +3908,24 @@ public class ArmatureScalerEditor : EditorWindow
             string applyL = language == LanguagePreset.Korean ? "배율 적용" : language == LanguagePreset.Japanese ? "倍率を適用" : "Apply Scale";
             if (GUILayout.Button(applyL, GUILayout.Height(28)))
             {
-                SkeRestoreAndClearPreview();
                 float factor = _skeModifyScale / 100f;
                 bool ok = DiNeShapeKeyEditorCore.ModifyShapeKeyScale(_skeSmr, _skeModifyIndex, factor, out string err);
                 string kn = _skeModifyIndex < shapeNames.Length ? shapeNames[_skeModifyIndex] : _skeModifyIndex.ToString();
                 _skeStatus = ok
-                    ? (language == LanguagePreset.Korean ? $"✅ '{kn}' 배율 수정 완료" : language == LanguagePreset.Japanese ? $"✅ '{kn}' 倍率修正完了" : $"✅ '{kn}' scale modified")
+                    ? Tr($"✅ '{kn}' scale {factor * 100f:F0}% applied",
+                        $"✅ '{kn}' 배율 {factor * 100f:F0}% 적용 완료",
+                        $"✅ '{kn}' 倍率{factor * 100f:F0}%を適用しました")
                     : err;
                 _skeStatusIsError = !ok;
-                if (ok) SkeApplyModifyPreview(_skeModifyIndex);
+                if (ok) SkeMeshApplied();
             }
             GUI.backgroundColor = prevBg;
             EditorGUI.EndDisabledGroup();
+            if (GUILayout.Button(Tr("Restore preview", "미리보기 초기화", "プレビューをリセット"), GUILayout.Height(24)))
+            {
+                SkeRestoreAndClearPreview();
+                Repaint();
+            }
             EditorGUILayout.EndVertical();
         }
         else
@@ -3869,23 +3969,46 @@ public class ArmatureScalerEditor : EditorWindow
                     ? (language == LanguagePreset.Korean ? $"✅ '{kn}' 믹스 교체 완료" : language == LanguagePreset.Japanese ? $"✅ '{kn}' ミックス置換完了" : $"✅ '{kn}' replaced with mix")
                     : err;
                 _skeStatusIsError = !ok;
-                if (ok) SkeApplyModifyPreview(_skeModifyIndex);
+                if (ok)
+                {
+                    SkeMeshApplied();
+                    SkeApplyModifyPreview(_skeModifyIndex);
+                }
             }
             GUI.backgroundColor = prevBg;
             EditorGUI.EndDisabledGroup();
             EditorGUILayout.EndVertical();
         }
     }
+    private void SkeSelectModifyTarget(int keyIndex)
+    {
+        if (_skeSmr == null || _skeSmr.sharedMesh == null ||
+            keyIndex < 0 || keyIndex >= _skeSmr.sharedMesh.blendShapeCount) return;
+
+        if (_skeModifyIndex == keyIndex && _skePreviewWeights.ContainsKey(keyIndex))
+        {
+            SkeRestoreAndClearPreview();
+            Repaint();
+            return;
+        }
+
+        if (_skeModifyIndex != keyIndex) _skeModifyScale = 100f;
+        _skeModifyIndex = keyIndex;
+        if (_skeModifySubMode == 1 && _skeModifyMixEntries.Count > 0)
+            SkeApplyMixPreview(_skeModifyMixEntries);
+        else
+            SkeApplyModifyPreview(keyIndex);
+    }
+
     private void SkeApplyModifyPreview(int keyIndex)
     {
         if (_skeSmr == null || _skeSmr.sharedMesh == null) return;
-        SkeRestoreAndClearPreview();
-        int n = _skeSmr.sharedMesh.blendShapeCount;
-        _skeOrigWeights = new float[n];
-        for (int i = 0; i < n; i++) _skeOrigWeights[i] = _skeSmr.GetBlendShapeWeight(i);
-        _skeHasPreviewWeights = true;
-        for (int i = 0; i < n; i++) _skeSmr.SetBlendShapeWeight(i, i == keyIndex ? 100f : 0f);
-        _skePreviewDirty = true;
+        if (keyIndex < 0 || keyIndex >= _skeSmr.sharedMesh.blendShapeCount) return;
+        // Only the current target is overridden. Removing the previous override lets
+        // the isolated renderer use that key's original (possibly non-zero) weight.
+        _skePreviewWeights.Clear();
+        _skePreviewWeights[keyIndex] = 100f;
+        SkeUpdateScalePreviewMesh();
         Repaint();
     }
 
@@ -3893,15 +4016,38 @@ public class ArmatureScalerEditor : EditorWindow
     {
         if (_skeSmr == null || _skeSmr.sharedMesh == null) return;
         SkeRestoreAndClearPreview();
+        if (_skeSubMode == 1 && _skeModifySubMode == 1)
+        {
+            // Preview the replacement itself so existing values on contributing keys
+            // remain visible exactly as they will after Apply.
+            var entries = mixList.Select(e => (e.index, e.weight)).ToList();
+            _skePreviewMesh = DiNeShapeKeyEditorCore.BuildReplacementMesh(
+                _skeSmr.sharedMesh, _skeModifyIndex, entries, out _);
+            if (_skePreviewMesh != null)
+            {
+                _skePreviewMesh.hideFlags = HideFlags.HideAndDontSave;
+                _skePreviewWeights[_skeModifyIndex] = 100f;
+                _skeStatus = "";
+                _skeStatusIsError = false;
+            }
+            else if (mixList.Count > 0)
+            {
+                _skeStatus = Tr("Add a shape key with a non-zero weight to preview the replacement.",
+                    "교체할 쉐이프키를 추가하고 값을 0보다 높게 설정해 주세요.",
+                    "置換するシェイプキーを追加し、値を0より大きくしてください。");
+                _skeStatusIsError = true;
+            }
+            Repaint();
+            return;
+        }
         int n = _skeSmr.sharedMesh.blendShapeCount;
-        _skeOrigWeights = new float[n];
-        for (int i = 0; i < n; i++) _skeOrigWeights[i] = _skeSmr.GetBlendShapeWeight(i);
-        _skeHasPreviewWeights = true;
-        for (int i = 0; i < n; i++) _skeSmr.SetBlendShapeWeight(i, 0f);
         foreach (var entry in mixList)
         {
             if (entry.index >= 0 && entry.index < n)
-                _skeSmr.SetBlendShapeWeight(entry.index, entry.weight);
+            {
+                _skePreviewWeights.TryGetValue(entry.index, out float accumulated);
+                _skePreviewWeights[entry.index] = accumulated + entry.weight;
+            }
         }
         _skePreviewDirty = true;
         Repaint();
@@ -3909,12 +4055,54 @@ public class ArmatureScalerEditor : EditorWindow
 
     private void SkeRestoreAndClearPreview()
     {
-        if (!_skeHasPreviewWeights || _skeSmr == null || _skeOrigWeights == null) return;
-        int n = Mathf.Min(_skeOrigWeights.Length,
-            _skeSmr.sharedMesh != null ? _skeSmr.sharedMesh.blendShapeCount : 0);
-        for (int i = 0; i < n; i++) _skeSmr.SetBlendShapeWeight(i, _skeOrigWeights[i]);
-        _skeOrigWeights = null;
-        _skeHasPreviewWeights = false;
+        _skePreviewWeights.Clear();
+        SkeReleaseScalePreviewMesh();
+        _skeModifyScale = 100f;
         _skePreviewDirty = true;
+    }
+
+    private void SkeReleaseScalePreviewMesh()
+    {
+        if (_skePreviewMesh != null) DestroyImmediate(_skePreviewMesh);
+        _skePreviewMesh = null;
+    }
+
+    private void SkeUpdateScalePreviewMesh()
+    {
+        SkeReleaseScalePreviewMesh();
+        if (_skeSubMode == 1 && _skeModifySubMode == 0 && _skeSmr != null &&
+            _skeSmr.sharedMesh != null && _skeModifyIndex >= 0 &&
+            _skeModifyIndex < _skeSmr.sharedMesh.blendShapeCount &&
+            !Mathf.Approximately(_skeModifyScale, 100f))
+        {
+            _skePreviewMesh = DiNeShapeKeyEditorCore.BuildScaledMesh(
+                _skeSmr.sharedMesh, _skeModifyIndex, _skeModifyScale / 100f);
+            _skePreviewMesh.hideFlags = HideFlags.HideAndDontSave;
+        }
+        _skePreviewDirty = true;
+    }
+
+    private void SkeResetTarget()
+    {
+        SkeRestoreAndClearPreview();
+        _skePreviewSource = _skeSmr;
+        _skeSourceMesh = _skeSmr != null ? _skeSmr.sharedMesh : null;
+        _skeMixEntries.Clear();
+        _skeModifyMixEntries.Clear();
+        _skeModifyIndex = 0;
+        _skeModifyScale = 100f;
+        _skeStatus = "";
+        ReleaseHeadPreview();
+    }
+
+    private void SkeMeshApplied()
+    {
+        SkeReleaseScalePreviewMesh();
+        _skeSourceMesh = _skeSmr.sharedMesh;
+        // The saved mesh now includes this factor; start the next edit at 100%.
+        _skeModifyScale = 100f;
+        _skePreviewDirty = true;
+        _facePreviewDirty = true;
+        Repaint();
     }
 }

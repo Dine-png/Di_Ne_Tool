@@ -253,7 +253,7 @@ namespace DiNeTool.ExtraModifier.Editor
 
             // 맷캡. MToon은 가산(Additive) 스피어맵만 지원한다.
             var matcapTex = GetTexture(source, MatcapTexNames);
-            if (matcapTex != null)
+            if (matcapTex != null && GetFloat(source, new[] { "_UseMatCap" }, 1f) > 0.5f)
             {
                 if (options.KeepMatcap)
                 {
@@ -313,7 +313,8 @@ namespace DiNeTool.ExtraModifier.Editor
             }
 
             // 림라이트.
-            if (TryGetColor(source, RimColorNames, out var rimColor) && rimColor.maxColorComponent > 0.001f)
+            if (TryGetColor(source, RimColorNames, out var rimColor) && rimColor.maxColorComponent > 0.001f &&
+                GetFloat(source, new[] { "_UseRim", "_EnableRimLighting" }, 1f) > 0.5f)
             {
                 if (options.KeepRim)
                 {
@@ -370,7 +371,7 @@ namespace DiNeTool.ExtraModifier.Editor
             SetFloat(target, isMToon10 ? "_M_CullMode" : "_CullMode", GetFloat(source, CullNames, 2f));
             target.renderQueue = -1;
             ValidateMToon(target, isMToon10);
-            target.renderQueue = source.renderQueue > 2500 ? source.renderQueue : target.shader.renderQueue;
+            if (source.renderQueue > 2500) target.renderQueue = source.renderQueue;
             return target;
         }
 
@@ -425,6 +426,14 @@ namespace DiNeTool.ExtraModifier.Editor
             var transparent = renderType == "Transparent" || source.renderQueue >= 3000;
             var cutout = renderType == "TransparentCutout" ||
                          (!transparent && (source.IsKeywordEnabled("_ALPHATEST_ON") || renderType == "Cutout"));
+
+            // lilToon 반투명은 RenderType=TransparentCutout, Queue 2460이라 태그만으로는 컷아웃으로 오판된다.
+            if (source.HasProperty("_TransparentMode"))
+            {
+                int lilMode = Mathf.RoundToInt(source.GetFloat("_TransparentMode"));
+                cutout = lilMode == 1 || lilMode == 5;
+                transparent = lilMode >= 2 && !cutout;
+            }
 
             var mode = transparent ? 2f : cutout ? 1f : 0f;
             SetFloat(target, isMToon10 ? "_AlphaMode" : "_BlendMode", mode);

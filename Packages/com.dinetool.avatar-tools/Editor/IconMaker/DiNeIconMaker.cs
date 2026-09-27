@@ -54,8 +54,11 @@ public static class DiNeIconMaker
     }
 
     [MenuItem("GameObject/Di Ne/Smart Icon/Create Separate Icons", false, 0)]
-    public static void CreateSeparateIcons()
+    public static void CreateSeparateIcons(MenuCommand command)
     {
+        // GameObject/ 메뉴는 다중 선택 시 선택된 오브젝트마다 한 번씩 호출된다. 첫 번째 호출만 처리한다.
+        if (command.context != null && Selection.gameObjects.Length > 1 && command.context != Selection.gameObjects[0]) return;
+
         GameObject[] targets = Selection.gameObjects;
         if (targets == null || targets.Length == 0)
         {
@@ -81,8 +84,11 @@ public static class DiNeIconMaker
     private static bool ValidateCreateSeparateIcons() => Selection.gameObjects.Length > 0;
 
     [MenuItem("GameObject/Di Ne/Smart Icon/Create Combined Icon", false, 1)]
-    public static void CreateCombinedIcon()
+    public static void CreateCombinedIcon(MenuCommand command)
     {
+        // GameObject/ 메뉴는 다중 선택 시 선택된 오브젝트마다 한 번씩 호출된다. 첫 번째 호출만 처리한다.
+        if (command.context != null && Selection.gameObjects.Length > 1 && command.context != Selection.gameObjects[0]) return;
+
         List<GameObject> targets = GetTopLevelSelection();
         if (targets.Count == 0)
         {

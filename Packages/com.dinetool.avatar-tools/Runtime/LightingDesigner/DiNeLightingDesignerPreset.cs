@@ -30,6 +30,7 @@ public sealed class DiNeLightingDesignerPreset : ScriptableObject
     [SerializeField, HideInInspector] private float outlineWidthMax = 0.1f;
     [SerializeField, HideInInspector] private float reflectanceMax = 1f;
     [SerializeField, HideInInspector] private DiNeLightingTargetShaders targetShaders = DiNeLightingTargetShaders.Everything;
+    [SerializeField, HideInInspector] private Vector3 lightDirection = new Vector3(0f, 1f, -0.5f);
 
     [SerializeField, HideInInspector]
     private List<DiNeLightingDesigner.ControlSetting> controls = new List<DiNeLightingDesigner.ControlSetting>();
@@ -81,6 +82,7 @@ public sealed class DiNeLightingDesignerPreset : ScriptableObject
         outlineWidthMax = source.OutlineWidthMax;
         reflectanceMax = source.ReflectanceMax;
         targetShaders = source.TargetShaders;
+        lightDirection = source.LightDirection;
 
         controls = new List<DiNeLightingDesigner.ControlSetting>();
         foreach (var setting in source.Controls)
@@ -119,6 +121,7 @@ public sealed class DiNeLightingDesignerPreset : ScriptableObject
         destination.OutlineWidthMax = outlineWidthMax;
         destination.ReflectanceMax = reflectanceMax;
         destination.TargetShaders = targetShaders;
+        destination.LightDirection = lightDirection;
 
         destination.Controls.Clear();
         if (controls != null)

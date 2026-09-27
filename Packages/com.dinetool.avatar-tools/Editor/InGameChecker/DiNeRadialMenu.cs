@@ -373,7 +373,7 @@ namespace DiNeTool.InGameChecker
         // ═════════════════════════════════════════════════════════════════════
         private void HandleMenuInput(Event evt, Vector2 center, List<VRCExpressionsMenu.Control> controls)
         {
-            if (evt.type == EventType.MouseDown && evt.button == 0)
+            if (evt.type == EventType.MouseDown && evt.button == 0 && _hoverIndex != -1)
             {
                 _isDragging = true;
                 _selectedIndex = _hoverIndex;

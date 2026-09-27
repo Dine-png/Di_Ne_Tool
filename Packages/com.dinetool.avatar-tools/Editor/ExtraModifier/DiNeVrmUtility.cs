@@ -413,7 +413,8 @@ namespace DiNeTool.ExtraModifier.Editor
             // 참조가 남지 않도록 변환이 끝난 뒤에 원본 콜라이더를 제거한다.
             foreach (var collider in usedColliders.Where(collider => collider != null).Distinct().ToArray())
                 Undo.DestroyObjectImmediate(collider);
-            foreach (var collider in CollectPhysBoneComponents(avatarRoot))
+            // 건너뛴(비활성) PhysBone 본체는 남겨 둔다. 활성화한 뒤 다시 변환할 수 있어야 한다.
+            foreach (var collider in CollectPhysBoneComponents(avatarRoot).Where(c => c != null && !IsPhysBone(c.GetType())).ToArray())
                 Undo.DestroyObjectImmediate(collider);
 
             // 예전 변환이 남긴 잘못된 참조까지 여기서 함께 정리한다.
@@ -796,6 +797,8 @@ namespace DiNeTool.ExtraModifier.Editor
             }
 
             var components = avatarRoot.GetComponentsInChildren<Component>(true).Reverse().ToArray();
+            // RequireComponent 의존(PipelineManager ← VRCAvatarDescriptor) 때문에 한 번에 안 지워지는 것이 있어 두 번 돈다.
+            for (int pass = 0; pass < 2; pass++)
             foreach (var component in components)
             {
                 if (component == null || component is Transform || IsVrmCompatible(component))
@@ -809,7 +812,7 @@ namespace DiNeTool.ExtraModifier.Editor
                 if (component is MonoBehaviour)
                 {
                     Undo.DestroyObjectImmediate(component);
-                    report.RemovedComponents++;
+                    if (component == null) report.RemovedComponents++;
                 }
             }
 
@@ -870,12 +873,15 @@ namespace DiNeTool.ExtraModifier.Editor
         private static IConstraint CreateUnityConstraint(Component source)
         {
             var name = source.GetType().Name;
-            if (name.Contains("ParentConstraint")) return Undo.AddComponent<ParentConstraint>(source.gameObject);
-            if (name.Contains("PositionConstraint")) return Undo.AddComponent<PositionConstraint>(source.gameObject);
-            if (name.Contains("RotationConstraint")) return Undo.AddComponent<RotationConstraint>(source.gameObject);
-            if (name.Contains("ScaleConstraint")) return Undo.AddComponent<ScaleConstraint>(source.gameObject);
-            if (name.Contains("AimConstraint")) return Undo.AddComponent<AimConstraint>(source.gameObject);
-            if (name.Contains("LookAtConstraint")) return Undo.AddComponent<LookAtConstraint>(source.gameObject);
+            // VRC Constraint는 TargetTransform으로 다른 오브젝트를 구동할 수 있다.
+            var targetTransform = GetMember(source, "TargetTransform") as Transform;
+            var host = targetTransform != null ? targetTransform.gameObject : source.gameObject;
+            if (name.Contains("ParentConstraint")) return Undo.AddComponent<ParentConstraint>(host);
+            if (name.Contains("PositionConstraint")) return Undo.AddComponent<PositionConstraint>(host);
+            if (name.Contains("RotationConstraint")) return Undo.AddComponent<RotationConstraint>(host);
+            if (name.Contains("ScaleConstraint")) return Undo.AddComponent<ScaleConstraint>(host);
+            if (name.Contains("AimConstraint")) return Undo.AddComponent<AimConstraint>(host);
+            if (name.Contains("LookAtConstraint")) return Undo.AddComponent<LookAtConstraint>(host);
             return null;
         }
 
@@ -1010,7 +1016,7 @@ namespace DiNeTool.ExtraModifier.Editor
                 return true;
 
             var ns = component.GetType().Namespace ?? string.Empty;
-            return ns == "VRM" || ns.StartsWith("VRM.") || ns.StartsWith("UniGLTF") || ns.StartsWith("VSeeFace");
+            return ns == "VRM" || ns.StartsWith("VRM.") || ns.StartsWith("UniVRM10") || ns.StartsWith("UniGLTF") || ns.StartsWith("VSeeFace");
         }
 
         private static bool IsPhysBone(Type type)

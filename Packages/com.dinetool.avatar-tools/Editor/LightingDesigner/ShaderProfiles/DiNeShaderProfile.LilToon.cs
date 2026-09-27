@@ -26,6 +26,31 @@ internal sealed class DiNeShaderProfileLilToon : DiNeShaderProfile
     private const string Color2nd = "_Color2nd";
     private const string Color3rd = "_Color3rd";
 
+    private static readonly DiNeLightingControl[] HsvgControls =
+    {
+        DiNeLightingControl.Hue, DiNeLightingControl.Saturation, DiNeLightingControl.Brightness, DiNeLightingControl.Gamma
+    };
+    private static readonly string[] HsvgSuffixes = { ".x", ".y", ".z", ".w" };
+
+    public override void WriteCompanions(DiNeLightingSink defaultSink, DiNeLightingSink sink,
+        DiNeLightingControl control, ISet<DiNeLightingControl> enabledControls)
+    {
+        // Direct 블렌드에서 합산되지 않도록, 켜진 HSVG 항목 중 첫 번째 하나만 나머지 성분을 맡는다.
+        int owner = Array.FindIndex(HsvgControls, enabledControls.Contains);
+        if (owner < 0 || HsvgControls[owner] != control) return;
+
+        float[] thresholds = sink.Clips.Select(clip => clip.Key).ToArray();
+        for (int i = 0; i < HsvgControls.Length; i++)
+        {
+            if (enabledControls.Contains(HsvgControls[i])) continue;
+
+            string property = MainTexHSVG + HsvgSuffixes[i];
+            defaultSink.SetFloatConstant(property, NeutralHSVG[i]);
+            foreach (float t in thresholds)
+                sink.SetFloat(t, property, NeutralHSVG[i]);
+        }
+    }
+
     /// <summary>lilToon이 색 보정을 하지 않는 기본 HSVG 값.</summary>
     private static readonly Vector4 NeutralHSVG = new Vector4(0f, 1f, 1f, 1f);
 

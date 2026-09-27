@@ -30,11 +30,14 @@ namespace DiNeTool.AssetCleaner
         // 코드/씬 등 삭제 후보에서 영구 제외할 확장자 (실수 방지)
         private static readonly HashSet<string> BlockedExt =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            { ".cs", ".asmdef", ".asmref", ".dll", ".unity", ".meta" };
+            { ".cs", ".asmdef", ".asmref", ".dll", ".unity", ".meta",
+              // #include / UsePass / Fallback 은 의존성으로 잡히지 않아 미사용으로 오판된다.
+              ".shader", ".cginc", ".hlsl", ".glslinc", ".compute" };
 
         private static readonly string[] ProtectedFolderSegments =
         {
             "/Resources/",
+            "/Editor/",
             "/StreamingAssets/",
             "/Editor Default Resources/",
             "/Gizmos/",
@@ -834,6 +837,9 @@ namespace DiNeTool.AssetCleaner
             }
             catch { return false; }
 
+            // Samples~, .git 처럼 AssetDatabase 가 보지 못하는 하위 폴더가 있으면 비어 있는 게 아니다.
+            if (Directory.GetDirectories(fullPath).Length != AssetDatabase.GetSubFolders(folder).Length) return false;
+
             foreach (var subFolder in AssetDatabase.GetSubFolders(folder))
             {
                 if (IsAlwaysProtectedPath(subFolder)) return false;
@@ -944,8 +950,8 @@ namespace DiNeTool.AssetCleaner
                 AssetDatabase.Refresh();
             }
 
-            SetStatus(Tf(EMPTY_DONE, ok), false);
             if (_analyzed) Analyze();
+            SetStatus(Tf(EMPTY_DONE, ok), false);
         }
 
         private void DeleteSelected()
@@ -999,11 +1005,11 @@ namespace DiNeTool.AssetCleaner
             // 파일만 지우면 껍데기 폴더가 남으므로, 비게 된 상위 폴더를 함께 정리한다.
             int prunedFolders = PruneEmptyParentFolders(paths);
 
+            Analyze(); // 트리 갱신
             SetStatus(Tf(DELETED, ok, FormatBytes(bytes))
                     + (prunedFolders > 0 ? Tf(PRUNED_SUFFIX, prunedFolders) : "")
                     + (failed.Count > 0 ? Tf(FAIL_SUFFIX, failed.Count) : ""),
                 failed.Count > 0);
-            Analyze(); // 트리 갱신
         }
 
         // ── 필터 변경 시 트리만 다시 빌드 (씬 의존성 재계산은 불필요) ───────────────

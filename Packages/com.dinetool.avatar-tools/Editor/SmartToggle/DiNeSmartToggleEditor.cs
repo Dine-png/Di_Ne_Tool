@@ -7,67 +7,74 @@ using VRC.SDK3.Avatars.Components;
 [CustomEditor(typeof(DiNeSmartToggle))]
 public sealed class DiNeSmartToggleEditor : Editor
 {
-    private static readonly Color Mint = new Color(0.10f, 0.36f, 0.33f);
-    private static readonly Color MintActive = new Color(0.12f, 0.46f, 0.42f);
-    private static readonly Color DarkPanel = new Color(0.18f, 0.19f, 0.19f);
+    private static readonly Color Mint = new Color(0.30f, 0.82f, 0.76f);
+    private static readonly string[] Languages = { "English", "한국어", "日本語" };
+    private SerializedProperty displayName, parameterName, defaultOn, saved, menuPlacement, groupName, icon;
+    private DiNeToggleMenuChoices menuChoices;
+    private Texture2D brandIcon;
+    private Font titleFont;
+    private GUIStyle titleStyle, descriptionStyle, selectedStyle, normalStyle;
+    private int Language => Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", 0), 0, 2);
+    private string T(string en, string ko, string ja) => Language == 1 ? ko : Language == 2 ? ja : en;
 
-    private SerializedProperty displayName;
-    private SerializedProperty parameterName;
-    private SerializedProperty defaultOn;
-    private SerializedProperty saved;
-    private SerializedProperty menuPlacement;
-    private SerializedProperty groupName;
-    private SerializedProperty icon;
-
-    [MenuItem("GameObject/Di Ne/Smart Toggle", false, 20)]
-    private static void AddSmartToggle(MenuCommand command)
+    public static DiNeSmartToggle CreateToggle(GameObject go, DiNeSmartToggle.MenuPlacement placement,
+        string category, string parameter, DiNeMultiDresser dresser = null)
     {
-        var gameObject = command.context as GameObject;
-        if (gameObject == null || gameObject.GetComponent<DiNeSmartToggle>() != null)
-            return;
-
-        var component = Undo.AddComponent<DiNeSmartToggle>(gameObject);
-        component.DisplayName = gameObject.name;
-        component.ParameterName = MakeUniqueParameterName(gameObject);
-        component.DefaultOn = gameObject.activeSelf;
+        if (go == null || go.GetComponent<DiNeSmartToggle>() != null) return null;
+        string resolvedParameter = MakeUniqueParameterName(go, parameter, null, dresser);
+        var component = Undo.AddComponent<DiNeSmartToggle>(go);
+        Undo.RecordObject(component, "Configure Smart Toggle");
+        component.DisplayName = go.name;
+        component.ParameterName = resolvedParameter;
+        component.DefaultOn = go.activeSelf;
+        component.Placement = placement;
+        component.Dresser = null;
+        if (!string.IsNullOrWhiteSpace(category)) component.GroupName = category;
         component.EnsureDefaults();
+        PrefabUtility.RecordPrefabInstancePropertyModifications(component);
         EditorUtility.SetDirty(component);
-        Selection.activeGameObject = gameObject;
-
         EditorApplication.delayCall += () =>
         {
             if (component == null || component.Icon != null) return;
             DiNeSmartToggleGenerator.EnsureIcon(component);
             ActiveEditorTracker.sharedTracker.ForceRebuild();
         };
+        return component;
     }
 
-    [MenuItem("GameObject/Di Ne/Smart Toggle", true)]
-    private static bool ValidateAddSmartToggle(MenuCommand command)
+    public static string MakeUniqueParameterName(GameObject go, string requested = null,
+        DiNeSmartToggle owner = null, DiNeMultiDresser dresser = null, DiNeMultiDresser.IndependentToggle groupOwner = null)
     {
-        var gameObject = command.context as GameObject;
-        return gameObject != null && gameObject.GetComponent<DiNeSmartToggle>() == null;
-    }
-
-    private static string MakeUniqueParameterName(GameObject targetObject)
-    {
-        string baseName = DiNeSmartToggle.BuildDefaultParameterName(targetObject.name);
-        var avatar = targetObject.GetComponentInParent<VRCAvatarDescriptor>();
+        string baseName = string.IsNullOrWhiteSpace(requested)
+            ? DiNeSmartToggle.BuildDefaultParameterName(go != null ? go.name : "Toggle") : requested.Trim();
+        var avatar = go != null ? go.GetComponentInParent<VRCAvatarDescriptor>(true) : null;
+        if (avatar == null && dresser != null) avatar = dresser.GetAvatarDescriptor();
         if (avatar == null) return baseName;
-
         var used = avatar.GetComponentsInChildren<DiNeSmartToggle>(true)
-            .Where(item => item != null)
-            .Select(item => item.ParameterName)
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .ToHashSet();
+            .Where(item => item != null && item != owner && !string.IsNullOrWhiteSpace(item.ParameterName))
+            .Select(item => item.ParameterName).ToHashSet();
+        if (avatar.expressionParameters?.parameters != null)
+            foreach (var parameter in avatar.expressionParameters.parameters)
+                if (parameter != null) used.Add(parameter.name);
+        var fx = DiNeMultiDresser.GetAvatarFxController(avatar) as UnityEditor.Animations.AnimatorController;
+        if (fx != null) foreach (var parameter in fx.parameters) used.Add(parameter.name);
+        foreach (var avatarDresser in avatar.GetComponentsInChildren<DiNeMultiDresser>(true))
+        {
+            if (avatarDresser.animatorController != null)
+                foreach (var parameter in avatarDresser.animatorController.parameters) used.Add(parameter.name);
+            foreach (var group in avatarDresser.independentToggles)
+                if (group != null && group != groupOwner && !string.IsNullOrWhiteSpace(group.parameterName)) used.Add(group.parameterName);
+            foreach (var layer in avatarDresser.layers)
+                if (layer != null) used.Add("DiNe/MultiDresser/" + (string.IsNullOrEmpty(layer.layerName) ? "Layer" : layer.layerName));
+        }
         string candidate = baseName;
-        for (int suffix = 2; used.Contains(candidate); suffix++)
-            candidate = baseName + "_" + suffix;
+        for (int suffix = 2; used.Contains(candidate); suffix++) candidate = baseName + "_" + suffix;
         return candidate;
     }
 
     private void OnEnable()
     {
+        menuChoices = new DiNeToggleMenuChoices();
         displayName = serializedObject.FindProperty("displayName");
         parameterName = serializedObject.FindProperty("parameterName");
         defaultOn = serializedObject.FindProperty("defaultOn");
@@ -75,152 +82,172 @@ public sealed class DiNeSmartToggleEditor : Editor
         menuPlacement = serializedObject.FindProperty("menuPlacement");
         groupName = serializedObject.FindProperty("groupName");
         icon = serializedObject.FindProperty("icon");
+        brandIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
+        titleFont = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
+    }
+
+    private void OnDisable()
+    {
+        DiNeTogglePreview.ClearForOwner(this);
+        menuChoices?.Dispose();
     }
 
     public override void OnInspectorGUI()
     {
         serializedObject.Update();
-        var smartToggle = (DiNeSmartToggle)target;
-
+        var toggle = (DiNeSmartToggle)target;
+        EnsureStyles();
         DrawSmartToggleHeader();
-        EditorGUILayout.Space(6f);
-        DrawIconCard(smartToggle);
-        EditorGUILayout.Space(8f);
-        DrawSettings();
-        EditorGUILayout.Space(8f);
-        DrawMenuPlacement();
-        EditorGUILayout.Space(8f);
-        DrawStatus(smartToggle);
+        GUILayout.Space(5);
+        int language = Language;
+        int nextLanguage = DrawSegments(language, Languages, 35);
+        if (nextLanguage != language) EditorPrefs.SetInt("DiNeLang", nextLanguage);
+        GUILayout.Space(15);
 
-        if (serializedObject.ApplyModifiedProperties())
+        using (new EditorGUILayout.VerticalScope("GroupBox"))
         {
-            smartToggle.EnsureDefaults();
-            EditorUtility.SetDirty(smartToggle);
-        }
-    }
-
-    private static void DrawSmartToggleHeader()
-    {
-        Rect rect = EditorGUILayout.GetControlRect(false, 42f);
-        EditorGUI.DrawRect(rect, Mint);
-        var title = new GUIStyle(EditorStyles.boldLabel)
-        {
-            alignment = TextAnchor.MiddleCenter,
-            fontSize = 15,
-            normal = { textColor = Color.white }
-        };
-        GUI.Label(rect, "SMART TOGGLE", title);
-    }
-
-    private void DrawIconCard(DiNeSmartToggle smartToggle)
-    {
-        using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
-        {
-            GUILayout.Label("메뉴 아이콘", EditorStyles.boldLabel);
-            Rect previewRect = GUILayoutUtility.GetRect(160f, 200f, 160f, 200f);
-            previewRect.width = Mathf.Min(200f, previewRect.width);
-            previewRect.x += (EditorGUIUtility.currentViewWidth - previewRect.width - 24f) * 0.5f;
-            EditorGUI.DrawRect(previewRect, DarkPanel);
-            if (icon.objectReferenceValue != null)
-                GUI.DrawTexture(previewRect, (Texture)icon.objectReferenceValue, ScaleMode.ScaleToFit, true);
-            else
-                GUI.Label(previewRect, "아이콘 생성 대기", CenteredWhiteLabel());
-
-            EditorGUILayout.Space(4f);
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (MintButton("아이콘 편집", 30f))
-                    DiNeScreenSaver.DiNeScreenSaver.OpenIconEditor(smartToggle);
-                if (GUILayout.Button("자동 생성", GUILayout.Height(30f), GUILayout.Width(86f)))
+                GUILayout.Label(T("Toggle Settings", "토글 설정", "トグル設定"), EditorStyles.boldLabel);
+                bool previewing = DiNeTogglePreview.IsActive(this, 0);
+                Color previous = GUI.backgroundColor;
+                if (previewing) GUI.backgroundColor = Mint;
+                using (new EditorGUI.DisabledScope(EditorApplication.isPlayingOrWillChangePlaymode || EditorUtility.IsPersistent(toggle)))
+                if (GUILayout.Button(previewing ? T("End Preview", "미리보기 종료", "プレビュー終了")
+                    : T("Preview", "미리보기", "プレビュー"), GUILayout.Height(24)))
+                {
+                    if (previewing) DiNeTogglePreview.Clear();
+                    else
+                    {
+                        serializedObject.ApplyModifiedProperties();
+                        DiNeTogglePreview.Begin(this, 0, new[] { toggle.gameObject }, toggle.DefaultOn);
+                    }
+                }
+                GUI.backgroundColor = previous;
+            }
+            DiNeTogglePreview.DrawStateControls(this, 0);
+            EditorGUILayout.HelpBox(T("This object gets one On/Off button using a Bool parameter.",
+                "이 오브젝트를 켜고 끄는 Bool 파라미터와 단일 토글 버튼을 만듭니다.",
+                "このオブジェクトを切り替えるBoolパラメーターと単一のトグルボタンを作成します。"), MessageType.None);
+            EditorGUILayout.PropertyField(displayName, new GUIContent(T("Menu Name", "메뉴 이름", "メニュー名")));
+            DrawParameterName(parameterName, toggle, null);
+            EditorGUILayout.PropertyField(defaultOn, new GUIContent(T("Default On", "기본 ON", "初期ON")));
+            EditorGUILayout.PropertyField(saved, new GUIContent(T("Save Value", "값 저장", "値を保存")));
+        }
+        GUILayout.Space(8);
+        using (new EditorGUILayout.VerticalScope("GroupBox"))
+        {
+            GUILayout.Label(T("Menu Placement", "메뉴 위치", "メニュー配置"), EditorStyles.boldLabel);
+            if (menuChoices.Draw(toggle.GetComponentInParent<VRCAvatarDescriptor>(true),
+                serializedObject.FindProperty("menuPath"), serializedObject.FindProperty("generatedMenuDestination"),
+                (DiNeSmartToggle.MenuPlacement)menuPlacement.enumValueIndex, groupName.stringValue))
+                menuPlacement.enumValueIndex = (int)DiNeSmartToggle.MenuPlacement.ExistingMenu;
+        }
+        GUILayout.Space(8);
+        using (new EditorGUILayout.VerticalScope("GroupBox"))
+        {
+            GUILayout.Label(T("Menu Icon", "메뉴 아이콘", "メニューアイコン"), EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(icon, new GUIContent(T("Icon", "아이콘", "アイコン")));
+            Color previous = GUI.backgroundColor;
+            GUI.backgroundColor = Mint;
+            if (GUILayout.Button(T("Edit Icon", "아이콘 편집", "アイコン編集"), GUILayout.Height(30)))
+            {
+                serializedObject.ApplyModifiedProperties();
+                DiNeScreenSaver.DiNeScreenSaver.OpenIconEditor(toggle);
+            }
+            GUI.backgroundColor = previous;
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button(T("Generate / Reuse", "자동 생성 / 재사용", "自動生成 / 再利用"), GUILayout.Height(30)))
                 {
                     serializedObject.ApplyModifiedProperties();
-                    DiNeSmartToggleGenerator.RegenerateIcon(smartToggle);
+                    DiNeSmartToggleGenerator.EnsureIcon(toggle);
+                    serializedObject.Update();
+                }
+                if (GUILayout.Button(T("Regenerate", "재생성", "再生成"), GUILayout.Height(30)))
+                {
+                    serializedObject.ApplyModifiedProperties();
+                    DiNeSmartToggleGenerator.RegenerateIcon(toggle);
                     serializedObject.Update();
                 }
             }
-            EditorGUILayout.PropertyField(icon, new GUIContent("직접 지정"));
         }
-    }
-
-    private void DrawSettings()
-    {
-        using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+        if (serializedObject.ApplyModifiedProperties())
         {
-            GUILayout.Label("토글 설정", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(displayName, new GUIContent("메뉴 이름"));
-            EditorGUILayout.PropertyField(parameterName, new GUIContent("Bool 파라미터"));
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                EditorGUILayout.PropertyField(defaultOn, new GUIContent("기본 ON"));
-                EditorGUILayout.PropertyField(saved, new GUIContent("값 저장"));
-            }
+            menuChoices.Invalidate();
+            Undo.RecordObject(toggle, "Normalize Smart Toggle Settings");
+            toggle.EnsureDefaults();
+            PrefabUtility.RecordPrefabInstancePropertyModifications(toggle);
+            EditorUtility.SetDirty(toggle);
         }
+        GUILayout.Space(8);
+        var avatar = toggle.GetComponentInParent<VRCAvatarDescriptor>(true);
+        EditorGUILayout.HelpBox(avatar == null
+            ? T("Place this object under a VRCAvatarDescriptor.", "VRCAvatarDescriptor가 있는 아바타 안에 배치하세요.", "VRCAvatarDescriptorのあるアバター内に配置してください。")
+            : T("Applied automatically on upload and in Play Mode. Preview does not change the Default On setting.",
+                "별도 적용 없이 업로드와 Play Mode에서 자동 적용됩니다. 미리보기는 기본 ON 설정을 바꾸지 않습니다.",
+                "アップロードとPlay Modeで自動適用されます。プレビューは初期ON設定を変更しません。"),
+            avatar == null ? MessageType.Warning : MessageType.Info);
     }
 
-    private void DrawMenuPlacement()
+    public static bool DrawParameterName(SerializedProperty parameter, DiNeSmartToggle toggle, DiNeMultiDresser dresser)
     {
-        using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
-        {
-            GUILayout.Label("메뉴 위치", EditorStyles.boldLabel);
-            int placement = menuPlacement.enumValueIndex;
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                if (SegmentButton("최상단에 노출", placement == 0)) placement = 0;
-                if (SegmentButton("토글끼리 묶기", placement == 1)) placement = 1;
-            }
-            menuPlacement.enumValueIndex = placement;
-            if (placement == 1)
-            {
-                EditorGUILayout.Space(3f);
-                EditorGUILayout.PropertyField(groupName, new GUIContent("새 메뉴 이름"));
-                EditorGUILayout.HelpBox("같은 메뉴 이름을 사용한 스마트 토글이 하나의 하위 메뉴로 묶입니다.", MessageType.Info);
-            }
-        }
+        int language = Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", 0), 0, 2);
+        string label = language == 1 ? "Bool 파라미터" : language == 2 ? "Boolパラメーター" : "Bool Parameter";
+        string tooltip = language == 1 ? "이름을 자동으로 채우고, 중복이면 숫자를 붙입니다. 직접 입력한 이름도 중복 검사합니다."
+            : language == 2 ? "名前は自動入力され、重複時は番号を付けます。入力した名前も重複を確認します。"
+            : "Names are prefilled automatically. Conflicting names receive a numeric suffix, including manually entered names.";
+        EditorGUI.BeginChangeCheck();
+        string requested = EditorGUILayout.DelayedTextField(new GUIContent(label, tooltip), parameter.stringValue);
+        if (!EditorGUI.EndChangeCheck()) return false;
+        parameter.stringValue = MakeUniqueParameterName(toggle.gameObject, requested, toggle, dresser);
+        return true;
     }
 
-    private static void DrawStatus(DiNeSmartToggle smartToggle)
+    private void EnsureStyles()
     {
-        var avatar = smartToggle.GetComponentInParent<VRCAvatarDescriptor>();
-        if (avatar == null)
-            EditorGUILayout.HelpBox("이 오브젝트 위에서 VRCAvatarDescriptor를 찾을 수 없습니다.", MessageType.Warning);
-        else
-            EditorGUILayout.HelpBox($"{avatar.gameObject.name} 아바타의 플레이 모드 및 업로드용 메뉴에 자동 적용됩니다.", MessageType.None);
+        if (titleStyle != null) return;
+        titleStyle = new GUIStyle(EditorStyles.label) { font = titleFont, fontSize = 36,
+            fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+        descriptionStyle = new GUIStyle(EditorStyles.wordWrappedLabel) { fontSize = 12,
+            alignment = TextAnchor.MiddleCenter, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } };
+        selectedStyle = new GUIStyle(GUI.skin.button) { fontStyle = FontStyle.Bold, normal = { textColor = Color.white } };
+        normalStyle = new GUIStyle(GUI.skin.button) { normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } };
     }
 
-    private static bool MintButton(string label, float height)
+    private void DrawSmartToggleHeader()
     {
         Color previous = GUI.backgroundColor;
-        GUI.backgroundColor = MintActive;
-        bool clicked = GUILayout.Button(label, GUILayout.Height(height));
+        GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f);
+        using (new EditorGUILayout.VerticalScope("box"))
+        {
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUILayout.FlexibleSpace();
+                GUILayout.Label(brandIcon, GUILayout.Width(72), GUILayout.Height(72));
+                GUILayout.Space(6);
+                GUILayout.Label("Smart Toggle", titleStyle, GUILayout.Height(72));
+                GUILayout.FlexibleSpace();
+            }
+            GUILayout.Label(T("Create an On/Off button for the selected object.", "선택한 오브젝트의 On/Off 버튼을 간단하게 만듭니다.",
+                "選択したオブジェクトのOn/Offボタンを簡単に作成します。"), descriptionStyle);
+        }
         GUI.backgroundColor = previous;
-        return clicked;
     }
 
-    private static bool SegmentButton(string label, bool selected)
+    private int DrawSegments(int selected, string[] labels, float height)
     {
-        Color previous = GUI.backgroundColor;
-        GUI.backgroundColor = selected ? MintActive : new Color(0.34f, 0.35f, 0.35f);
-        var style = new GUIStyle(GUI.skin.button)
+        using (new EditorGUILayout.HorizontalScope())
         {
-            fixedHeight = 30f,
-            fontStyle = FontStyle.Bold,
-            normal = { textColor = Color.white },
-            hover = { textColor = Color.white },
-            active = { textColor = Color.white },
-            focused = { textColor = Color.white }
-        };
-        bool clicked = GUILayout.Button(label, style);
-        GUI.backgroundColor = previous;
-        return clicked;
-    }
-
-    private static GUIStyle CenteredWhiteLabel()
-    {
-        return new GUIStyle(EditorStyles.centeredGreyMiniLabel)
-        {
-            alignment = TextAnchor.MiddleCenter,
-            normal = { textColor = Color.white }
-        };
+            for (int i = 0; i < labels.Length; i++)
+            {
+                Color previous = GUI.backgroundColor;
+                GUI.backgroundColor = selected == i ? Mint : new Color(0.5f, 0.5f, 0.5f);
+                if (GUILayout.Button(labels[i], selected == i ? selectedStyle : normalStyle, GUILayout.Height(height))) selected = i;
+                GUI.backgroundColor = previous;
+            }
+        }
+        return selected;
     }
 }
 #endif

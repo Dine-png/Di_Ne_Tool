@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" stroke-linecap="round" stroke-linejoin="round"><defs>
+  <clipPath id="left"><rect width="128" height="256"/></clipPath>
+  <clipPath id="right"><rect x="128" width="128" height="256"/></clipPath>
+</defs><path d="M 92 176 C 92 149 66 142 66 104 C 66 68 92 44 128 44 C 164 44 190 68 190 104 C 190 142 164 149 164 176 Z" fill="white" fill-rule="evenodd" stroke="white" stroke-width="10" clip-path="url(#left)"/><path d="M 92 176 C 92 149 66 142 66 104 C 66 68 92 44 128 44 C 164 44 190 68 190 104 C 190 142 164 149 164 176 Z" fill="none" stroke="white" stroke-width="10" clip-path="url(#right)"/><path d="M 98 195 H 158 M 106 214 H 150 M 46 101 H 28 M 59 55 L 45 41 M 210 101 H 228 M 197 55 L 211 41" fill="none" stroke="white" stroke-width="12"/></svg>

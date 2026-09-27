@@ -43,7 +43,7 @@ internal static class DiNeLightingDiagnostics
         var issues = new List<Issue>();
         if (designer == null) return issues;
 
-        var descriptor = designer.GetComponentInParent<VRCAvatarDescriptor>();
+        var descriptor = designer.GetComponentInParent<VRCAvatarDescriptor>(true);
         if (descriptor == null)
         {
             issues.Add(new Issue(MessageType.Error,

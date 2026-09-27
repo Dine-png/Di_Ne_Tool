@@ -81,6 +81,8 @@ public static class DiNeLightingGenerator
 
         bool sawLockedPoiyomi = false;
 
+        var enabledControls = new HashSet<DiNeLightingControl>(controls.Select(setting => setting.control));
+
         foreach (var renderer in renderers)
         {
             var materials = renderer.sharedMaterials ?? Array.Empty<Material>();
@@ -131,6 +133,7 @@ public static class DiNeLightingGenerator
                     unsupported.Remove(setting.control);
                     profile.WriteDefault(defaultSink, setting.control, context);
                     profile.WriteControl(sink, setting.control, context);
+                    profile.WriteCompanions(defaultSink, sink, setting.control, enabledControls);
                 }
             }
         }
@@ -655,6 +658,7 @@ public static class DiNeLightingGenerator
             AddControlWithPages(menu, new VRCExpressionsMenu.Control
             {
                 name = "켜기 / 끄기",
+                icon = LoadMenuIcon("Power"),
                 type = VRCExpressionsMenu.Control.ControlType.Toggle,
                 parameter = new VRCExpressionsMenu.Control.Parameter { name = DiNeLightingDesigner.EnableParameterName },
                 value = 1f
@@ -687,7 +691,7 @@ public static class DiNeLightingGenerator
             AddControlWithPages(menu, new VRCExpressionsMenu.Control
             {
                 name = groupName,
-                icon = groupData.icon,
+                icon = groupData.icon != null ? groupData.icon : LoadMenuIcon("Group"),
                 type = VRCExpressionsMenu.Control.ControlType.SubMenu,
                 subMenu = groupMenu
             }, menuName, generatedFolder, 1);
@@ -720,13 +724,14 @@ public static class DiNeLightingGenerator
         var setting = designer.GetSetting(key.Control);
         string parameterName = BuildParameterName(designer, key);
         string label = designer.GetDisplayName(key.Control);
+        var icon = setting?.icon != null ? setting.icon : LoadControlIcon(key.Control);
 
         if (def.Kind == DiNeLightingControlKind.Toggle)
         {
             return new VRCExpressionsMenu.Control
             {
                 name = label,
-                icon = setting?.icon,
+                icon = icon,
                 type = VRCExpressionsMenu.Control.ControlType.Toggle,
                 parameter = new VRCExpressionsMenu.Control.Parameter { name = parameterName },
                 value = 1f
@@ -736,7 +741,7 @@ public static class DiNeLightingGenerator
         return new VRCExpressionsMenu.Control
         {
             name = label,
-            icon = setting?.icon,
+            icon = icon,
             type = VRCExpressionsMenu.Control.ControlType.RadialPuppet,
             parameter = new VRCExpressionsMenu.Control.Parameter { name = string.Empty },
             subParameters = new[]
@@ -765,7 +770,7 @@ public static class DiNeLightingGenerator
             AddControlWithPages(presetMenu, new VRCExpressionsMenu.Control
             {
                 name = string.IsNullOrWhiteSpace(preset.name) ? "프리셋 " + (i + 1) : preset.name.Trim(),
-                icon = preset.icon,
+                icon = preset.icon != null ? preset.icon : LoadMenuIcon("Presets"),
                 type = VRCExpressionsMenu.Control.ControlType.Button,
                 parameter = new VRCExpressionsMenu.Control.Parameter { name = DiNeLightingDesigner.PresetParameterName },
                 value = i + 1
@@ -775,6 +780,7 @@ public static class DiNeLightingGenerator
         AddControlWithPages(menu, new VRCExpressionsMenu.Control
         {
             name = "프리셋",
+            icon = LoadMenuIcon("Presets"),
             type = VRCExpressionsMenu.Control.ControlType.SubMenu,
             subMenu = presetMenu
         }, menuName, generatedFolder, 1);
@@ -818,6 +824,7 @@ public static class DiNeLightingGenerator
             next = new VRCExpressionsMenu.Control
             {
                 name = "다음 ▶",
+                icon = LoadMenuIcon("Next"),
                 type = VRCExpressionsMenu.Control.ControlType.SubMenu,
                 subMenu = nextMenu
             };
@@ -827,6 +834,34 @@ public static class DiNeLightingGenerator
 
         AddControlWithPages(next.subMenu, control, baseName, folder, pageNumber + 1);
         EditorUtility.SetDirty(menu);
+    }
+
+    // Resolve defaults at generation time so existing components also receive icons
+    // without changing their serialized settings or replacing custom artwork.
+    private static Texture2D LoadControlIcon(DiNeLightingControl control)
+    {
+        switch (control)
+        {
+            case DiNeLightingControl.LightMin: return LoadMenuIcon("Light");
+            case DiNeLightingControl.Saturation: return LoadMenuIcon("Saturation");
+            case DiNeLightingControl.Hue: return LoadMenuIcon("Hue");
+            case DiNeLightingControl.Brightness: return LoadMenuIcon("Brightness");
+            case DiNeLightingControl.Gamma: return LoadMenuIcon("Gamma");
+            case DiNeLightingControl.ColorTemperature: return LoadMenuIcon("ColorTemp");
+            case DiNeLightingControl.Monochrome: return LoadMenuIcon("Monochrome");
+            case DiNeLightingControl.Emission: return LoadMenuIcon("Emission");
+            case DiNeLightingControl.ShadowStrength: return LoadMenuIcon("ShadowStrength");
+            case DiNeLightingControl.OutlineTint: return LoadMenuIcon("OutlineTint");
+            case DiNeLightingControl.OutlineWidth: return LoadMenuIcon("OutlineWidth");
+            case DiNeLightingControl.Reflectance: return LoadMenuIcon("Reflectance");
+            case DiNeLightingControl.LightDirection: return LoadMenuIcon("LightDir");
+            default: return null;
+        }
+    }
+
+    private static Texture2D LoadMenuIcon(string name)
+    {
+        return DiNePackageAssets.LoadAsset<Texture2D>("Assets/LightingDesigner/Menu" + name + ".png");
     }
 
     // ──────────────────────────────────────────────────

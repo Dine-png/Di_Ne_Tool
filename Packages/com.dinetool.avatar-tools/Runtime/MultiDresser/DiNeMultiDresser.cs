@@ -23,6 +23,18 @@ public class DiNeMultiDresser : MonoBehaviour, VRC.SDKBase.IEditorOnly
     public class MaterialSwapList   { public List<MaterialSwapEntry> entries = new List<MaterialSwapEntry>(); }
     [System.Serializable]
     public class LinkedGroup { public List<GameObject> objects = new List<GameObject>(); }
+    [System.Serializable]
+    public class IndependentToggle
+    {
+        public string displayName = "Toggle";
+        public string parameterName = "";
+        public bool defaultOn = true;
+        public bool saved = true;
+        public Texture2D icon;
+        public List<GameObject> targets = new List<GameObject>();
+        public string menuPath = "Multi%20Dresser~0";
+        public bool generatedMenuDestination = true;
+    }
 
     [System.Serializable]
     public class DresserLayer
@@ -64,6 +76,7 @@ public class DiNeMultiDresser : MonoBehaviour, VRC.SDKBase.IEditorOnly
     [SerializeField] public Transform rootTransform;
     [SerializeField] public List<GameObject> shapeKeyTargets = new List<GameObject>();
     [SerializeField] public List<DresserLayer> layers = new List<DresserLayer>();
+    [SerializeField] public List<IndependentToggle> independentToggles = new List<IndependentToggle>();
 
     // ──────────────────────────────────────────────
     //  확장 훅 (외부 패키지용)
@@ -240,6 +253,7 @@ public class DiNeMultiDresser : MonoBehaviour, VRC.SDKBase.IEditorOnly
             DeleteAllGeneratedData();
 
         layers.Clear();
+        independentToggles.Clear();
         shapeKeyTargets.Clear();
 
         EditorUtility.SetDirty(this);
@@ -290,6 +304,8 @@ public class DiNeMultiDresser : MonoBehaviour, VRC.SDKBase.IEditorOnly
 
     public bool HasConfiguredContent()
     {
+        if (independentToggles != null && independentToggles.Any(toggle => toggle != null && toggle.targets.Any(go => go != null)))
+            return true;
         if (shapeKeyTargets != null && shapeKeyTargets.Count > 0)
             return true;
 
@@ -315,8 +331,8 @@ public class DiNeMultiDresser : MonoBehaviour, VRC.SDKBase.IEditorOnly
     /// <summary>이 드레서가 속한 아바타의 VRCAvatarDescriptor를 찾는다.</summary>
     public VRCAvatarDescriptor GetAvatarDescriptor()
     {
-        var descriptor = GetComponentInParent<VRCAvatarDescriptor>();
-        if (descriptor == null) descriptor = GetComponentInChildren<VRCAvatarDescriptor>();
+        var descriptor = GetComponentInParent<VRCAvatarDescriptor>(true);
+        if (descriptor == null) descriptor = GetComponentInChildren<VRCAvatarDescriptor>(true);
         return descriptor;
     }
 
@@ -421,7 +437,7 @@ public class DiNeMultiDresser : MonoBehaviour, VRC.SDKBase.IEditorOnly
 
         // 이전 빌드의 임시 FX가 복원되지 않고 남아있는 경우
         string fxPath = AssetDatabase.GetAssetPath(animatorController);
-        if (!string.IsNullOrEmpty(fxPath) && fxPath.Replace('\\', '/').Contains(TempAssetFolderHint))
+        if (!EditorApplication.isPlaying && !string.IsNullOrEmpty(fxPath) && fxPath.Replace('\\', '/').Contains(TempAssetFolderHint))
         {
             message = "임시 빌드용 FX가 아바타에 남아 있습니다(복원 실패).\n원본 FX로 교체한 뒤 새로고침(↺) 버튼을 눌러 재배정하세요.";
             return false;
@@ -492,6 +508,26 @@ public class DiNeMultiDresser : MonoBehaviour, VRC.SDKBase.IEditorOnly
         }
     }
 
+    public static void PreserveLayerInMmd(AnimatorStateMachine stateMachine)
+    {
+        // Face-tracking setup can remove the original FX layers before MA takes its
+        // MMD snapshot, moving our clothing/accessory layers into slots 1 and 2.
+        // Declare the layer's intent explicitly; padding alone cannot survive that.
+        // Discover MA optionally so projects without it keep working as before.
+        var controlType = TypeCache.GetTypesDerivedFrom<StateMachineBehaviour>()
+            .FirstOrDefault(type => type.FullName == "nadena.dev.modular_avatar.core.ModularAvatarMMDLayerControl");
+        var disableProperty = controlType?.GetProperty("DisableInMMDMode");
+        if (disableProperty == null || disableProperty.PropertyType != typeof(bool) || !disableProperty.CanWrite)
+            return;
+
+        var control = stateMachine.behaviours.FirstOrDefault(behaviour =>
+            behaviour != null && behaviour.GetType() == controlType);
+        if (control == null)
+            control = stateMachine.AddStateMachineBehaviour(controlType);
+        disableProperty.SetValue(control, false);
+        EditorUtility.SetDirty(control);
+    }
+
 
     public void TryAddExpressionParameters()
     {
@@ -504,6 +540,8 @@ public class DiNeMultiDresser : MonoBehaviour, VRC.SDKBase.IEditorOnly
 
         foreach (var layer in layers)
         {
+            if (layer.targets == null || layer.targets.Count <= 1) continue;
+
             string safeLayerName = string.IsNullOrEmpty(layer.layerName) ? "Layer" : layer.layerName;
             string paramName = $"DiNe/MultiDresser/{safeLayerName}";
 
@@ -599,6 +637,19 @@ public class DiNeMultiDresser : MonoBehaviour, VRC.SDKBase.IEditorOnly
 
             if (layerIndex == -1)
             {
+                // Some MMD worlds disable FX indices 1 and 2 for facial expressions.
+                // Fill only missing slots: inserting before existing layers would change
+                // expression indices and break Animator Layer Control references.
+                // Run before MA/NDMF so its MMD compatibility pass sees these slots,
+                // rather than our clothing layers, as the original FX layers 1 and 2.
+                while (animatorController.layers.Length < 3)
+                {
+                    int reservedIndex = animatorController.layers.Length;
+                    animatorController.AddLayer($"DiNe MMD Reserved {reservedIndex}");
+                    // Intentionally empty: no states, motions, parameters or bindings.
+                    // The DiNe prefix lets the normal regeneration cleanup remove it.
+                }
+
                 animatorController.AddLayer(animLayerName);
                 controllerLayers = animatorController.layers;
                 layerIndex = controllerLayers.Length - 1;
@@ -615,6 +666,7 @@ public class DiNeMultiDresser : MonoBehaviour, VRC.SDKBase.IEditorOnly
             }
 
             ClearAnimatorStateMachine(sm);
+            PreserveLayerInMmd(sm);
 
             CreateStatesForLayer(layerData, sm, layerFolder, paramName);
         }

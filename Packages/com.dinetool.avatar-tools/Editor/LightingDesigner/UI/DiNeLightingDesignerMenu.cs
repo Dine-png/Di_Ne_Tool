@@ -22,7 +22,7 @@ public static class DiNeLightingDesignerMenu
         Undo.RegisterCreatedObjectUndo(designerObject, "Create Lighting Designer");
         EditorApplication.delayCall += () => { Selection.activeObject = designerObject; };
 
-        if (designerObject.GetComponentInParent<VRCAvatarDescriptor>() == null)
+        if (designerObject.GetComponentInParent<VRCAvatarDescriptor>(true) == null)
         {
             Debug.LogWarning(
                 "[DiNe 라이팅 디자이너] 아바타(VRCAvatarDescriptor) 밖에 만들어졌습니다. 아바타 하위로 옮겨야 설치됩니다.");

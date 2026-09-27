@@ -3,10 +3,19 @@
 VRChat 아바타의 편집, 메뉴 제작, 라이팅, 최적화, 아이콘·스크린샷 제작, VRM 변환 준비를 한곳에서 처리하는 **Unity Editor 도구 모음**입니다.
 
 ![Unity 2022.3](https://img.shields.io/badge/Unity-2022.3_LTS%2B-black?logo=unity&style=flat)
-![Version 1.7.1](https://img.shields.io/badge/Version-1.7.1-30D1C2?style=flat)
+![Version 1.7.5](https://img.shields.io/badge/Version-1.7.5-30D1C2?style=flat)
 ![Languages](https://img.shields.io/badge/UI-EN%20%2F%20KO%20%2F%20JP-4C9BD6?style=flat)
 
 > 대부분의 도구는 English / 한국어 / 日本語 UI를 지원합니다. 기능에 따라 lilToon, Poiyomi, NDMF, Modular Avatar, UniVRM을 함께 사용할 수 있습니다.
+
+### 1.7.5 변경 사항
+
+- Multi Dresser에 독립 토글 탭, 여러 오브젝트를 함께 제어하는 토글, 실제 메뉴 기반 위치 선택과 ON/OFF 미리보기를 추가했습니다.
+- Smart Toggle의 단독 생성, Bool 이름 중복 처리, 메뉴 배치와 미리보기 복원을 개선했습니다.
+- MMD 환경에서 의상·독립 토글·Smart Toggle의 FX 레이어 동작을 보호하고, Play Mode·업로드 후 원본 아바타 참조 복원을 보강했습니다.
+- Avi Editor의 쉐이프키 편집·저장·복원과 얼굴 미리보기, 머리 중심 구도를 개선했습니다.
+- Lighting Designer의 기본 메뉴 아이콘을 추가하고, 프리셋·셰이더 제어 처리를 보완했습니다.
+- 대기 중 미리보기 갱신과 에셋 배지 검색 비용을 줄이고, 아이콘·VRM 변환·패키지 가져오기 등 기존 도구를 보완했습니다.
 
 ### 1.7.1 변경 사항
 
@@ -400,4 +409,4 @@ Hierarchy의 각 GameObject 오른쪽에는 `● / ○` 활성화 버튼이 표�
 
 **Made with ❤️ for avatar creators**
 
-_Last updated: 2026-09-21_
+_Last updated: 2026-09-27_

@@ -70,7 +70,7 @@ internal static class DiNeLightingLocalization
             case DiNeLightingControl.Gamma:
                 return T("0.5가 원본입니다. 중간톤의 밝기를 조절합니다.", "0.5 is original. Adjusts midtone brightness.", "0.5が元の値です。中間調の明るさを調整します。");
             case DiNeLightingControl.ColorTemperature:
-                return T("낮추면 따뜻하게, 올리면 차갑게 보입니다.", "Lower looks warmer; higher looks cooler.", "下げると暖かく、上げると冷たく見えます。");
+                return T("낮추면 차갑게, 올리면 따뜻하게 보입니다.", "Lower looks cooler; higher looks warmer.", "下げると冷たく、上げると暖かく見えます。");
             case DiNeLightingControl.Monochrome:
                 return T("조명의 색 성분을 줄여 조명 색에 덜 물들게 합니다.", "Reduces light coloration on the avatar.", "ライトの色成分を減らし、照明色の影響を抑えます。");
             case DiNeLightingControl.Emission:

@@ -710,7 +710,7 @@ public sealed class DiNeLightingDesignerEditor : Editor
         {
             GUILayout.Label(T("상태", "Status", "状態"), EditorStyles.boldLabel);
 
-            var descriptor = _designer.GetComponentInParent<VRCAvatarDescriptor>();
+            var descriptor = _designer.GetComponentInParent<VRCAvatarDescriptor>(true);
             if (descriptor == null)
             {
                 EditorGUILayout.HelpBox(

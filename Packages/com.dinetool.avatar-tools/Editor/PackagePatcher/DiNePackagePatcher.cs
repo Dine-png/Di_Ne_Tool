@@ -28,6 +28,7 @@ public class DiNePackagePatcher : EditorWindow
         // 캐시가 사라지면 원본을 다시 탐색(DiscoverArchive)해서 복구한다.
         public bool   IsExternalArchive = false;
         public string ContainerChain; // 중첩 압축일 때 거쳐 온 안쪽 압축 파일명 ("inner.zip › deep.rar")
+        public int    ZipCodePage = 65001; // ZIP 항목 이름을 읽은 인코딩
 
         public PackageItem(string sourcePath, string displayName, bool isFromZip, string packagePathInZip = null)
         {
@@ -916,6 +917,7 @@ public class DiNePackagePatcher : EditorWindow
                     ArchiveLabel      = label,
                     IsExternalArchive = !found.IsDirectZipEntry,
                     ContainerChain    = found.ContainerChain,
+                    ZipCodePage       = found.ZipCodePage != 0 ? found.ZipCodePage : 65001,
                 });
             }
         }
@@ -970,7 +972,8 @@ public class DiNePackagePatcher : EditorWindow
     private bool DiscoverZip(string zipPath, string pathPrefix, string chain, int depth,
                              List<FoundPackage> results, List<string> errors)
     {
-        List<Encoding> encodings = new List<Encoding> { Encoding.UTF8 };
+        // 엄격한 UTF-8: 잘못된 바이트에서 예외가 나야 다음 인코딩(CP932 등)으로 넘어간다.
+        List<Encoding> encodings = new List<Encoding> { new UTF8Encoding(false, true) };
         try { encodings.Add(Encoding.GetEncoding(932)); } catch { }
         try { encodings.Add(Encoding.GetEncoding(51949)); } catch { }
 
@@ -1212,7 +1215,7 @@ public class DiNePackagePatcher : EditorWindow
 
             try
             {
-                using (var archive = ZipFile.OpenRead(item.SourcePath))
+                using (var archive = ZipFile.Open(item.SourcePath, ZipArchiveMode.Read, Encoding.GetEncoding(item.ZipCodePage)))
                 {
                     var entry = archive.GetEntry(item.PackagePathInZip)
                         ?? archive.Entries.FirstOrDefault(e =>
@@ -1299,6 +1302,13 @@ public class DiNePackagePatcher : EditorWindow
             return null;
         }
 
+        // Assets 루트에 있어야만 동작하는 특수 폴더는 옮기지 않는다(기존 내용까지 딸려 간다).
+        if (isFolder && SpecialRootFolders.Contains(Path.GetFileName(root)))
+        {
+            Debug.Log($"[DiNe] '{root}' 는 Unity 특수 폴더라 정리하지 않습니다.");
+            return null;
+        }
+
         if (!AssetDatabase.IsValidFolder(targetPath))
             AssetDatabase.CreateFolder("Assets", targetFolderName);
 
@@ -1314,28 +1324,6 @@ public class DiNePackagePatcher : EditorWindow
         // 목적지에 같은 이름 폴더가 이미 있으면 → 내용 병합 (재귀)
         if (AssetDatabase.IsValidFolder(dest))
         {
-            string sourceGuid = AssetDatabase.AssetPathToGUID(root);
-            string destGuid   = AssetDatabase.AssetPathToGUID(dest);
-
-            // Two unrelated packages can use the same top-level folder name. Merging
-            // those folders and overwriting collisions destroys one side's GUIDs.
-            // Keep both folder trees when their folder GUIDs identify different assets.
-            if (!string.IsNullOrEmpty(sourceGuid) && !string.IsNullOrEmpty(destGuid) &&
-                !sourceGuid.Equals(destGuid, StringComparison.OrdinalIgnoreCase))
-            {
-                string uniqueDest = AssetDatabase.GenerateUniqueAssetPath(dest);
-                string uniqueErr  = AssetDatabase.MoveAsset(root, uniqueDest);
-                if (!string.IsNullOrEmpty(uniqueErr))
-                {
-                    Debug.LogWarning($"[DiNe] GUID 보존 이동 실패: {root} → {uniqueDest}\n{uniqueErr}");
-                    return null;
-                }
-
-                Debug.LogWarning($"[DiNe] 같은 이름의 서로 다른 패키지 폴더를 발견하여 GUID 보존을 위해 분리했습니다: " +
-                                 $"{root} → {uniqueDest}");
-                return uniqueDest;
-            }
-
             Debug.Log($"[DiNe] '{dest}' 이미 존재 → 내용 병합");
             MergeFolderInto(root, dest);
             return dest;
@@ -1362,6 +1350,9 @@ public class DiNePackagePatcher : EditorWindow
     /// - 같은 GUID의 파일은 업데이트하고, 다른 GUID의 동명 파일은 고유 경로로 분리한다
     /// 병합이 끝나면 비워진 source 폴더를 삭제한다.
     /// </summary>
+    private static readonly HashSet<string> SpecialRootFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        { "Plugins", "Editor", "Resources", "StreamingAssets", "Gizmos", "Editor Default Resources", "Standard Assets" };
+
     private static void MergeFolderInto(string source, string dest)
     {
         // 하위 폴더 처리
@@ -1370,13 +1361,7 @@ public class DiNePackagePatcher : EditorWindow
             string childDest = dest + "/" + Path.GetFileName(sub);
             if (AssetDatabase.IsValidFolder(childDest))
             {
-                string sourceGuid = AssetDatabase.AssetPathToGUID(sub);
-                string destGuid   = AssetDatabase.AssetPathToGUID(childDest);
-                if (!string.IsNullOrEmpty(sourceGuid) &&
-                    sourceGuid.Equals(destGuid, StringComparison.OrdinalIgnoreCase))
-                    MergeFolderInto(sub, childDest);       // 같은 폴더 에셋 → 재귀 병합
-                else
-                    SafeMoveAsset(sub, childDest);         // 이름만 같은 폴더 → 둘 다 보존
+                MergeFolderInto(sub, childDest);           // 같은 이름 폴더 → 재귀 병합 (파일 충돌은 SafeMoveAsset 이 둘 다 보존)
             }
             else
                 SafeMoveAsset(sub, childDest);             // 새 폴더 → 통째로 이동
