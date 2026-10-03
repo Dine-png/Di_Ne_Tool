@@ -16,17 +16,27 @@ public static class AviEditorRegression
 
     public static void Run()
     {
-        Test("Saved scale changes deformation at 0, 50 and 100 and preserves other weights", PersistentScale);
-        Test("Japanese key at a late index keeps a saved 70% scale after preview closes", JapaneseSeventyPercentScale);
-        Test("Scale preserves multi-frame keys, all UV channels and custom bounds", PreserveMeshData);
-        Test("Consecutive edits keep earlier assets intact and support Undo/Redo", ConsecutiveEdits);
-        Test("Equal mesh names cannot overwrite another avatar's result", AssetNameCollision);
-        Test("Applied mesh is a persistent prefab override after saving and reopening", PrefabOverride);
-        Test("Preview renders edited shape in a private scene and releases every temporary object", IsolatedPreview);
-        Test("Modify selection switches exclusively and toggles off without changing source weights", WindowShapePreview);
-        Test("Replacement preview matches saved deformation with other active source keys", WindowReplacementPreview);
-        Test("Expression clip/FX previews preserve source and unmentioned keys", WindowExpressionPreview);
-        Test("Head framing ignores oversized culling bounds and finds named eye bones", HeadFraming);
+        // Window initialization and picker tests share EditorPrefs with other editors.
+        // Restore these keys even when an individual test fails.
+        using (var preferences = new PresetPreferences())
+        {
+            Test("Unified armature preset captures live data and survives asset reimport", UnifiedPresetRoundtrip);
+            Test("Full unified preset restores mapped positions without applying MA offsets twice", UnifiedPresetApply);
+            Test("Partial unified preset loads leave unrequested data intact", UnifiedPresetPartialApply);
+            Test("Unified preset Undo/Redo restores transforms, added MA components and options together", UnifiedPresetUndo);
+            Test("MA preset entries skip missing, unknown and null parts", InvalidMAPresetEntries);
+            Test("Legacy direct and MA presets remain selectable and load through one picker", LegacyPresetCompatibility);
+            Test("Saved scale changes deformation at 0, 50 and 100 and preserves other weights", PersistentScale);
+            Test("Japanese key at a late index keeps a saved 70% scale after preview closes", JapaneseSeventyPercentScale);
+            Test("Scale preserves multi-frame keys, all UV channels and custom bounds", PreserveMeshData);
+            Test("Consecutive edits keep earlier assets intact and support Undo/Redo", ConsecutiveEdits);
+            Test("Equal mesh names cannot overwrite another avatar's result", AssetNameCollision);
+            Test("Applied mesh is a persistent prefab override after saving and reopening", PrefabOverride);
+            Test("Preview renders edited shape in a private scene and releases every temporary object", IsolatedPreview);
+            Test("Modify selection switches exclusively and toggles off without changing source weights", WindowShapePreview);
+            Test("Replacement preview matches saved deformation with other active source keys", WindowReplacementPreview);
+            Test("Head framing ignores oversized culling bounds and finds named eye bones", HeadFraming);
+        }
         Results.Add("Failures: " + failures);
         File.WriteAllLines("AviEditorRegression-results.txt", Results);
         EditorApplication.Exit(failures == 0 ? 0 : 1);
@@ -54,6 +64,332 @@ public static class AviEditorRegression
     private static void Equal(Vector3 expected, Vector3 actual, string message)
     {
         Require((expected - actual).sqrMagnitude < 0.00000001f, message + ": expected " + expected + ", actual " + actual);
+    }
+
+    private static void Equal(Quaternion expected, Quaternion actual, string message)
+    {
+        Require(Mathf.Abs(Quaternion.Dot(expected, actual)) > .999999f,
+            message + ": expected " + expected + ", actual " + actual);
+    }
+
+    private sealed class PresetPreferences : IDisposable
+    {
+        private readonly Dictionary<string, string> values = new Dictionary<string, string>();
+        public PresetPreferences()
+        {
+            foreach (string prefix in new[] { "DiNe.AviEditor.ArmaturePreset", "DiNe.AviEditor.MAScalePreset" })
+            foreach (string suffix in new[] { ".Guid", ".Path", ".Name" })
+            {
+                string key = prefix + suffix;
+                values.Add(key, EditorPrefs.HasKey(key) ? EditorPrefs.GetString(key) : null);
+            }
+        }
+        public void Dispose()
+        {
+            foreach (var value in values)
+                if (value.Value == null) EditorPrefs.DeleteKey(value.Key);
+                else EditorPrefs.SetString(value.Key, value.Value);
+        }
+    }
+
+    private sealed class ArmatureFixture : IDisposable
+    {
+        public readonly GameObject root = new GameObject("Synthetic armature avatar");
+        public readonly Transform neck;
+        public readonly Transform head;
+        public readonly Transform unmappedChild;
+        public readonly ArmatureScalerEditor window;
+        public readonly string folder;
+        public ArmatureFixture()
+        {
+            folder = "Assets/ArmatureCase_" + Guid.NewGuid().ToString("N");
+            Directory.CreateDirectory(folder);
+            AssetDatabase.Refresh();
+            neck = new GameObject("Neck").transform;
+            neck.SetParent(root.transform, false);
+            head = new GameObject("Head").transform;
+            head.SetParent(neck, false);
+            unmappedChild = new GameObject("Unmapped attachment").transform;
+            unmappedChild.SetParent(neck, false);
+            window = ScriptableObject.CreateInstance<ArmatureScalerEditor>();
+            Set(window, "targetAvatarRoot", root);
+            Set(window, "boneMapping", new Dictionary<HumanBodyBones, Transform>
+            {
+                { HumanBodyBones.Neck, neck }, { HumanBodyBones.Head, head }
+            });
+        }
+        public nadena.dev.modular_avatar.core.ModularAvatarScaleAdjuster AddNeckMA(Vector3 scale, bool adjustChildren)
+        {
+            var component = neck.gameObject.AddComponent<nadena.dev.modular_avatar.core.ModularAvatarScaleAdjuster>();
+            component.Scale = scale;
+            SetOption("Neck", adjustChildren);
+            return component;
+        }
+        public void SetOption(string part, bool enabled)
+        {
+            Type type = typeof(ArmatureScalerEditor).GetNestedType("HumanoidBodyPart", BindingFlags.NonPublic);
+            Call(window, "SetMAAdjustChildPositions", Enum.Parse(type, part), enabled);
+        }
+        public bool Option(string part) => Get<List<string>>(window, "maAdjustChildPositionParts").Contains(part);
+        public ArmatureScalerPresetData Capture()
+        {
+            var preset = ScriptableObject.CreateInstance<ArmatureScalerPresetData>();
+            Call(window, "CaptureArmaturePreset", preset);
+            return preset;
+        }
+        public void Apply(ArmatureScalerPresetData preset, bool scale = true, bool rotation = true, bool position = true, bool ma = true)
+        {
+            Call(window, "ApplyArmaturePreset", preset, scale, rotation, position, ma);
+        }
+        public void Dispose()
+        {
+            if (window != null) Object.DestroyImmediate(window);
+            if (root != null) Object.DestroyImmediate(root);
+        }
+    }
+
+    private static void UnifiedPresetRoundtrip()
+    {
+        using (var f = new ArmatureFixture())
+        {
+            f.neck.localScale = new Vector3(.8f, 1.1f, .9f);
+            f.neck.localPosition = new Vector3(.1f, .4f, -.2f);
+            f.neck.localRotation = Quaternion.Euler(12, 23, 34);
+            f.head.localScale = new Vector3(1.2f, .95f, 1.05f);
+            f.head.localPosition = new Vector3(.02f, .17f, .04f);
+            f.head.localRotation = Quaternion.Euler(5, 6, 7);
+            Vector3 maScale = new Vector3(1.3f, .7f, 1.15f);
+            f.AddNeckMA(maScale, true);
+            Type partType = typeof(ArmatureScalerEditor).GetNestedType("HumanoidBodyPart", BindingFlags.NonPublic);
+            object neckPart = Enum.Parse(partType, "Neck");
+            ((System.Collections.IDictionary)Get<object>(f.window, "scaleValues"))[neckPart] = Vector3.one * 9;
+            ((System.Collections.IDictionary)Get<object>(f.window, "rotationValues"))[neckPart] = Quaternion.identity;
+            ((System.Collections.IDictionary)Get<object>(f.window, "positionValues"))[neckPart] = Vector3.one * 8;
+            var preset = ScriptableObject.CreateInstance<ArmatureScalerPresetData>();
+            preset.scales.dictionary.Add("Stale", new ArmatureScalerPresetData.SerializableVector3(Vector3.one));
+            preset.positions.dictionary.Add("Stale", new ArmatureScalerPresetData.SerializableVector3(Vector3.one));
+            preset.rotations.dictionary.Add("Stale", new ArmatureScalerPresetData.SerializableQuaternion(Quaternion.identity));
+            preset.maScales.Add(new MAScaleAdjusterPresetData.Entry("Stale", Vector3.one, false));
+            Call(f.window, "CaptureArmaturePreset", preset);
+            Require(preset.scales.dictionary.Count == 2 && preset.positions.dictionary.Count == 2,
+                "Capture retained stale/default unmapped direct entries");
+            Require(preset.rotations.dictionary.Count == 1 && !preset.rotations.dictionary.ContainsKey("Head"),
+                "Capture did not preserve the existing allowed-rotation policy");
+            Equal(f.neck.localScale, preset.scales["Neck"].ToVector3(), "Capture used cached scale");
+            Equal(f.neck.localPosition, preset.positions["Neck"].ToVector3(), "Capture used cached position");
+            Equal(f.neck.localRotation, preset.rotations["Neck"].ToQuaternion(), "Capture used cached rotation");
+            Require(preset.maScales.Count == 1 && preset.maScales[0].part == "Neck" && preset.maScales[0].adjustChildPositions,
+                "Capture lost MA component or child-position option");
+            string path = f.folder + "/Combined.asset";
+            AssetDatabase.CreateAsset(preset, path);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+            var reloaded = AssetDatabase.LoadAssetAtPath<ArmatureScalerPresetData>(path);
+            Equal(f.head.localScale, reloaded.scales["Head"].ToVector3(), "Reimport lost head scale");
+            Equal(f.head.localPosition, reloaded.positions["Head"].ToVector3(), "Reimport lost head position");
+            Equal(f.neck.localRotation, reloaded.rotations["Neck"].ToQuaternion(), "Reimport lost rotation");
+            Require(reloaded.maScales.Count == 1 && reloaded.maScales[0].adjustChildPositions,
+                "Reimport lost unified MA data");
+            Equal(maScale, reloaded.maScales[0].Scale, "Reimport lost MA scale");
+            Object.DestroyImmediate(f.neck.GetComponent<nadena.dev.modular_avatar.core.ModularAvatarScaleAdjuster>());
+            Call(f.window, "CaptureArmaturePreset", reloaded);
+            Require(reloaded.maScales.Count == 0, "Overwriting capture retained an obsolete MA component");
+        }
+    }
+
+    private static void UnifiedPresetApply()
+    {
+        using (var f = new ArmatureFixture())
+        {
+            f.neck.localScale = new Vector3(.9f, 1.1f, 1.2f);
+            f.neck.localPosition = new Vector3(.1f, .2f, .3f);
+            f.neck.localRotation = Quaternion.Euler(9, 18, 27);
+            f.head.localScale = new Vector3(1.05f, .8f, .95f);
+            f.head.localPosition = new Vector3(.04f, .19f, .02f);
+            var ma = f.AddNeckMA(new Vector3(2, 1.5f, .5f), true);
+            var preset = f.Capture();
+            try
+            {
+                f.neck.localScale = Vector3.one * .5f;
+                f.neck.localPosition = Vector3.one * .7f;
+                f.neck.localRotation = Quaternion.identity;
+                f.head.localScale = Vector3.one * .6f;
+                f.head.localPosition = Vector3.one;
+                f.unmappedChild.localPosition = new Vector3(1, 2, 3);
+                ma.Scale = Vector3.one;
+                f.SetOption("Neck", false);
+                f.Apply(preset);
+                Equal(preset.scales["Neck"].ToVector3(), f.neck.localScale, "Full apply neck scale");
+                Equal(preset.positions["Neck"].ToVector3(), f.neck.localPosition, "Full apply neck position");
+                Equal(preset.rotations["Neck"].ToQuaternion(), f.neck.localRotation, "Full apply neck rotation");
+                Equal(preset.scales["Head"].ToVector3(), f.head.localScale, "Full apply head scale");
+                Equal(preset.positions["Head"].ToVector3(), f.head.localPosition, "MA offset applied twice to mapped head");
+                Equal(new Vector3(2, 3, 1.5f), f.unmappedChild.localPosition, "Unmapped child lost requested MA adjustment");
+                Require(f.Option("Neck"), "Full apply did not restore child-position option");
+                Equal(preset.maScales[0].Scale, ma.Scale, "Full apply MA scale");
+                f.Apply(preset);
+                Equal(preset.positions["Head"].ToVector3(), f.head.localPosition, "Repeated full apply changed mapped position");
+                Equal(new Vector3(2, 3, 1.5f), f.unmappedChild.localPosition, "Repeated full apply scaled child position again");
+            }
+            finally { Object.DestroyImmediate(preset); }
+        }
+    }
+
+    private static void UnifiedPresetPartialApply()
+    {
+        using (var f = new ArmatureFixture())
+        {
+            f.neck.localScale = new Vector3(.7f, .8f, .9f);
+            f.neck.localRotation = Quaternion.Euler(10, 20, 30);
+            f.neck.localPosition = new Vector3(.2f, .3f, .4f);
+            f.head.localPosition = new Vector3(.01f, .18f, .03f);
+            var ma = f.AddNeckMA(new Vector3(1.1f, 1.2f, 1.3f), false);
+            var preset = f.Capture();
+            try
+            {
+                for (int mode = 0; mode < 4; mode++)
+                {
+                    Vector3 beforeScale = Vector3.one * .55f;
+                    Vector3 beforePosition = new Vector3(.8f, .7f, .6f);
+                    Quaternion beforeRotation = Quaternion.Euler(40, 50, 60);
+                    Vector3 beforeMA = Vector3.one * .85f;
+                    f.neck.localScale = beforeScale;
+                    f.neck.localPosition = beforePosition;
+                    f.neck.localRotation = beforeRotation;
+                    f.head.localPosition = beforePosition;
+                    ma.Scale = beforeMA;
+                    f.SetOption("Neck", true);
+                    f.Apply(preset, mode == 0, mode == 1, mode == 2, mode == 3);
+                    Equal(mode == 0 ? preset.scales["Neck"].ToVector3() : beforeScale, f.neck.localScale,
+                        "Partial mode " + mode + " changed wrong direct scale");
+                    Equal(mode == 1 ? preset.rotations["Neck"].ToQuaternion() : beforeRotation, f.neck.localRotation,
+                        "Partial mode " + mode + " changed wrong rotation");
+                    Equal(mode == 2 ? preset.positions["Neck"].ToVector3() : beforePosition, f.neck.localPosition,
+                        "Partial mode " + mode + " changed wrong position");
+                    Equal(mode == 2 ? preset.positions["Head"].ToVector3() : beforePosition, f.head.localPosition,
+                        "Partial mode " + mode + " changed wrong child position");
+                    Equal(mode == 3 ? preset.maScales[0].Scale : beforeMA, ma.Scale,
+                        "Partial mode " + mode + " changed wrong MA scale");
+                    Require(f.Option("Neck") == (mode != 3), "Partial mode changed unrequested MA option");
+                }
+            }
+            finally { Object.DestroyImmediate(preset); }
+        }
+    }
+
+    private static void UnifiedPresetUndo()
+    {
+        using (var f = new ArmatureFixture())
+        {
+            var preset = ScriptableObject.CreateInstance<ArmatureScalerPresetData>();
+            preset.scales["Neck"] = new ArmatureScalerPresetData.SerializableVector3(new Vector3(.8f, 1.2f, .9f));
+            preset.positions["Neck"] = new ArmatureScalerPresetData.SerializableVector3(new Vector3(.1f, .2f, .3f));
+            preset.positions["Head"] = new ArmatureScalerPresetData.SerializableVector3(new Vector3(.02f, .17f, .04f));
+            preset.rotations["Neck"] = new ArmatureScalerPresetData.SerializableQuaternion(Quaternion.Euler(11, 22, 33));
+            preset.maScales.Add(new MAScaleAdjusterPresetData.Entry("Neck", new Vector3(1.4f, .8f, 1.1f), true));
+            Vector3 beforeHead = new Vector3(.05f, .2f, -.03f);
+            f.head.localPosition = beforeHead;
+            Undo.ClearAll();
+            try
+            {
+                f.Apply(preset);
+                Undo.FlushUndoRecordObjects();
+                Require(f.neck.GetComponent<nadena.dev.modular_avatar.core.ModularAvatarScaleAdjuster>() != null && f.Option("Neck"),
+                    "Apply did not add MA component and option");
+                Undo.PerformUndo();
+                Equal(Vector3.one, f.neck.localScale, "One Undo did not restore direct scale");
+                Equal(Vector3.zero, f.neck.localPosition, "One Undo did not restore direct position");
+                Equal(Quaternion.identity, f.neck.localRotation, "One Undo did not restore rotation");
+                Equal(beforeHead, f.head.localPosition, "One Undo did not restore child position");
+                Require(f.neck.GetComponent<nadena.dev.modular_avatar.core.ModularAvatarScaleAdjuster>() == null && !f.Option("Neck"),
+                    "One Undo did not remove added component and restore option");
+                Undo.PerformRedo();
+                Equal(preset.scales["Neck"].ToVector3(), f.neck.localScale, "Redo direct scale");
+                Equal(preset.positions["Neck"].ToVector3(), f.neck.localPosition, "Redo direct position");
+                Equal(preset.rotations["Neck"].ToQuaternion(), f.neck.localRotation, "Redo rotation");
+                Equal(preset.positions["Head"].ToVector3(), f.head.localPosition, "Redo child position");
+                var ma = f.neck.GetComponent<nadena.dev.modular_avatar.core.ModularAvatarScaleAdjuster>();
+                Require(ma != null && f.Option("Neck"), "Redo did not restore component and option");
+                Equal(preset.maScales[0].Scale, ma.Scale, "Redo MA scale");
+            }
+            finally { Object.DestroyImmediate(preset); }
+        }
+    }
+
+    private static void InvalidMAPresetEntries()
+    {
+        using (var f = new ArmatureFixture())
+        {
+            var entries = new List<MAScaleAdjusterPresetData.Entry>
+            {
+                null,
+                new MAScaleAdjusterPresetData.Entry(null, Vector3.one * 2, true),
+                new MAScaleAdjusterPresetData.Entry("None", Vector3.one * 2, true),
+                new MAScaleAdjusterPresetData.Entry("UnknownPart", Vector3.one * 2, true),
+                new MAScaleAdjusterPresetData.Entry("999", Vector3.one * 2, true),
+                new MAScaleAdjusterPresetData.Entry("LeftFoot", Vector3.one * 2, true),
+                new MAScaleAdjusterPresetData.Entry("Head", new Vector3(.8f, .9f, 1.1f), false)
+            };
+            int skipped = (int)typeof(ArmatureScalerEditor).GetMethod("ApplyMAPresetEntries", PrivateInstance)
+                .Invoke(f.window, new object[] { entries });
+            Require(skipped == 6, "Invalid or missing MA entries were not reported as skipped");
+            Require(f.neck.GetComponent<nadena.dev.modular_avatar.core.ModularAvatarScaleAdjuster>() == null && !f.Option("None"),
+                "Invalid entry added component or option");
+            Equal(entries[6].Scale, f.head.GetComponent<nadena.dev.modular_avatar.core.ModularAvatarScaleAdjuster>().Scale,
+                "Valid entry was not applied after skipped entries");
+        }
+    }
+
+    private static void LegacyPresetCompatibility()
+    {
+        using (var f = new ArmatureFixture())
+        {
+            var oldDirect = ScriptableObject.CreateInstance<ArmatureScalerPresetData>();
+            // Older presets serialized only the original dictionaries.
+            JsonUtility.FromJsonOverwrite("{\"scales\":{\"keys\":[\"Neck\"],\"values\":[{\"x\":0.8,\"y\":0.9,\"z\":1.1}]}," +
+                "\"rotations\":{\"keys\":[\"Neck\"],\"values\":[{\"x\":0,\"y\":0,\"z\":0,\"w\":1}]}," +
+                "\"positions\":{\"keys\":[\"Neck\"],\"values\":[{\"x\":0.1,\"y\":0.2,\"z\":0.3}]}}", oldDirect);
+            oldDirect.scales.OnAfterDeserialize();
+            oldDirect.rotations.OnAfterDeserialize();
+            oldDirect.positions.OnAfterDeserialize();
+            Require(oldDirect.maScales == null || oldDirect.maScales.Count == 0, "Legacy direct preset invented MA data");
+            string directPath = f.folder + "/LegacyDirect.asset";
+            AssetDatabase.CreateAsset(oldDirect, directPath);
+            var oldMA = ScriptableObject.CreateInstance<MAScaleAdjusterPresetData>();
+            // Schema 1 omitted adjustChildPositions; the old behavior must remain false.
+            JsonUtility.FromJsonOverwrite("{\"schemaVersion\":1,\"entries\":[{\"part\":\"Neck\",\"x\":1.2,\"y\":0.7,\"z\":1.4}]}", oldMA);
+            string maPath = f.folder + "/LegacyMA.asset";
+            AssetDatabase.CreateAsset(oldMA, maPath);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.ImportAsset(directPath, ImportAssetOptions.ForceUpdate);
+            AssetDatabase.ImportAsset(maPath, ImportAssetOptions.ForceUpdate);
+            Require(oldMA.SchemaVersion == 1 && !oldMA.entries[0].adjustChildPositions,
+                "Legacy MA schema/default child behavior changed");
+            var ma = f.AddNeckMA(new Vector3(.95f, 1.05f, 1.15f), true);
+            Vector3 originalMA = ma.Scale;
+            Call(f.window, "RefreshPresetList", directPath);
+            string[] paths = Get<string[]>(f.window, "presetFiles");
+            Require(paths.Contains(directPath) && paths.Contains(maPath), "Unified picker excluded a legacy preset type");
+            Set(f.window, "selectedPresetIndex", Array.IndexOf(paths, directPath));
+            Call(f.window, "LoadSelectedPreset", true, true, true, true);
+            Equal(new Vector3(.8f, .9f, 1.1f), f.neck.localScale, "Legacy direct scale did not load");
+            Equal(new Vector3(.1f, .2f, .3f), f.neck.localPosition, "Legacy direct position did not load");
+            Equal(originalMA, ma.Scale, "Legacy direct load changed existing MA component");
+            Require(f.Option("Neck"), "Legacy direct load cleared MA option");
+            Vector3 scaleBeforeMA = f.neck.localScale;
+            Vector3 positionBeforeMA = f.neck.localPosition;
+            Vector3 headBeforeMA = new Vector3(.03f, .18f, .02f);
+            f.head.localPosition = headBeforeMA;
+            Call(f.window, "RefreshPresetList", maPath);
+            paths = Get<string[]>(f.window, "presetFiles");
+            Set(f.window, "selectedPresetIndex", Array.IndexOf(paths, maPath));
+            Call(f.window, "LoadSelectedPreset", false, false, false, true);
+            Equal(oldMA.entries[0].Scale, ma.Scale, "Legacy MA preset did not load through unified picker");
+            Equal(scaleBeforeMA, f.neck.localScale, "Legacy MA preset replaced direct scale");
+            Equal(positionBeforeMA, f.neck.localPosition, "Legacy MA preset replaced direct position");
+            Equal(headBeforeMA, f.head.localPosition, "Schema 1 MA load adjusted child positions");
+            Require(!f.Option("Neck"), "Schema 1 child option did not retain the old false default");
+        }
     }
 
     private sealed class Fixture : IDisposable
@@ -321,7 +657,7 @@ public static class AviEditorRegression
             var red = new Material(Shader.Find("Unlit/Color")) { color = Color.red };
             f.renderer.sharedMaterial = green;
             f.renderer.gameObject.layer = 8;
-            f.root.AddComponent<AviEditorPreviewProbe>();
+            Require(f.root.AddComponent<AviEditorPreviewProbe>() != null, "Fixture lifecycle probe did not attach");
             var excluded = GameObject.CreatePrimitive(PrimitiveType.Cube);
             excluded.name = "User scene must stay excluded";
             excluded.transform.position = new Vector3(0, .1f, .2f);
@@ -441,9 +777,7 @@ public static class AviEditorRegression
                 Equal(23, f.renderer.GetBlendShapeWeight(0), "Framing changed source weight");
 
                 f.root.transform.localScale = Vector3.one * .7f;
-                var boundsMethod = typeof(ArmatureScalerEditor).GetMethod("GetHeadFramingBounds",
-                    BindingFlags.Static | BindingFlags.NonPublic);
-                var actual = (Bounds)boundsMethod.Invoke(null, new object[] { f.renderer });
+                var actual = DiNeAvatarHeadFraming.GetBounds(f.renderer);
                 var mesh = new Mesh();
                 try
                 {
@@ -533,32 +867,6 @@ public static class AviEditorRegression
         }
     }
 
-    private static void WindowExpressionPreview()
-    {
-        using (var f = new Fixture())
-        {
-            var window = ScriptableObject.CreateInstance<ArmatureScalerEditor>();
-            var clip = new AnimationClip();
-            try
-            {
-                AnimationUtility.SetEditorCurve(clip, EditorCurveBinding.FloatCurve("Body", typeof(SkinnedMeshRenderer), "blendShape.Smile"),
-                    AnimationCurve.Constant(0, 1, 10));
-                Set(window, "targetAvatarRoot", f.root); Set(window, "_bodySmr", f.renderer);
-                Set(window, "_exprShapeValues", new[] { 75f, 80f });
-                Call(window, "SaveWorkingValues");
-                Call(window, "PreviewFxClip", clip);
-                float[] values = Get<float[]>(window, "_exprShapeValues");
-                Equal(10, values[0], "FX clip value not loaded"); Equal(80, values[1], "FX clip cleared unmentioned key");
-                Call(window, "RestoreWorkingValues");
-                Equal(75, values[0], "Working expression not restored");
-                Set(window, "_exprClip", clip); Call(window, "LoadExpressionFromClip");
-                Equal(10, values[0], "Expression clip not loaded"); Equal(80, values[1], "Expression clip cleared unmentioned key");
-                Equal(23, f.renderer.GetBlendShapeWeight(0), "Expression preview changed source selected weight");
-                Equal(37, f.renderer.GetBlendShapeWeight(1), "Expression preview changed source other weight");
-            }
-            finally { Object.DestroyImmediate(window); Object.DestroyImmediate(clip); }
-        }
-    }
 
     private static void WindowReplacementPreview()
     {

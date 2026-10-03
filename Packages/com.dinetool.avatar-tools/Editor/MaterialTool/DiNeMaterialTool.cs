@@ -1,9 +1,9 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEditor;
 
-public class DiNeMaterialTool : EditorWindow
+public partial class DiNeMaterialTool : EditorWindow
 {
     // ══════════════════════════════════════════════════════════════════════════
     //  Enums
@@ -398,6 +398,7 @@ public class DiNeMaterialTool : EditorWindow
 
     void OnDisable()
     {
+        _tutorial?.Suspend();
         SaveSettings();
         Undo.undoRedoPerformed -= BulkOnUndoRedo;
         BulkReleaseEditor();
@@ -408,14 +409,19 @@ public class DiNeMaterialTool : EditorWindow
     // ══════════════════════════════════════════════════════════════════════════
     void OnGUI()
     {
+        BeginTutorialFrame();
+        try
+        {
         _lang = (Lang)Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", L), 0, 2);
         DrawHeader();
         DrawLangBar();
+        _tutorial.DrawControls();
         HLine();
         DrawModeSelector();
         HLine();
 
         // === [추가된 부분] 툴 전체 영역 글로벌 스크롤 뷰 시작 ===
+        _tutorial?.BeginScrollScope();
         _mainScroll = EditorGUILayout.BeginScrollView(_mainScroll);
 
         DrawTargetSettings();
@@ -432,9 +438,13 @@ public class DiNeMaterialTool : EditorWindow
 
         // === [추가된 부분] 글로벌 스크롤 뷰 끝 ===
         EditorGUILayout.EndScrollView();
+        _tutorial?.EndScrollScope(GUILayoutUtility.GetLastRect());
 
         if (!string.IsNullOrEmpty(_status))
             EditorGUILayout.HelpBox(_status, _statusWarn ? MessageType.Warning : MessageType.Info);
+        }
+        catch (ExitGUIException) { _tutorial.AbortFrame(); throw; }
+        finally { _tutorial.EndFrame(); }
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -534,18 +544,22 @@ public class DiNeMaterialTool : EditorWindow
 
         EditorGUILayout.BeginHorizontal();
         _targetObject = (GameObject)EditorGUILayout.ObjectField(T(3), _targetObject, typeof(GameObject), true);
+        TutorialAnchor("target");
         var prev = GUI.backgroundColor;
         GUI.backgroundColor = ColAction;
         if (GUILayout.Button("↺", GUILayout.Width(28), GUILayout.Height(18)))
             AutoScan();
+        TutorialAnchor("refresh");
         GUI.backgroundColor = prev;
         EditorGUILayout.EndHorizontal();
 
         // Auto-scan on target change
+        TutorialDraw("target", "refresh");
         if (_targetObject != _prevTargetObject)
         {
             _prevTargetObject = _targetObject;
             AutoScan();
+            TutorialNotify("target");
         }
 
         GUILayout.Space(4);
@@ -554,7 +568,11 @@ public class DiNeMaterialTool : EditorWindow
         bool prevChildren = _includeChildren;
         bool prevInactive = _includeInactive;
         _includeChildren = EditorGUILayout.Toggle(T(4), _includeChildren);
+        TutorialAnchor("children");
+        TutorialDraw("children");
         _includeInactive = EditorGUILayout.Toggle(T(5), _includeInactive);
+        TutorialAnchor("inactive");
+        TutorialDraw("inactive");
         if (_includeChildren != prevChildren || _includeInactive != prevInactive)
             AutoScan();
             
@@ -565,7 +583,9 @@ public class DiNeMaterialTool : EditorWindow
         {
             bool prevPreview = _previewOnly;
             _previewOnly = EditorGUILayout.Toggle(T(_previewOnly ? 6 : 7), _previewOnly);
+            TutorialAnchor("preview");
             if (_previewOnly != prevPreview) AutoScan();
+            TutorialDraw("preview");
         }
         
         GUILayout.Space(4);
@@ -625,11 +645,13 @@ public class DiNeMaterialTool : EditorWindow
         GUI.backgroundColor = ColAction;
         if (GUILayout.Button(T(9), EditorStyles.miniButton, GUILayout.Width(90), GUILayout.Height(20)))
             ScanLibrary();
+        TutorialAnchor("library-scan");
         GUI.backgroundColor = prev;
         EditorGUILayout.EndHorizontal();
         GUILayout.Space(4);
 
         if (!_libReady) { DrawCenteredHint(T(11)); GUILayout.Space(6); return; }
+        TutorialDraw("library-scan");
 
         // Category tabs
         var usedCats = _library.Select(p => p.CategoryIdx).Distinct().OrderBy(x => x).ToList();
@@ -663,18 +685,22 @@ public class DiNeMaterialTool : EditorWindow
             GUI.backgroundColor = p;
         }
         EditorGUILayout.EndHorizontal();
+        TutorialAnchor("library-category");
+        TutorialDraw("library-category");
         GUILayout.Space(4);
 
         // Search
         EditorGUILayout.BeginHorizontal();
         GUILayout.Label("🔍", GUILayout.Width(18));
         _search = EditorGUILayout.TextField(_search, EditorStyles.toolbarSearchField);
+        TutorialAnchor("library-search");
         if (!string.IsNullOrEmpty(_search) && GUILayout.Button("✕", EditorStyles.toolbarButton, GUILayout.Width(20)))
             _search = "";
         EditorGUILayout.EndHorizontal();
         GUILayout.Space(4);
 
         // List
+        TutorialDraw("library-search");
         var filtered = _library.Where(p =>
             (_catFilter < 0 || p.CategoryIdx == _catFilter) &&
             (string.IsNullOrEmpty(_search) || p.Name.ToLower().Contains(_search.ToLower()))
@@ -682,10 +708,14 @@ public class DiNeMaterialTool : EditorWindow
 
         // 최소 높이를 120, 최대 높이를 240으로 늘려 약 1.6배 확장
         float h = Mathf.Clamp(filtered.Count * 36f + 8f, 120f, 240f);
+        _tutorial?.BeginScrollScope();
         _libScroll = EditorGUILayout.BeginScrollView(_libScroll, GUILayout.Height(h));
         if (filtered.Count == 0) { GUILayout.Space(20); DrawCenteredHint(T(11)); }
         else foreach (var e in filtered) DrawPresetRow(e);
         EditorGUILayout.EndScrollView();
+        _tutorial?.EndScrollScope(GUILayoutUtility.GetLastRect());
+        TutorialAnchor("library-preset");
+        TutorialDraw("library-preset");
     }
 
     private void DrawPresetRow(PresetEntry entry)
@@ -716,6 +746,8 @@ public class DiNeMaterialTool : EditorWindow
             GUILayout.Width(58));
         bool pingClicked = GUILayout.Button("⊙", EditorStyles.miniButton, GUILayout.Width(22), GUILayout.Height(22));
         EditorGUILayout.EndHorizontal();
+        TutorialAnchor("library-preset", rowRect);
+        TutorialDraw("library-preset");
 
         if (pingClicked)
         {
@@ -791,8 +823,10 @@ public class DiNeMaterialTool : EditorWindow
         GUI.backgroundColor = !canApply ? new Color(0.35f, 0.35f, 0.38f) : _previewOnly ? ColWarn : ColApply;
         if (GUILayout.Button(_previewOnly ? T(28) : T(14), btn, GUILayout.Height(38)))
             ApplyPreset();
+        TutorialAnchor("preset-apply");
         GUI.backgroundColor = prev;
         GUI.enabled = true;
+        TutorialDraw("preset-apply");
     }
 
     private void DrawPresetMaterialResults()
@@ -812,9 +846,13 @@ public class DiNeMaterialTool : EditorWindow
 
         // === [추가된 부분] 스크롤 무한 방지 및 사이즈 조정 (최소 160px ~ 최대 360px 제한) ===
         float matHeight = Mathf.Clamp(_presetMats.Count * 32f + 8f, 160f, 360f);
+        _tutorial?.BeginScrollScope();
         _presetMatScroll = EditorGUILayout.BeginScrollView(_presetMatScroll, GUILayout.Height(matHeight));
         foreach (var info in _presetMats) DrawMaterialCard(info, false);
         EditorGUILayout.EndScrollView();
+        _tutorial?.EndScrollScope(GUILayoutUtility.GetLastRect());
+        TutorialAnchor("preset-materials");
+        TutorialDraw("preset-materials", "material-ping");
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -862,6 +900,7 @@ public class DiNeMaterialTool : EditorWindow
 
             // Section enable toggle
             bool newEn = GUILayout.Toggle(_dietEnabled[i], "", GUILayout.Width(18));
+            if (i == 0) TutorialAnchor("diet-sections");
             if (newEn != _dietEnabled[i]) { _dietEnabled[i] = newEn; DietScanMaterials(); }
 
             GUILayout.Space(4);
@@ -878,6 +917,7 @@ public class DiNeMaterialTool : EditorWindow
                 GUILayout.Space(18);
 
             EditorGUILayout.EndHorizontal();
+            if (i == 0) TutorialDraw("diet-sections");
         }
     }
 
@@ -900,16 +940,19 @@ public class DiNeMaterialTool : EditorWindow
         GUI.backgroundColor = _previewOnly ? ColWarn : new Color(0.55f, 0.35f, 0.35f);
         if (GUILayout.Button(_previewOnly ? T(46) : T(62), btn, GUILayout.Height(36)))
             ApplyDiet(disableFeatures: false);
+        TutorialAnchor("diet-remove");
 
         // 버튼 2: 제거 + 기능 끄기
         GUI.enabled = canDisable;
         GUI.backgroundColor = _previewOnly ? ColWarn : ColDanger;
         if (GUILayout.Button(_previewOnly ? T(46) : T(63), btn, GUILayout.Height(36)))
             ApplyDiet(disableFeatures: true);
+        TutorialAnchor("diet-disable");
 
         EditorGUILayout.EndHorizontal();
         GUI.backgroundColor = prev;
         GUI.enabled = true;
+        TutorialDraw("diet-remove", "diet-disable");
     }
 
     private bool HasEnabledToggles(MaterialInfo info)
@@ -992,9 +1035,13 @@ public class DiNeMaterialTool : EditorWindow
 
         // === [추가된 부분] 스크롤 무한 방지 및 사이즈 조정 ===
         float dietHeight = Mathf.Clamp(_dietMats.Count * 40f + 8f, 160f, 400f);
+        _tutorial?.BeginScrollScope();
         _dietMatScroll = EditorGUILayout.BeginScrollView(_dietMatScroll, GUILayout.Height(dietHeight));
         foreach (var info in _dietMats) DrawDietCard(info);
         EditorGUILayout.EndScrollView();
+        _tutorial?.EndScrollScope(GUILayoutUtility.GetLastRect());
+        TutorialAnchor("diet-materials");
+        TutorialDraw("diet-materials", "material-ping");
     }
 
     private void DrawDietCard(MaterialInfo info)
@@ -1112,6 +1159,7 @@ public class DiNeMaterialTool : EditorWindow
         EditorGUILayout.BeginVertical("box");
         EditorGUILayout.BeginHorizontal();
         info.Selected = GUILayout.Toggle(info.Selected, "", GUILayout.Width(20), GUILayout.Height(20));
+        TutorialAnchor(_mode == ToolMode.PresetApply ? "preset-materials" : "diet-materials");
         GUILayout.Space(2);
         info.Foldout = EditorGUILayout.Foldout(info.Foldout, info.Material.name, true,
             new GUIStyle(EditorStyles.foldout) { fontStyle = FontStyle.Bold, fontSize = 12 });
@@ -1119,6 +1167,7 @@ public class DiNeMaterialTool : EditorWindow
         if (GUILayout.Button(T(18), new GUIStyle(EditorStyles.miniButton)
             { fontSize = 11, fontStyle = FontStyle.Bold }, GUILayout.Width(46), GUILayout.Height(22)))
             EditorGUIUtility.PingObject(info.Material);
+        TutorialAnchor("material-ping");
         EditorGUILayout.EndHorizontal();
 
         if (info.Foldout)
@@ -1134,6 +1183,7 @@ public class DiNeMaterialTool : EditorWindow
             GUILayout.Space(2);
         }
         EditorGUILayout.EndVertical();
+        TutorialDraw("preset-materials", "diet-materials", "material-ping");
         GUILayout.Space(3);
     }
 
@@ -1449,6 +1499,7 @@ public class DiNeMaterialTool : EditorWindow
             editableTextures.ForEach(t => t.Selected = true);
         if (GUILayout.Button(T(77), EditorStyles.miniButtonRight, GUILayout.Width(44), GUILayout.Height(21)))
             editableTextures.ForEach(t => t.Selected = false);
+        TutorialAnchor("vram-select");
 
         if (narrowBulkUI)
         {
@@ -1458,6 +1509,7 @@ public class DiNeMaterialTool : EditorWindow
             GUI.backgroundColor = ColApply;
             applyBulk = GUILayout.Button($"{T(78)} ({selectedTextures.Count})", bulkButtonStyle,
                 GUILayout.Width(105), GUILayout.Height(21));
+            TutorialAnchor("vram-bulk-apply");
             GUI.backgroundColor = prev;
             EditorGUI.EndDisabledGroup();
             EditorGUILayout.EndHorizontal();
@@ -1466,14 +1518,18 @@ public class DiNeMaterialTool : EditorWindow
 
         GUILayout.Space(6);
         _vramBulkChangeFormat = EditorGUILayout.ToggleLeft(T(72), _vramBulkChangeFormat, GUILayout.Width(48));
+        Rect tutorialFormatToggle = GUILayoutUtility.GetLastRect();
         EditorGUI.BeginDisabledGroup(!_vramBulkChangeFormat);
         _vramBulkFormatIndex = EditorGUILayout.Popup(_vramBulkFormatIndex, _formatNames, GUILayout.Width(115));
+        TutorialAnchor("vram-bulk-format", Rect.MinMaxRect(tutorialFormatToggle.xMin, tutorialFormatToggle.yMin, GUILayoutUtility.GetLastRect().xMax, GUILayoutUtility.GetLastRect().yMax));
         EditorGUI.EndDisabledGroup();
 
         GUILayout.Space(6);
         _vramBulkChangeSize = EditorGUILayout.ToggleLeft(T(73), _vramBulkChangeSize, GUILayout.Width(60));
+        Rect tutorialSizeToggle = GUILayoutUtility.GetLastRect();
         EditorGUI.BeginDisabledGroup(!_vramBulkChangeSize);
         _vramBulkSizeIndex = EditorGUILayout.Popup(_vramBulkSizeIndex, _sizeNames, GUILayout.Width(64));
+        TutorialAnchor("vram-bulk-size", Rect.MinMaxRect(tutorialSizeToggle.xMin, tutorialSizeToggle.yMin, GUILayoutUtility.GetLastRect().xMax, GUILayoutUtility.GetLastRect().yMax));
         EditorGUI.EndDisabledGroup();
 
         if (!narrowBulkUI)
@@ -1484,11 +1540,13 @@ public class DiNeMaterialTool : EditorWindow
             GUI.backgroundColor = ColApply;
             applyBulk = GUILayout.Button($"{T(78)} ({selectedTextures.Count})", bulkButtonStyle,
                 GUILayout.Width(105), GUILayout.Height(21));
+            TutorialAnchor("vram-bulk-apply");
             GUI.backgroundColor = prev;
             EditorGUI.EndDisabledGroup();
         }
         EditorGUILayout.EndHorizontal();
 
+        TutorialDraw("vram-select", "vram-bulk-format", "vram-bulk-size", "vram-bulk-apply");
         if (applyBulk)
         {
             TextureImporterFormat? format = _vramBulkChangeFormat
@@ -1514,18 +1572,22 @@ public class DiNeMaterialTool : EditorWindow
                 { fontSize = 13, fontStyle = FontStyle.Bold, normal = { textColor = Color.white }, hover = { textColor = Color.white } };
             if (GUILayout.Button($"{T(50)}  ({optimizable.Count})  → -{FormatBytes(totalSavings)}", btnStyle, GUILayout.Height(38)))
                 VRAMOptimizeAll(optimizable);
+            TutorialAnchor("vram-optimize-all");
             GUI.backgroundColor = prev;
         }
 
+        TutorialDraw("vram-optimize-all");
         HLine();
 
         // === [추가된 부분] 스크롤 무한 방지 및 사이즈 조정 ===
         float vramHeight = Mathf.Clamp(_vramTextures.Count * 46f + 8f, 160f, 500f);
+        _tutorial?.BeginScrollScope();
         _vramScroll = EditorGUILayout.BeginScrollView(_vramScroll, GUILayout.Height(vramHeight));
         // .ToList() 스냅샷으로 순회 - VRAMScanTextures() 가 리스트를 Clear/교체해도 안전
         foreach (var info in _vramTextures.ToList())
             DrawVRAMTextureCard(info);
         EditorGUILayout.EndScrollView();
+        _tutorial?.EndScrollScope(GUILayoutUtility.GetLastRect());
     }
 
     private static readonly TextureImporterFormat[] _formatOptions =
@@ -1555,6 +1617,7 @@ public class DiNeMaterialTool : EditorWindow
         // 썸네일 높이(40) 안에서 큰 체크박스를 그린다 → 카드 크기는 그대로.
         Rect toggleRect = GUILayoutUtility.GetRect(34, 40, GUILayout.Width(34), GUILayout.Height(40));
         info.Selected = DiNePackageSelectWindow.RowToggle(toggleRect, info.Selected);
+        TutorialAnchor("vram-select", toggleRect);
         EditorGUI.EndDisabledGroup();
 
         // 1. 썸네일 영역
@@ -1584,6 +1647,7 @@ public class DiNeMaterialTool : EditorWindow
             Event.current.Use();
         }
         EditorGUIUtility.AddCursorRect(thumbRect, MouseCursor.Link);
+        TutorialAnchor("vram-thumbnail", thumbRect);
 
         GUILayout.Space(6);
 
@@ -1609,6 +1673,7 @@ public class DiNeMaterialTool : EditorWindow
             int curFmtIdx = System.Array.IndexOf(_formatOptions, (TextureImporterFormat)info.Format);
             if (curFmtIdx < 0) curFmtIdx = 0;
             int newFmtIdx = EditorGUILayout.Popup(curFmtIdx, _formatNames, GUILayout.Width(110));
+            TutorialAnchor("vram-format");
             if (newFmtIdx != curFmtIdx)
             {
                 info.SuggestedFormat = _formatOptions[newFmtIdx];
@@ -1625,6 +1690,7 @@ public class DiNeMaterialTool : EditorWindow
             int curSizeIdx = System.Array.IndexOf(_sizeOptions, _displayMaxSize);
             if (curSizeIdx < 0) curSizeIdx = _sizeOptions.Length - 1;
             int newSizeIdx = EditorGUILayout.Popup(curSizeIdx, _sizeNames, GUILayout.Width(70));
+            TutorialAnchor("vram-size");
             if (newSizeIdx != curSizeIdx)
             {
                 VRAMChangeSize(info, _sizeOptions[newSizeIdx]);
@@ -1658,6 +1724,7 @@ public class DiNeMaterialTool : EditorWindow
                 VRAMOptimizeSingle(info);
                 GUIUtility.ExitGUI(); // 리스트 갱신 중 발생하는 GUI 에러 방지
             }
+            TutorialAnchor("vram-optimize");
             GUI.backgroundColor = prevColor;
             GUILayout.Space(8); // 폴드아웃 버튼과의 간격
         }
@@ -1672,6 +1739,7 @@ public class DiNeMaterialTool : EditorWindow
                                        $"Objects ({info.UsedByObjects.Count})";
 
             info.ObjectDropdown = GUILayout.Toggle(info.ObjectDropdown, objLabel, foldStyle, GUILayout.ExpandWidth(false));
+            TutorialAnchor("vram-references");
             GUILayout.Space(8); // 마테리얼 버튼과의 간격
         }
 
@@ -1683,6 +1751,7 @@ public class DiNeMaterialTool : EditorWindow
                                        $"Mats ({info.UsedByMaterials.Count})";
 
             info.MaterialDropdown = GUILayout.Toggle(info.MaterialDropdown, matLabel, foldStyle, GUILayout.ExpandWidth(false));
+            TutorialAnchor("vram-references");
         }
 
         EditorGUILayout.EndHorizontal(); // 줄 2 닫기
@@ -1729,6 +1798,7 @@ public class DiNeMaterialTool : EditorWindow
         EditorGUILayout.EndHorizontal(); // 썸네일 + 우측 영역 닫기
 
         EditorGUILayout.EndVertical(); // 카드 전체 박스 닫기
+        TutorialDraw("vram-thumbnail", "vram-format", "vram-size", "vram-references", "vram-optimize");
         GUILayout.Space(2);
     }
 
@@ -2291,6 +2361,8 @@ public class DiNeMaterialTool : EditorWindow
                 .ToArray();
             int cur = groups.IndexOf(_bulkGroup);
             int next = EditorGUILayout.Popup(new GUIContent(T(86), T(81)), cur, labels);
+            TutorialAnchor("bulk-group");
+            TutorialDraw("bulk-group");
             if (next != cur)
             {
                 _bulkGroup = groups[next];
@@ -2319,6 +2391,7 @@ public class DiNeMaterialTool : EditorWindow
         // ── 마테리얼 목록 ──
         EditorGUILayout.BeginHorizontal();
         _bulkListFoldout = EditorGUILayout.Foldout(_bulkListFoldout, T(83), true);
+        TutorialAnchor("bulk-list");
         GUILayout.FlexibleSpace();
         GUILayout.Label(Tf(82, groupMats.Count, groupMats.Count(m => m.Selected)), new GUIStyle(EditorStyles.miniLabel)
             { normal = { textColor = ColSubText } });
@@ -2330,6 +2403,7 @@ public class DiNeMaterialTool : EditorWindow
             DrawSelectButtons(groupMats);
             GUILayout.Space(2);
             float h = Mathf.Clamp(groupMats.Count * 22f + 8f, 44f, 176f);
+            _tutorial?.BeginScrollScope();
             _bulkListScroll = EditorGUILayout.BeginScrollView(_bulkListScroll, GUILayout.Height(h));
             foreach (var info in groupMats)
             {
@@ -2338,14 +2412,18 @@ public class DiNeMaterialTool : EditorWindow
                 GUILayout.Label(new GUIContent(info.Material.name, info.Path), EditorStyles.label, GUILayout.ExpandWidth(true));
                 if (GUILayout.Button(new GUIContent("⊙", T(18)), EditorStyles.miniButton, GUILayout.Width(22)))
                     EditorGUIUtility.PingObject(info.Material);
+                TutorialAnchor("material-ping");
                 EditorGUILayout.EndHorizontal();
+                TutorialDraw("material-ping");
             }
             EditorGUILayout.EndScrollView();
+            _tutorial?.EndScrollScope(GUILayoutUtility.GetLastRect());
         }
 
         HLine();
 
         var selected = groupMats.Where(m => m.Selected).Select(m => m.Material).ToArray();
+        TutorialDraw("bulk-list", "material-ping");
         BulkEnsureEditor(selected);
         if (selected.Length == 0)
         {
@@ -2408,6 +2486,8 @@ public class DiNeMaterialTool : EditorWindow
             EditorGUILayout.EndVertical();
             EditorGUILayout.EndVertical();
         }
+        TutorialAnchor("bulk-properties");
+        TutorialDraw("bulk-properties");
     }
 
     private void BulkEnsureEditor(Material[] selected)

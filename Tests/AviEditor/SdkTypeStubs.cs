@@ -1,4 +1,5 @@
-// Compile-only adapter for the unrelated MA scale controls. No MA behavior is tested.
+// Minimal MA component adapter for the tool's capture/apply and Undo regressions.
+// The real Modular Avatar build pipeline and runtime behavior are not tested here.
 namespace nadena.dev.modular_avatar.core
 {
     public sealed class ModularAvatarScaleAdjuster : UnityEngine.MonoBehaviour

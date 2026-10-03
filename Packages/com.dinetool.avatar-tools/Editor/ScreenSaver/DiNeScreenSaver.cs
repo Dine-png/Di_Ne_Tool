@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using UnityEditor;
@@ -8,7 +8,7 @@ using VRC.SDKBase.Editor.BuildPipeline;
 
 namespace DiNeScreenSaver
 {
-    public class DiNeScreenSaver : EditorWindow
+    public partial class DiNeScreenSaver : EditorWindow
     {
         // ══════════════════════════════════════════════════════════════════════
         //  Enums
@@ -392,6 +392,7 @@ namespace DiNeScreenSaver
 
         void OnDisable()
         {
+            _tutorial?.Suspend();
             AssemblyReloadEvents.beforeAssemblyReload -= ReleasePreviewResources;
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
             Selection.selectionChanged -= OnSelectionChangedOutsideWindow;
@@ -471,6 +472,9 @@ namespace DiNeScreenSaver
         // ══════════════════════════════════════════════════════════════════════
         void OnGUI()
         {
+            BeginTutorialFrame();
+            try
+            {
             int sharedLanguage = SavedLanguageIndex;
             if (sharedLanguage != L)
                 _lang = (Lang)sharedLanguage;
@@ -515,6 +519,7 @@ namespace DiNeScreenSaver
             GUILayout.Space(6);
 
             // ── 모드 선택 ──
+            _tutorial.DrawControls();
             ToolMode previousMode = _mode;
             _mode = (ToolMode)DrawToolbar((int)_mode, new[] { T(14), T(15) }, 32);
             if (previousMode == ToolMode.Icon && _mode != ToolMode.Icon)
@@ -532,16 +537,22 @@ namespace DiNeScreenSaver
 
             if (_mode == ToolMode.Screenshot)
             {
+                _tutorial?.BeginScrollScope();
                 _screenshotScroll = EditorGUILayout.BeginScrollView(_screenshotScroll);
                 DrawScreenshotMode();
                 EditorGUILayout.EndScrollView();
+                _tutorial?.EndScrollScope(GUILayoutUtility.GetLastRect());
             }
             else
             {
+                _tutorial?.BeginScrollScope();
                 _iconScroll = EditorGUILayout.BeginScrollView(_iconScroll);
                 DrawIconMode();
                 EditorGUILayout.EndScrollView();
+                _tutorial?.EndScrollScope(GUILayoutUtility.GetLastRect());
             }
+            }
+            finally { _tutorial.EndFrame(); }
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -552,8 +563,12 @@ namespace DiNeScreenSaver
             // 캡처 대상 탭
             CaptureTarget previousTarget = _captureTarget;
             _captureTarget = (CaptureTarget)DrawToolbar((int)_captureTarget, new[] { T(9), T(10) }, 28);
+            TutorialAnchor("capture-target");
+            TutorialAnchor("camera");
+            TutorialDraw("capture-target");
             if (previousTarget != _captureTarget)
             {
+                TutorialNotify("camera");
                 if (_captureTarget == CaptureTarget.GameView)
                     _gamePreviewDirty = true;
                 else
@@ -567,9 +582,11 @@ namespace DiNeScreenSaver
                 EditorGUI.BeginChangeCheck();
                 Camera selectedCamera = (Camera)EditorGUILayout.ObjectField(
                     new GUIContent(T(0)), _camera, typeof(Camera), true);
+                TutorialAnchor("camera");
                 if (EditorGUI.EndChangeCheck())
                 {
                     _camera = selectedCamera;
+                    TutorialNotify("camera");
                     ReleaseGamePreviewResources();
                     ResetGamePreviewState();
                 }
@@ -578,6 +595,7 @@ namespace DiNeScreenSaver
 
             EditorGUI.BeginChangeCheck();
             DrawResolutionSettings();
+            TutorialDraw("camera");
             HLine();
             DrawBackgroundSettings();
             if (EditorGUI.EndChangeCheck())
@@ -605,15 +623,20 @@ namespace DiNeScreenSaver
                 else CaptureSceneView();
             }
             GUI.backgroundColor = prevBg;
+            TutorialAnchor("capture");
             EditorGUI.EndDisabledGroup();
+            TutorialDraw("capture");
 
             GUILayout.Space(5);
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button(T(12), GUILayout.Height(25)))
                 OpenFolder(SCREENSHOT_ASSET_PATH);
+            TutorialAnchor("open-folder");
             if (GUILayout.Button(T(13), GUILayout.Height(25)))
                 PingFolder(SCREENSHOT_ASSET_PATH);
+            TutorialAnchor("ping-folder");
             EditorGUILayout.EndHorizontal();
+            TutorialDraw("open-folder", "ping-folder");
             EditorGUILayout.EndVertical();
         }
 
@@ -621,10 +644,16 @@ namespace DiNeScreenSaver
         {
             EditorGUILayout.LabelField(T(1), EditorStyles.boldLabel);
             _res = (ResPreset)EditorGUILayout.EnumPopup(new GUIContent(T(2)), _res);
+            TutorialAnchor("resolution");
+            TutorialAnchor("aspect");
+            TutorialAnchor("custom-size");
+            TutorialDraw("resolution");
 
             if (_res != ResPreset.Custom)
             {
                 _aspect = (Aspect)EditorGUILayout.EnumPopup(new GUIContent(T(3)), _aspect);
+                TutorialAnchor("aspect");
+                TutorialDraw("aspect");
                 Vector2 base_ = RES_BASE[_res];
                 switch (_aspect)
                 {
@@ -640,16 +669,25 @@ namespace DiNeScreenSaver
                 EditorGUILayout.BeginHorizontal();
                 GUILayout.Label(T(5));
                 _captureSize = EditorGUILayout.Vector2Field("", _captureSize);
+                TutorialAnchor("custom-size");
                 EditorGUILayout.EndHorizontal();
             }
         }
 
         private void DrawBackgroundSettings()
         {
+            TutorialDraw("custom-size");
             EditorGUILayout.LabelField(T(6), EditorStyles.boldLabel);
             _bgType = (BGType)EditorGUILayout.Popup(new GUIContent(T(7)), (int)_bgType, BgLabels());
+            TutorialAnchor("background");
+            TutorialAnchor("background-color");
+            TutorialDraw("background");
             if (_bgType == BGType.Color)
+            {
                 _bgColor = EditorGUILayout.ColorField(T(8), _bgColor);
+                TutorialAnchor("background-color");
+            }
+            TutorialDraw("background-color");
         }
 
         private void DrawGameViewPreview()
@@ -664,11 +702,13 @@ namespace DiNeScreenSaver
                 float fieldOfView = EditorGUILayout.Slider(
                     new GUIContent(T(56)), _gamePreviewFieldOfView,
                     GAME_PREVIEW_MIN_FOV, GAME_PREVIEW_MAX_FOV);
+                TutorialAnchor("game-fov");
                 if (EditorGUI.EndChangeCheck())
                 {
                     _gamePreviewFieldOfView = fieldOfView;
                     MarkGamePreviewNavigationChanged();
                 }
+                TutorialDraw("game-fov");
                 GUILayout.Space(3f);
             }
 
@@ -723,19 +763,26 @@ namespace DiNeScreenSaver
                 GUI.Label(badgeRect, sizeLabel, badgeStyle);
             }
 
+            TutorialAnchor("game-rotate", _gamePreviewRect);
+            TutorialAnchor("game-pan", _gamePreviewRect);
+            TutorialAnchor("game-zoom", _gamePreviewRect);
             EditorGUILayout.BeginHorizontal();
             EditorGUI.BeginDisabledGroup(_camera == null);
             if (GUILayout.Button(T(51), GUILayout.Height(24f)))
                 ResetGamePreviewState();
 
+            TutorialAnchor("game-reset");
             if (GUILayout.Button(new GUIContent(T(52), T(57)), GUILayout.Height(24f)))
                 FocusGamePreviewOnSubject();
 
+            TutorialAnchor("game-focus");
             if (GUILayout.Button(new GUIContent(T(53), T(54)), GUILayout.Height(24f)))
                 ApplyGamePreviewToSourceCamera();
+            TutorialAnchor("game-apply");
             EditorGUI.EndDisabledGroup();
             EditorGUILayout.EndHorizontal();
             EditorGUILayout.EndVertical();
+            TutorialDraw("game-rotate", "game-pan", "game-zoom", "game-reset", "game-focus", "game-apply");
         }
 
         private static Rect FitAspect(Rect outer, float aspect)
@@ -1263,6 +1310,7 @@ namespace DiNeScreenSaver
             // 타겟 설정
             EditorGUILayout.BeginVertical("box");
             _iconTarget = (GameObject)EditorGUILayout.ObjectField(T(16), _iconTarget, typeof(GameObject), true);
+            TutorialAnchor("icon-target");
             EditorGUILayout.EndVertical();
 
             // 타겟 변경 시 프리뷰 갱신
@@ -1270,6 +1318,7 @@ namespace DiNeScreenSaver
             {
                 ReleaseIconPreviewResources();
                 _prevIconTarget  = _iconTarget;
+                TutorialNotify("icon-target");
                 _previewEuler    = new Vector2(0f, 180f);
                 _previewPan      = Vector2.zero;
                 _zoomFactor      = 1f;
@@ -1285,6 +1334,7 @@ namespace DiNeScreenSaver
             GUILayout.Space(8);
 
             // ── 인터랙티브 프리뷰 ──
+            TutorialDraw("icon-target");
             float previewW = position.width - 20f;
             float previewH = Mathf.Min(previewW, 240f);
 
@@ -1295,6 +1345,9 @@ namespace DiNeScreenSaver
             GUI.backgroundColor = prevBg;
 
             // 이벤트 처리 (프리뷰 영역 내 마우스)
+            TutorialAnchor("icon-rotate", _previewRect);
+            TutorialAnchor("icon-pan", _previewRect);
+            TutorialAnchor("icon-zoom", _previewRect);
             HandlePreviewInput();
 
             // 렌더 (Repaint 시에만)
@@ -1315,6 +1368,7 @@ namespace DiNeScreenSaver
                         { fontSize = 11, wordWrap = true });
 
             // 힌트
+            TutorialDraw("icon-rotate", "icon-pan", "icon-zoom");
             GUILayout.Label(T(19), new GUIStyle(EditorStyles.centeredGreyMiniLabel)
                 { fontSize = 10, normal = { textColor = new Color(0.55f, 0.55f, 0.58f) } });
 
@@ -1332,7 +1386,9 @@ namespace DiNeScreenSaver
                 _previewDirty = true;
                 GUI.FocusControl(null);
             }
+            TutorialAnchor("icon-reset");
             EditorGUILayout.EndHorizontal();
+            TutorialDraw("icon-reset");
 
             GUILayout.Space(4);
 
@@ -1349,6 +1405,7 @@ namespace DiNeScreenSaver
             // ── 아이들 포즈 토글 ──
             EditorGUI.BeginChangeCheck();
             bool idlePose = DrawEffectCardHeader(T(45), _iconIdlePose);
+            TutorialAnchor("icon-idle");
             if (EditorGUI.EndChangeCheck())
             {
                 _iconIdlePose = idlePose;
@@ -1358,6 +1415,7 @@ namespace DiNeScreenSaver
             }
             GUILayout.Label(T(46), new GUIStyle(EditorStyles.centeredGreyMiniLabel)
                 { fontSize = 10, wordWrap = true });
+            TutorialDraw("icon-idle");
 
             if (_iconIdlePose && _iconTarget != null)
             {
@@ -1386,12 +1444,17 @@ namespace DiNeScreenSaver
 
             EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.MinWidth(0));
             _iconOutlineEnabled = DrawEffectCardHeader(T(31), _iconOutlineEnabled);
+            TutorialAnchor("icon-outline");
+            TutorialAnchor("icon-outline-color");
+            TutorialAnchor("icon-outline-size");
             if (_iconOutlineEnabled)
             {
                 float previousLabelWidth = EditorGUIUtility.labelWidth;
                 EditorGUIUtility.labelWidth = 54f;
                 _iconOutlineColor = EditorGUILayout.ColorField(T(8), _iconOutlineColor);
+                TutorialAnchor("icon-outline-color");
                 _iconOutlineSize = EditorGUILayout.IntSlider(T(33), _iconOutlineSize, 1, 12);
+                TutorialAnchor("icon-outline-size");
                 EditorGUIUtility.labelWidth = previousLabelWidth;
             }
             EditorGUILayout.EndVertical();
@@ -1400,12 +1463,18 @@ namespace DiNeScreenSaver
 
             EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.MinWidth(0));
             _iconForbiddenOverlay = DrawEffectCardHeader(T(34), _iconForbiddenOverlay);
+            TutorialAnchor("icon-forbidden");
+            TutorialAnchor("icon-forbidden-size");
+            TutorialAnchor("icon-forbidden-opacity");
+            TutorialAnchor("icon-forbidden-position");
             if (_iconForbiddenOverlay)
             {
                 float previousLabelWidth = EditorGUIUtility.labelWidth;
                 EditorGUIUtility.labelWidth = 54f;
                 _iconForbiddenScale = EditorGUILayout.Slider(T(44), _iconForbiddenScale, 0.2f, 1.2f);
+                TutorialAnchor("icon-forbidden-size");
                 _iconForbiddenOpacity = EditorGUILayout.Slider(T(36), _iconForbiddenOpacity, 0f, 1f);
+                TutorialAnchor("icon-forbidden-opacity");
                 EditorGUIUtility.labelWidth = previousLabelWidth;
 
                 EditorGUILayout.BeginHorizontal();
@@ -1415,11 +1484,13 @@ namespace DiNeScreenSaver
                     _iconForbiddenBehindObject = false;
                 if (DrawPositionSegment(T(43), !frontSelected, EditorStyles.miniButtonRight))
                     _iconForbiddenBehindObject = true;
+                TutorialAnchor("icon-forbidden-position");
                 EditorGUILayout.EndHorizontal();
             }
             EditorGUILayout.EndVertical();
 
             EditorGUILayout.EndHorizontal();
+            TutorialDraw("icon-outline", "icon-outline-color", "icon-outline-size", "icon-forbidden", "icon-forbidden-size", "icon-forbidden-opacity", "icon-forbidden-position");
 
             if (EditorGUI.EndChangeCheck())
             {
@@ -1462,6 +1533,8 @@ namespace DiNeScreenSaver
             {
                 GenerateCurrentIcon(false);
             }
+            TutorialAnchor("icon-generate");
+            TutorialAnchor("icon-copy");
 
             // 파일이 존재할 경우 복사본 생성 버튼을 우측에 추가 (가로 폭 제한 제거하여 1:1 분할, 짙은 민트색 적용)
             if (fileExists)
@@ -1474,19 +1547,24 @@ namespace DiNeScreenSaver
                 {
                     GenerateCurrentIcon(true);
                 }
+                TutorialAnchor("icon-copy");
             }
             
             GUI.backgroundColor = prevBg;
             EditorGUILayout.EndHorizontal();
             EditorGUI.EndDisabledGroup();
+            TutorialDraw("icon-generate", "icon-copy");
 
             GUILayout.Space(5);
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button(T(12), GUILayout.Height(25)))
                 OpenFolder(ICON_ASSET_PATH);
+            TutorialAnchor("open-folder");
             if (GUILayout.Button(T(13), GUILayout.Height(25)))
-                PingFolder(ICON_ASSET_PATH); 
+                PingFolder(ICON_ASSET_PATH);
+            TutorialAnchor("ping-folder");
             EditorGUILayout.EndHorizontal();
+            TutorialDraw("open-folder", "ping-folder");
 
             EditorGUILayout.EndVertical();
         }
@@ -1524,6 +1602,8 @@ namespace DiNeScreenSaver
             }
             GUI.backgroundColor = prevBg;
             EditorGUILayout.EndHorizontal();
+            TutorialAnchor("icon-direction");
+            TutorialDraw("icon-direction");
         }
 
         private static bool DrawEffectCardHeader(string label, bool enabled)
@@ -1602,6 +1682,8 @@ namespace DiNeScreenSaver
             }
             GUI.backgroundColor = prevBg;
             EditorGUILayout.EndHorizontal();
+            TutorialAnchor("icon-zoom-preset");
+            TutorialDraw("icon-zoom-preset");
         }
 
         private void HandlePreviewInput()

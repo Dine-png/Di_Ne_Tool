@@ -18,12 +18,26 @@ New-Item -ItemType Directory -Force -Path $scripts, $packages, $settings | Out-N
 # Compile the actual window and supporting implementation in an isolated project.
 Get-ChildItem -LiteralPath (Join-Path $PackageSource 'Editor/AviEditor') -Filter '*.cs' -File |
     ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $scripts -Force }
-foreach ($relative in @('Editor/Core/DiNePresetAssetSelector.cs', 'Runtime/DiNePackageAssets.cs')) {
+foreach ($relative in @('Editor/Core/DiNePresetAssetSelector.cs', 'Editor/Core/DiNeAviHeadPreview.cs',
+    'Editor/Core/DiNeAvatarHeadFraming.cs', 'Editor/Core/DiNeGuidedTutorial.cs',
+    'Editor/Core/DiNeTutorialBubble.cs', 'Runtime/DiNePackageAssets.cs')) {
     Copy-Item -LiteralPath (Join-Path $PackageSource $relative) -Destination $scripts -Force
 }
-foreach ($name in @('AviEditorRegression.cs', 'AviEditorPreviewProbe.cs', 'SdkTypeStubs.cs')) {
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $scripts -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'AviEditorRegression.cs') -Destination $scripts -Force
+# Unity cannot attach MonoBehaviours compiled into the Editor assembly. Keep the
+# adapters outside Editor and give the MA adapter its component class filename.
+$isolatedRoot = [IO.Path]::GetFullPath($project) + [IO.Path]::DirectorySeparatorChar
+foreach ($name in @('AviEditorPreviewProbe.cs', 'SdkTypeStubs.cs')) {
+    foreach ($suffix in @('', '.meta')) {
+        $stalePath = [IO.Path]::GetFullPath((Join-Path $scripts ($name + $suffix)))
+        if (!$stalePath.StartsWith($isolatedRoot, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Stale adapter path escaped the isolated regression project.'
+        }
+        if (Test-Path -LiteralPath $stalePath) { Remove-Item -LiteralPath $stalePath }
+    }
 }
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'SdkTypeStubs.cs') -Destination (Join-Path $project 'Assets/ModularAvatarScaleAdjuster.cs') -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'AviEditorPreviewProbe.cs') -Destination (Join-Path $project 'Assets/AviEditorPreviewProbe.cs') -Force
 if ($UnityEditorPath) {
     $immutable = Join-Path (Split-Path -Parent $UnityEditorPath) 'Data/MonoBleedingEdge/lib/mono/4.5/System.Collections.Immutable.dll'
     if (!(Test-Path -LiteralPath $immutable)) { throw 'The selected editor must provide System.Collections.Immutable.dll for AviEditorCore.' }

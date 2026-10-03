@@ -1,6 +1,7 @@
 {
     "name": "DiNeTool.Editor.ExtraModifier",
     "references": [
+        "DiNeTool.Editor",
         "DiNeTool.Runtime",
         "VRC.SDKBase",
         "VRC.SDKBase.Editor",

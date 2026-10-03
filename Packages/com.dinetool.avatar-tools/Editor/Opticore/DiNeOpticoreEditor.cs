@@ -2,7 +2,7 @@ using UnityEditor;
 using UnityEngine;
 
 [CustomEditor(typeof(DiNeOpticore))]
-public class DiNeOpticoreEditor : Editor
+public partial class DiNeOpticoreEditor : Editor
 {
     private enum LanguagePreset
     {
@@ -62,26 +62,47 @@ public class DiNeOpticoreEditor : Editor
         _preserveAvatarBehavior = serializedObject.FindProperty("_preserveAvatarBehavior");
         _experimentalMode = serializedObject.FindProperty("_experimentalMode");
 
+        if (!EditorPrefs.HasKey("DiNeLang") && EditorPrefs.HasKey("DiNeOpticore_ComponentLang"))
+            EditorPrefs.SetInt("DiNeLang", Mathf.Clamp(EditorPrefs.GetInt("DiNeOpticore_ComponentLang"), 0, 2));
         if (EditorPrefs.HasKey("DiNeOpticore_ComponentLang"))
             _language = (LanguagePreset)EditorPrefs.GetInt("DiNeOpticore_ComponentLang");
     }
 
     public override void OnInspectorGUI()
     {
+        EnsureTutorial();
+        tutorial.BeginFrame();
+        try { DrawInspectorContent(); }
+        finally { tutorial.EndFrame(); }
+    }
+
+    private void OnDisable() => tutorial?.Suspend();
+
+    private void DrawInspectorContent()
+    {
+        _language = (LanguagePreset)Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", EditorPrefs.GetInt("DiNeOpticore_ComponentLang", 0)), 0, 2);
         serializedObject.Update();
 
         DrawHeader();
+        GUILayout.Space(5f);
         DrawLanguageBar();
+        GUILayout.Space(15f);
+        tutorial.DrawControls();
         DrawHorizontalLine();
 
         if (!HasRequiredNDMF())
         {
             DrawNDMFRequiredCard();
+            tutorial.Draw("ndmf", GUILayoutUtility.GetLastRect());
             serializedObject.ApplyModifiedProperties();
             return;
         }
 
         DrawOverviewCard();
+        Rect overviewRect = GUILayoutUtility.GetLastRect();
+        tutorial.Draw("ndmf", overviewRect);
+        tutorial.Draw("avatar", overviewRect);
+        tutorial.Draw("automatic", overviewRect);
         DrawHorizontalLine();
 
         _showGeometry = DrawSectionHeader(
@@ -91,6 +112,7 @@ public class DiNeOpticoreEditor : Editor
                 "Renderer count, mesh grouping, and draw-side complexity belong here.",
                 "\uB80C\uB354\uB7EC \uC218, \uBA54\uC26C \uBB36\uC74C, \uB4DC\uB85C\uC6B0 \uBE44\uC6A9\uACFC \uAC19\uC740 \uD56D\uBAA9\uC785\uB2C8\uB2E4.",
                 "\u30EC\u30F3\u30C0\u30E9\u30FC\u6570\u3001\u30E1\u30C3\u30B7\u30E5\u306E\u307E\u3068\u307E\u308A\u3001\u63CF\u753B\u5074\u306E\u8907\u96D1\u3055\u3092\u6271\u3044\u307E\u3059."));
+        if (!_showGeometry) TutorialCollapsed("modules", "_optimizeMeshes");
         if (_showGeometry)
         {
             DrawModuleCard(
@@ -114,6 +136,7 @@ public class DiNeOpticoreEditor : Editor
                 "This section covers material slot cleanup. Texture and VRAM work stays in Material Tool.",
                 "\uBA38\uD2F0\uB9AC\uC5BC \uC2AC\uB86F \uC815\uB9AC \uC704\uC8FC \uC139\uC158\uC785\uB2C8\uB2E4. \uD14D\uC2A4\uCC98 / VRAM \uC791\uC5C5\uC740 Material Tool\uC5D0 \uB0A8\uAE41\uB2C8\uB2E4.",
                 "\u30DE\u30C6\u30EA\u30A2\u30EB\u30B9\u30ED\u30C3\u30C8\u6574\u7406\u306E\u30BB\u30AF\u30B7\u30E7\u30F3\u3067\u3059\u3002\u30C6\u30AF\u30B9\u30C1\u30E3 / VRAM \u8ABF\u6574\u306F Material Tool \u3067\u884C\u3044\u307E\u3059."));
+        if (!_showMaterials) TutorialCollapsed("_optimizeMaterials", "material-tool");
         if (_showMaterials)
         {
             DrawModuleCard(
@@ -132,8 +155,12 @@ public class DiNeOpticoreEditor : Editor
             using (new BackgroundColorScope(ColAccent))
             {
                 if (GUILayout.Button(L("Open Material Tool", "Material Tool \uC5F4\uAE30", "Material Tool \u3092\u958B\u304F"), GUILayout.Height(28f)))
+                {
                     DiNeMaterialTool.ShowWindow();
+                    tutorial.NotifyAction("material-tool");
+                }
             }
+            tutorial.Draw("material-tool", GUILayoutUtility.GetLastRect());
         }
 
         _showRig = DrawSectionHeader(
@@ -143,6 +170,7 @@ public class DiNeOpticoreEditor : Editor
                 "Bones, PhysBones, and animator complexity live here.",
                 "\uBCF8, PhysBone, Animator \uBCF5\uC7A1\uB3C4\uB97C \uC5EC\uAE30\uC11C \uB2E4\uB8F9\uB2C8\uB2E4.",
                 "\u30DC\u30FC\u30F3\u3001PhysBone\u3001Animator \u306E\u8907\u96D1\u3055\u3092\u3053\u3053\u3067\u6271\u3044\u307E\u3059."));
+        if (!_showRig) TutorialCollapsed("_optimizeRigAndBones", "_optimizePhysBones", "_optimizeAnimator");
         if (_showRig)
         {
             DrawModuleCard(
@@ -192,6 +220,7 @@ public class DiNeOpticoreEditor : Editor
                 "These safety rules are part of the automatic Opticore pass.",
                 "\uC774 \uC548\uC804 \uADDC\uCE59\uB4E4\uC740 Opticore \uC790\uB3D9 \uD328\uC2A4\uC758 \uC77C\uBD80\uC785\uB2C8\uB2E4.",
                 "\u3053\u308C\u3089\u306E\u5B89\u5168\u30EB\u30FC\u30EB\u306F Opticore \u306E\u81EA\u52D5\u30D1\u30B9\u306E\u4E00\u90E8\u3067\u3059."));
+        if (!_showCleanup) TutorialCollapsed("_removeUnusedObjects", "_preserveAvatarBehavior", "_experimentalMode");
         if (_showCleanup)
         {
             DrawModuleCard(
@@ -253,19 +282,19 @@ public class DiNeOpticoreEditor : Editor
         GUILayout.FlexibleSpace();
 
         if (_windowIcon != null)
-            GUILayout.Label(_windowIcon, GUILayout.Width(64f), GUILayout.Height(64f));
+            GUILayout.Label(_windowIcon, GUILayout.Width(72f), GUILayout.Height(72f));
 
         GUIStyle titleStyle = new GUIStyle(EditorStyles.label)
         {
             font = _titleFont,
-            fontSize = 32,
+            fontSize = 36,
             fontStyle = FontStyle.Bold,
             alignment = TextAnchor.MiddleCenter,
             normal = { textColor = Color.white }
         };
 
         GUILayout.Space(6f);
-        GUILayout.Label("Opticore", titleStyle, GUILayout.Height(64f));
+        GUILayout.Label("Opticore", titleStyle, GUILayout.Height(72f));
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
 
@@ -278,7 +307,7 @@ public class DiNeOpticoreEditor : Editor
             new GUIStyle(EditorStyles.wordWrappedLabel)
             {
                 alignment = TextAnchor.MiddleCenter,
-                fontSize = 11,
+                fontSize = 12,
                 normal = { textColor = new Color(0.82f, 0.82f, 0.82f) }
             });
 
@@ -324,7 +353,7 @@ public class DiNeOpticoreEditor : Editor
             return;
 
         _language = (LanguagePreset)next;
-        EditorPrefs.SetInt("DiNeOpticore_ComponentLang", next);
+        EditorPrefs.SetInt("DiNeLang", next);
     }
 
     private void DrawOverviewCard()
@@ -368,13 +397,19 @@ public class DiNeOpticoreEditor : Editor
     {
         EditorGUILayout.BeginVertical("box");
         EditorGUILayout.BeginHorizontal();
+        EditorGUI.BeginChangeCheck();
         property.boolValue = EditorGUILayout.ToggleLeft(title, property.boolValue, new GUIStyle(EditorStyles.boldLabel) { fontSize = 12 });
+        if (EditorGUI.EndChangeCheck()) { tutorial.NotifyAction(property.name); tutorial.NotifyAction("modules"); }
+        tutorial.Anchor(property.name, GUILayoutUtility.GetLastRect());
+        if (property == _optimizeMeshes) tutorial.Anchor("modules", GUILayoutUtility.GetLastRect());
         DrawStatusBadge(
             livePreviewReady
                 ? L("Live", "\uC2E4\uD589", "\u5B9F\u884C")
                 : L("Soon", "\uC608\uC815", "\u4E88\u5B9A"),
             livePreviewReady ? ColGood : ColWarn);
         EditorGUILayout.EndHorizontal();
+        tutorial.Draw(property.name);
+        if (property == _optimizeMeshes) tutorial.Draw("modules");
 
         GUILayout.Label(description, new GUIStyle(EditorStyles.wordWrappedLabel)
         {
@@ -395,6 +430,7 @@ public class DiNeOpticoreEditor : Editor
             fontStyle = FontStyle.Bold,
             fontSize = 12,
         });
+        tutorialSectionRect = GUILayoutUtility.GetLastRect();
         GUILayout.Label(subtitle, new GUIStyle(EditorStyles.wordWrappedMiniLabel)
         {
             fontSize = 10,
@@ -471,7 +507,7 @@ public class DiNeOpticoreEditor : Editor
                 fontSize = 12,
                 normal = { textColor = i == selected ? Color.white : new Color(0.82f, 0.82f, 0.82f) }
             };
-            if (GUILayout.Button(options[i], style, GUILayout.Height(24f)))
+            if (GUILayout.Button(options[i], style, GUILayout.Height(35f)))
                 next = i;
             GUI.backgroundColor = previous;
         }

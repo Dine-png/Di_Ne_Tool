@@ -3,7 +3,7 @@ using UnityEditor;
 using System.Collections.Generic;
 using System.Linq;
 
-public class DiNeToggleAnimator : EditorWindow
+public partial class DiNeToggleAnimator : EditorWindow
 {
     // ─── DiNe Brand Colors ──────────────────────────────────────
     private static readonly Color ColMint     = new Color(0.30f, 0.82f, 0.76f);
@@ -96,6 +96,7 @@ public class DiNeToggleAnimator : EditorWindow
 
     void OnDisable()
     {
+        tutorial?.Suspend();
         Selection.selectionChanged -= OnSelectionChange;
     }
 
@@ -116,6 +117,7 @@ public class DiNeToggleAnimator : EditorWindow
             _previewClipIdx = -1;
             _clips = newClips;
             RebuildGrid();
+            tutorial?.NotifyAction("clips");
             Repaint();
         }
     }
@@ -173,6 +175,8 @@ public class DiNeToggleAnimator : EditorWindow
     // ────────────────────────────────────────────────────────────
     void OnGUI()
     {
+        EnsureTutorial();
+        _lang = (Lang)Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", 0), 0, 2);
         ValidateData();
 
         var prevBg    = GUI.backgroundColor;
@@ -198,8 +202,17 @@ public class DiNeToggleAnimator : EditorWindow
 
         Rect mainRect = new Rect(SIDEBAR_W + LANG_W, 0, position.width - SIDEBAR_W - LANG_W, winH);
         GUILayout.BeginArea(mainRect);
-        GUILayout.BeginVertical();
+        tutorial.BeginFrame();
+        try { DrawMainContent(prevBg); }
+        finally { tutorial.EndFrame(); GUILayout.EndArea(); GUI.backgroundColor = prevBg; GUI.color = prevColor; }
+    }
+
+    private void DrawMainContent(Color prevBg)
+    {
+        using (new GUILayout.VerticalScope())
+        {
         GUILayout.Space(6);
+        tutorial.DrawControls();
 
         DrawSetupSection(prevBg);
         GUILayout.Space(5);
@@ -217,6 +230,9 @@ public class DiNeToggleAnimator : EditorWindow
                 "프로젝트(Project) 창에서 Animation Clip을 선택하세요.\n(여러 개 동시 선택 가능)\n\n그 뒤, GameObject를 아래 공간에 드래그하여 행 추가.",
                 "プロジェクトウィンドウでアニメーションクリップを選択してください。\n(複数選択可能)\n\nその後、GameObjectを下のスペースにドラッグして行を追加します。"
             ));
+            Rect emptyRect = GUILayoutUtility.GetLastRect();
+            tutorial.Draw("clips", emptyRect);
+            tutorial.Draw("rows", emptyRect);
         }
 
         GUILayout.Space(2);
@@ -224,11 +240,7 @@ public class DiNeToggleAnimator : EditorWindow
 
         HandleGameObjectDrop(); 
 
-        GUILayout.EndVertical();
-        GUILayout.EndArea();
-
-        GUI.backgroundColor = prevBg;
-        GUI.color           = prevColor;
+        }
     }
 
     private void DrawSidebarTitle(string text, float winH)
@@ -297,6 +309,7 @@ public class DiNeToggleAnimator : EditorWindow
             if (GUI.Button(btnRect, currentLabels[i], style))
             {
                 _lang = langs[i];
+                EditorPrefs.SetInt("DiNeLang", i);
             }
             
             GUI.backgroundColor = prevBg;
@@ -313,7 +326,12 @@ public class DiNeToggleAnimator : EditorWindow
         EditorGUILayout.LabelField(T("Avatar Root", "아바타 루트", "アバタールート"), EditorStyles.boldLabel, GUILayout.Width(96));
         EditorGUI.BeginChangeCheck();
         _avatarRoot = (GameObject)EditorGUILayout.ObjectField(_avatarRoot, typeof(GameObject), true);
-        if (EditorGUI.EndChangeCheck() && _previewClipIdx >= 0) PreviewClip(_previewClipIdx);
+        if (EditorGUI.EndChangeCheck())
+        {
+            if (_previewClipIdx >= 0) PreviewClip(_previewClipIdx);
+            tutorial.NotifyAction("root");
+        }
+        tutorial.Anchor("root", GUILayoutUtility.GetLastRect());
         
         GUILayout.FlexibleSpace();
         
@@ -324,10 +342,14 @@ public class DiNeToggleAnimator : EditorWindow
         {
             _lockSelection = !_lockSelection;
             if (!_lockSelection) OnSelectionChange(); 
+            tutorial.NotifyAction("lock");
         }
+        tutorial.Anchor("lock", GUILayoutUtility.GetLastRect());
         GUI.backgroundColor = prevBg;
 
         EditorGUILayout.EndHorizontal();
+        tutorial.Draw("root");
+        tutorial.Draw("lock");
         EditorGUILayout.EndVertical();
     }
 
@@ -340,7 +362,11 @@ public class DiNeToggleAnimator : EditorWindow
         EditorGUILayout.BeginVertical(GUI.skin.box);
         GUI.backgroundColor = prevBg;
 
+        tutorial.BeginScrollScope();
         _gridScroll = EditorGUILayout.BeginScrollView(_gridScroll);
+        bool unsetAnchor = false, toggleAnchor = false, shapeAnchor = false;
+        bool emptyToggleAnchor = false, emptyShapeAnchor = false;
+        Rect emptyToggleRect = default, emptyShapeRect = default;
 
         EditorGUILayout.BeginHorizontal(GUILayout.Height(HEADER_H));
         GUILayout.Label("", GUILayout.Width(LABEL_W), GUILayout.Height(HEADER_H));
@@ -363,11 +389,22 @@ public class DiNeToggleAnimator : EditorWindow
             {
                 if (isPrev) _previewClipIdx = -1;
                 else        { _previewClipIdx = c; PreviewClip(c); }
+                tutorial.NotifyAction("preview");
+            }
+            if (c == 0)
+            {
+                Rect clipRect = GUILayoutUtility.GetLastRect();
+                tutorial.Anchor("clips", clipRect);
+                tutorial.Anchor("preview", clipRect);
+                tutorial.Anchor("undo-preview", clipRect);
             }
             GUI.backgroundColor = prevBg;
         }
         GUILayout.Space(DEL_W);
         EditorGUILayout.EndHorizontal();
+        tutorial.Draw("clips");
+        tutorial.Draw("preview");
+        tutorial.Draw("undo-preview");
 
         EditorGUI.DrawRect(GUILayoutUtility.GetRect(0, 2f, GUILayout.ExpandWidth(true)),
             new Color(0.30f, 0.82f, 0.76f, 0.35f));
@@ -431,7 +468,11 @@ public class DiNeToggleAnimator : EditorWindow
                         _grid[r][c] = isBlendShape ? 100f : 1f; 
                         SaveClip(c);
                         UpdatePreview(r, c);
+                        tutorial.NotifyAction("unset");
                     }
+                    if (!unsetAnchor) { tutorial.Anchor("unset", GUILayoutUtility.GetLastRect()); unsetAnchor = true; }
+                    if (!isBlendShape && !emptyToggleAnchor) { emptyToggleRect = GUILayoutUtility.GetLastRect(); emptyToggleAnchor = true; }
+                    if (isBlendShape && !emptyShapeAnchor) { emptyShapeRect = GUILayoutUtility.GetLastRect(); emptyShapeAnchor = true; }
                     GUI.backgroundColor = prevBg;
                 }
                 else
@@ -450,13 +491,16 @@ public class DiNeToggleAnimator : EditorWindow
                             SaveClip(c);
                             UpdatePreview(r, c);
                             Event.current.Use();
+                            tutorial.NotifyAction("clear");
                         }
                         else if (GUI.Button(btnRect, isOn ? "ON" : "OFF", cellBtnStyle))
                         {
                             _grid[r][c] = isOn ? 0f : 1f;
                             SaveClip(c);
                             UpdatePreview(r, c);
+                            tutorial.NotifyAction("toggle");
                         }
+                        if (!toggleAnchor) { tutorial.Anchor("toggle", btnRect); tutorial.Anchor("clear", btnRect); toggleAnchor = true; }
                         GUI.backgroundColor = prevBg;
                     }
                     else
@@ -471,7 +515,9 @@ public class DiNeToggleAnimator : EditorWindow
                             _grid[r][c] = val;
                             SaveClip(c);
                             UpdatePreview(r, c);
+                            tutorial.NotifyAction("shape");
                         }
+                        if (!shapeAnchor) tutorial.Anchor("shape", GUILayoutUtility.GetLastRect());
 
                         GUI.backgroundColor = new Color(0.42f, 0.12f, 0.12f);
                         if (GUILayout.Button("✕", smallXStyle, GUILayout.Width(16f), GUILayout.Height(ROW_H)))
@@ -479,7 +525,9 @@ public class DiNeToggleAnimator : EditorWindow
                             _grid[r][c] = null;
                             SaveClip(c);
                             UpdatePreview(r, c);
+                            tutorial.NotifyAction("shape-clear");
                         }
+                        if (!shapeAnchor) { tutorial.Anchor("shape-clear", GUILayoutUtility.GetLastRect()); shapeAnchor = true; }
                         GUI.backgroundColor = prevBg;
                         
                         GUILayout.EndHorizontal();
@@ -491,16 +539,37 @@ public class DiNeToggleAnimator : EditorWindow
             if (GUILayout.Button("✕", smallXStyle, GUILayout.Width(DEL_W), GUILayout.Height(ROW_H)))
             {
                 RemoveRow(r);
+                tutorial.NotifyAction("delete-row");
                 GUI.backgroundColor = prevBg;
                 EditorGUILayout.EndHorizontal();
                 break;
             }
+            if (r == 0) tutorial.Anchor("delete-row", GUILayoutUtility.GetLastRect());
             GUI.backgroundColor = prevBg;
             EditorGUILayout.EndHorizontal();
         }
+        if (!toggleAnchor && emptyToggleAnchor)
+        {
+            tutorial.Anchor("toggle", emptyToggleRect);
+            tutorial.Anchor("clear", emptyToggleRect);
+            toggleAnchor = true;
+        }
+        if (!shapeAnchor && emptyShapeAnchor)
+        {
+            tutorial.Anchor("shape", emptyShapeRect);
+            tutorial.Anchor("shape-clear", emptyShapeRect);
+            shapeAnchor = true;
+        }
+        tutorial.Draw("unset");
+        tutorial.Draw("toggle");
+        tutorial.Draw("clear");
+        tutorial.Draw("shape");
+        tutorial.Draw("shape-clear");
+        tutorial.Draw("delete-row");
 
         GUILayout.Space(4);
         EditorGUILayout.EndScrollView(); 
+        tutorial.EndScrollScope(GUILayoutUtility.GetLastRect());
 
         Rect goDropRect = GUILayoutUtility.GetRect(0, 34f, GUILayout.ExpandWidth(true));
         bool isGoOver = _goDragOver;
@@ -516,6 +585,11 @@ public class DiNeToggleAnimator : EditorWindow
                 normal    = { textColor = isGoOver ? ColMint : new Color(0.43f, 0.43f, 0.47f) },
             });
         _goDropGuiRect = goDropRect;
+        tutorial.Draw("rows", goDropRect);
+        if (!unsetAnchor) tutorial.Draw("unset", goDropRect);
+        if (!toggleAnchor) { tutorial.Draw("toggle", goDropRect); tutorial.Draw("clear", goDropRect); }
+        if (!shapeAnchor) { tutorial.Draw("shape", goDropRect); tutorial.Draw("shape-clear", goDropRect); }
+        if (_rows.Count == 0) tutorial.Draw("delete-row", goDropRect);
 
         EditorGUILayout.EndVertical();
     }
@@ -537,13 +611,19 @@ public class DiNeToggleAnimator : EditorWindow
         };
         EditorGUILayout.BeginHorizontal();
         if (GUILayout.Button(T("Fill Missing → OFF", "미지정 → OFF (0)", "未設定→OFF"), bs, GUILayout.Height(26)))
-        { FillMissing(0f); SetStatus(T("Filled all unset cells with OFF.", "미지정(—) 셀 전부 0(OFF) 으로 채웠습니다.", "未設定セルをすべて0にしました。")); }
+        { FillMissing(0f); tutorial.NotifyAction("fill"); SetStatus(T("Filled all unset cells with OFF.", "미지정(—) 셀 전부 0(OFF) 으로 채웠습니다.", "未設定セルをすべて0にしました。")); }
+        tutorial.Anchor("fill", GUILayoutUtility.GetLastRect());
         if (GUILayout.Button(T("Smart Fill", "Smart Fill", "スマートフィル"), bs, GUILayout.Height(26)))
-        { SmartFill(); SetStatus(T("Smart Fill: set OFF where ON exists in other clips.", "Smart Fill: 값이 있는 행의 나머지를 0 처리.", "スマートフィル完了。")); }
+        { SmartFill(); tutorial.NotifyAction("smart-fill"); SetStatus(T("Smart Fill: set OFF where ON exists in other clips.", "Smart Fill: 값이 있는 행의 나머지를 0 처리.", "スマートフィル完了。")); }
+        tutorial.Anchor("smart-fill", GUILayoutUtility.GetLastRect());
         if (GUILayout.Button(T("Invert All", "전체 반전", "全て反転"), bs, GUILayout.Height(26)))
-        { InvertAll(); SetStatus(T("Inverted all values.", "전체 반전 완료.", "全ての値を反転しました。")); }
+        { InvertAll(); tutorial.NotifyAction("invert"); SetStatus(T("Inverted all values.", "전체 반전 완료.", "全ての値を反転しました。")); }
+        tutorial.Anchor("invert", GUILayoutUtility.GetLastRect());
         GUI.backgroundColor = prevBg;
         EditorGUILayout.EndHorizontal();
+        tutorial.Draw("fill");
+        tutorial.Draw("smart-fill");
+        tutorial.Draw("invert");
     }
 
     // ────────────────────────────────────────────────────────────
@@ -592,7 +672,11 @@ public class DiNeToggleAnimator : EditorWindow
             int added = 0;
             foreach (var obj in DragAndDrop.objectReferences.OfType<GameObject>())
                 if (AddRowForObject(obj)) added++;
-            if (added > 0) SetStatus($"오브젝트 {added}개 행 추가됨.");
+            if (added > 0)
+            {
+                tutorial?.NotifyAction("rows");
+                SetStatus(T($"Added {added} object row(s).", $"오브젝트 {added}개 행 추가됨.", $"オブジェクトの行を{added}個追加しました。"));
+            }
             _goDragOver = false;
             e.Use();
             Repaint();

@@ -14,3 +14,6 @@ SDK builder events and the three tool generators are stand-ins. Lifecycle
 callbacks are invoked directly in the focused regression suite. Add `-PlaySmoke`
 to test actual play enter/exit with all four combinations of domain/scene reload
 enabled and disabled. This does not test real SDK uploads.
+
+A simulated dresser generation failure must reject preprocessing, restore the
+original avatar/dresser references, and clear the temporary session and build guard.

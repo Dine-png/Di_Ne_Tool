@@ -16,6 +16,10 @@ public class ArmatureScalerPresetData : ScriptableObject
     [SerializeField]
     public SerializableVector3Dictionary positions = new SerializableVector3Dictionary();
 
+    // Kept in the existing asset so legacy transform-only presets retain their GUIDs.
+    // An empty list leaves any unrecorded MA Scale Adjusters unchanged on load.
+    public List<MAScaleAdjusterPresetData.Entry> maScales = new List<MAScaleAdjusterPresetData.Entry>();
+
     [System.Serializable]
     public class SerializableVector3
     {

@@ -26,6 +26,7 @@ public static class MultiDresserRegression
         Test("Regeneration and a second dresser do not accumulate padding", Regenerate);
         Test("Old generated clothing at index 1 is protected on regeneration", Legacy);
         Test("No padding for an unconfigured dresser", Empty);
+        Test("Destroyed default target remains an Off slot and clothing still switches", DestroyedDefaultTarget);
         Test("Clothing, body shape and material survive disabling FX 1 and 2", Animate);
         Test("Clothing and Schoolbag switch independently during MMD, clothing first", () => AnimateSchoolbag(false));
         Test("Clothing and Schoolbag switch independently during MMD, Schoolbag first", () => AnimateSchoolbag(true));
@@ -75,6 +76,37 @@ public static class MultiDresserRegression
         }
         public void Generate(bool clean = true) { dresser.Generate(folder + "/Generated", clean); }
         public void Dispose() { Object.DestroyImmediate(root); }
+    }
+
+    private static void DestroyedDefaultTarget()
+    {
+        using (var f = new Fixture(1))
+        {
+            Object.DestroyImmediate(f.first);
+            Require(f.dresser.layers[0].targets[0] == null &&
+                !ReferenceEquals(f.dresser.layers[0].targets[0], null), "Expected a destroyed Unity reference");
+            f.Generate();
+            var layer = f.controller.layers.Single(l => l.name == "DiNe Clothing");
+            Require(layer.stateMachine.states.Length == 2, "Off slot or clothing state was lost");
+            var animator = f.root.AddComponent<Animator>();
+            animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+            var graph = PlayableGraph.Create("Destroyed default target regression");
+            try
+            {
+                graph.SetTimeUpdateMode(DirectorUpdateMode.Manual);
+                var playable = AnimatorControllerPlayable.Create(graph, f.controller);
+                var output = AnimationPlayableOutput.Create(graph, "FX", animator);
+                output.SetSourcePlayable(playable);
+                graph.Play();
+                foreach (int index in new[] { 1, 0, 1, 0 })
+                {
+                    playable.SetInteger("DiNe/MultiDresser/Clothing", index);
+                    for (int frame = 0; frame < 5; frame++) graph.Evaluate(1f / 60f);
+                    Require(f.second.activeSelf == (index == 1), "Clothing did not switch for state " + index);
+                }
+            }
+            finally { graph.Destroy(); }
+        }
     }
 
     private static void Structure(int originalCount)

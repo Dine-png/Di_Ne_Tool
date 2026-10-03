@@ -37,6 +37,14 @@ public static class MultiDresserPreviewRegression
         Test("Toggle preview switches groups and restores mixed states across owner/lifecycle changes", TogglePreviewRegression.StatesAndRestoration);
         Test("Saving and reopening scenes preserves original toggle object states", TogglePreviewRegression.SceneSaveRestoresOriginals);
         Test("Active toggle inspectors repaint in all languages without cache invalidations or setting changes", TogglePreviewRegression.IdleInspectors);
+        Test("Tutorial accepts existing completion and revalidates required queued progress", TutorialRegression.RequiredActions);
+        Test("Tutorial start preserves preview; stop and inspector recreation restore and resume safely", TutorialRegression.PreviewAndLifecycle);
+        Test("Locked inspectors cannot claim or overwrite another inspector's tutorial session", TutorialRegression.SessionOwnership);
+        Test("Real mouse clicks advance completed/optional guidance and keep incomplete requirements", TutorialRegression.BubbleInteraction);
+        Test("Required stages incomplete on entry need a real action before progress", TutorialRegression.IncompleteEntryRequiresAction);
+        Test("Empty tutorial category creates an all-OFF default only on user action with Undo/Redo", TutorialRegression.EmptyDefaultState);
+        Test("Every tutorial stage draws in three languages at narrow/wide widths without avatar mutation", TutorialRegression.IdleInspectors);
+        Test("Spotlight geometry preserves target/bubble, GUI state and unrelated input", TutorialRegression.SpotlightFrames);
         Results.Add("Failures: " + failures);
         File.WriteAllLines("MultiDresserPreviewRegression-results.txt", Results);
         EditorApplication.Exit(failures == 0 ? 0 : 1);

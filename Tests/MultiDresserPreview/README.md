@@ -10,8 +10,14 @@ It does not load or modify an avatar in the user's open project.
   -UnityEditorPath 'E:/Unity/2022.3.22f1/Editor/Unity.exe'
 ```
 
-Use `-InspectorSource <path>` to compare an older inspector against the same
-tests. `-ProjectName <name>` chooses an isolated project under `.codex_tmp`.
+Use `-InspectorSource <path>` and its matching `DiNeMultiSupporter.Tutorial.cs`
+to compare an alternative inspector against the same tests. `-TutorialSource
+<path>` overrides the companion partial source. `-ProjectName <name>` chooses
+an isolated project under `.codex_tmp`.
+`-TutorialOnly` runs the eight tutorial cases without the other preview/toggle
+regressions or their newer inspector dependencies. Optional phases are read from
+the production tutorial enum, so an older inspector without Independent Toggles
+receives the complete tutorial coverage appropriate to its own workflow.
 The runner writes `MultiDresserPreviewRegression-results.txt` and the Unity log
 inside that project. The benchmark reports timing without a
 machine-dependent pass/fail threshold.
@@ -55,12 +61,51 @@ shape-name reconciliation after mesh/target changes. NDMF, VRChat and unrelated
 package services are test doubles; this is not an end-to-end Modular Avatar
 rendering or avatar frame-rate benchmark.
 
+The tutorial regressions check that required stages already valid on entry can
+advance by clicking their bubbles, while incomplete stages require the actual
+action. Scene bindings, category names, non-default avatar descendants and a real
+preview snapshot must stay valid until the queued transition commits. Preview
+restoration requires the original scene state and cleared restoration resources;
+changing only preview indices cannot finish the stage. Optional steps advance on
+bubble activation, including real mouse events. Starting preserves existing
+preview state; stopping or disabling the inspector restores activation, blendshape
+weights and materials. Reopening resumes an interrupted preview instruction, and
+stopping clears the tutorial session.
+The empty-category all-OFF action is clicked through real mouse events, creates
+only an empty default slot, keeps the outfit stage required, and supports Undo/Redo.
+
+The production inspector receives real Layout/Repaint events at every tutorial
+stage in English, Korean and Japanese, at 360, 540 and 900 pixel widths. The checks
+assert that idle tutorial drawing does not advance stages, mark avatar settings
+dirty, mutate serialized configuration or preview states, or invalidate NDMF
+caches. Empty material setup is checked at both Renderer and slot instructions;
+the Add action remains highlighted, with no row or material created by drawing.
+A test-only scroll host mirrors the Inspector's scrolling behavior.
+The spotlight checks ensure dim rectangles remain inside the inspector, exclude
+the active control and bubble, and do not overlap. A real click on a dimmed sibling
+control still works. Drawing preserves GUI colors, enabled/changed state, matrix,
+indentation and label width; inactive and cleared frames retain no stale overlay.
+These tests do not read desktop pixels or generate screenshots.
+
 ## UI-standard review
 
-This fix changes preview work and shape-list synchronization only. Existing
+The earlier preview fix changes preview work and shape-list synchronization only. Existing
 header, icons, fonts, colors, layout, controls, translations and language
 preferences are retained; the corresponding visual checklist items require no
 new UI. Shape values and recording flags remain intact when names survive a
 mesh change. Existing serialized-property, Undo and prefab edit paths are
 retained. The test window hosts the existing inspector and is not shipped as
 product UI.
+
+The tutorial addition uses the existing Di Ne header, package icon, DungGeunMo
+title font and title scale. It introduces no component, so the existing runtime
+component icon remains applicable. All tutorial text, tooltips, required/optional
+status and controls use English, Korean and Japanese through `DiNeLang`. Bubbles
+use standard mint borders and `EditorStyles` help-box/label styles, next to their
+existing workflow controls. No branding block, menu setting, font selector or
+independent settings panel is added. Session-only progress leaves serialized
+avatar/build settings intact; the explicit empty default-slot action uses Undo,
+dirty marking and prefab modification recording. The runner includes the limited
+package brand/font assets for comparison with nearby inspector UI. Structural
+review supplements all-language Layout/Repaint and spotlight geometry checks;
+automated geometry checks do not claim a rendered-pixel visual review.

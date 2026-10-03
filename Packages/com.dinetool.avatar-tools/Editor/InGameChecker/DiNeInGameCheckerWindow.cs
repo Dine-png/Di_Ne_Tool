@@ -7,14 +7,14 @@ using VRC.SDK3.Avatars.Components;
 
 namespace DiNeTool.InGameChecker
 {
-    public class DiNeInGameCheckerWindow : EditorWindow
+    public partial class DiNeInGameCheckerWindow : EditorWindow
     {
         // ─── Language ────────────────────────────────────────────────────────
         private enum Language { English, Korean, Japanese }
         private Language CurrentLang
         {
-            get => (Language)EditorPrefs.GetInt("DiNeCheckerLang", 0);
-            set => EditorPrefs.SetInt("DiNeCheckerLang", (int)value);
+            get => (Language)Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", 0), 0, 2);
+            set => EditorPrefs.SetInt("DiNeLang", (int)value);
         }
         private int L => (int)CurrentLang;
 
@@ -103,16 +103,20 @@ namespace DiNeTool.InGameChecker
         // ─── Lifecycle ────────────────────────────────────────────────────────
         private void OnEnable()
         {
+            if (!EditorPrefs.HasKey("DiNeLang") && EditorPrefs.HasKey("DiNeCheckerLang"))
+                EditorPrefs.SetInt("DiNeLang", Mathf.Clamp(EditorPrefs.GetInt("DiNeCheckerLang", 0), 0, 2));
             _icon       = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
             _headerIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe_Icon.png");
             _titleFont  = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
             titleContent = new GUIContent("In-Game Checker", _headerIcon);
+            ConfigureTutorial();
 
             EditorApplication.playModeStateChanged += OnPlayModeChanged;
         }
 
         private void OnDisable()
         {
+            guidedTutorial?.Suspend();
             EditorApplication.playModeStateChanged -= OnPlayModeChanged;
             DisconnectModule();
         }
@@ -131,7 +135,10 @@ namespace DiNeTool.InGameChecker
         private void OnPlayModeChanged(PlayModeStateChange state)
         {
             if (state == PlayModeStateChange.EnteredPlayMode)
+            {
                 RefreshAvatarList();
+                guidedTutorial?.NotifyAction("PlayMode");
+            }
 
             if (state == PlayModeStateChange.ExitingPlayMode)
             {
@@ -160,23 +167,29 @@ namespace DiNeTool.InGameChecker
         // ═════════════════════════════════════════════════════════════════════
         // OnGUI
         // ═════════════════════════════════════════════════════════════════════
-        private void OnGUI()
+        private void DrawToolGUI()
         {
             DrawHeader();
             DrawLangBar();
+            guidedTutorial.DrawControls();
             HLine();
 
+            guidedTutorial.BeginScrollScope();
             _scroll = EditorGUILayout.BeginScrollView(_scroll);
 
             if (_module is { Active: true })
             {
                 DrawActiveModule();
-                HLine();
-                DrawExpressionMenuSection();
-                HLine();
-                DrawGestureControl();
-                HLine();
-                DrawParamsSection();
+                if (_module is { Active: true })
+                {
+                    HLine();
+                    DrawExpressionMenuSection();
+                    HLine();
+                    DrawGestureControl();
+                    HLine();
+                    DrawParamsSection();
+                }
+                else DrawSetup();
             }
             else
             {
@@ -188,6 +201,7 @@ namespace DiNeTool.InGameChecker
             GUILayout.Space(10);
 
             EditorGUILayout.EndScrollView();
+            guidedTutorial.EndScrollScope(GUILayoutUtility.GetLastRect());
         }
 
         // ─── Header ──────────────────────────────────────────────────────────
@@ -233,7 +247,7 @@ namespace DiNeTool.InGameChecker
         private void DrawLangBar()
         {
             int idx = L;
-            idx = DrawCustomToolbar(idx, new[] { "English", "한국어", "日本語" }, 26);
+            idx = DrawCustomToolbar(idx, new[] { "English", "한국어", "日本語" }, 35);
             CurrentLang = (Language)idx;
         }
 
@@ -278,8 +292,10 @@ namespace DiNeTool.InGameChecker
                 isPlaying ? ColRed : ColGreen,
                 200, 36,
                 () => { if (isPlaying) EditorApplication.ExitPlaymode(); else EditorApplication.EnterPlaymode(); });
+            tutorialSetupAnchor = GUILayoutUtility.GetLastRect();
+            guidedTutorial.Draw("PlayMode", tutorialSetupAnchor);
 
-            if (!isPlaying) { GUILayout.Space(8); return; }
+            if (!isPlaying) { guidedTutorial.Draw("Avatar", tutorialSetupAnchor); GUILayout.Space(8); return; }
 
             GUILayout.Space(14);
             HLine();
@@ -325,11 +341,13 @@ namespace DiNeTool.InGameChecker
                                 _statsDirty = true;
                                 _radialMenu = new DiNeRadialMenu();
                                 _radialMenu.Init(_module);
+                                guidedTutorial.NotifyAction("Avatar");
                             }
                         }
                         GUI.enabled = true;
 
                         EditorGUILayout.EndHorizontal();
+                        guidedTutorial.Anchor("Avatar", GUILayoutUtility.GetLastRect());
 
                         if (!hasAnimator)
                             GUILayout.Label("Missing Animator", new GUIStyle(EditorStyles.miniLabel)
@@ -339,12 +357,14 @@ namespace DiNeTool.InGameChecker
                     }
                     GUILayout.Space(2);
                 }
+                guidedTutorial.Draw("Avatar");
             }
 
             GUILayout.Space(8);
             using (new BgColor(ColBlue))
                 if (GUILayout.Button(T(6), GUILayout.Height(26)))
                     RefreshAvatarList();
+            if (_sceneAvatars.Count == 0) guidedTutorial.Draw("Avatar", GUILayoutUtility.GetLastRect());
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -370,9 +390,14 @@ namespace DiNeTool.InGameChecker
                         DisconnectModule();
                         _statsDirty = true;
                     }
+                    guidedTutorial.Anchor("Unlink", GUILayoutUtility.GetLastRect());
                 }
                 EditorGUILayout.EndHorizontal();
+                guidedTutorial.Anchor("Avatar", GUILayoutUtility.GetLastRect());
             }
+            guidedTutorial.Draw("PlayMode", GUILayoutUtility.GetLastRect());
+            guidedTutorial.Draw("Avatar");
+            guidedTutorial.Draw("Unlink");
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -403,14 +428,17 @@ namespace DiNeTool.InGameChecker
                     _radialMenu.SetRootMenu(_module.Descriptor.expressionsMenu);
                 }
             }
+            guidedTutorial.Anchor("Options", GUILayoutUtility.GetLastRect());
             GUI.color = prevColor;
             EditorGUILayout.EndHorizontal();
+            guidedTutorial.Draw("Options");
 
             GUILayout.Space(4);
 
             if (!_radialMenu.HasMenu)
             {
                 DrawCenteredHint("No Menu Configured", ColSubText);
+                guidedTutorial.Draw("Menu", GUILayoutUtility.GetLastRect());
                 return;
             }
 
@@ -425,6 +453,7 @@ namespace DiNeTool.InGameChecker
             }
 
             _radialMenu.Draw(centerRect);
+            guidedTutorial.Draw("Menu", centerRect);
             GUILayout.Space(10);
         }
 
@@ -450,6 +479,7 @@ namespace DiNeTool.InGameChecker
                 EditorGUILayout.EndHorizontal();
 
                 DrawGestureButtons(true);
+                guidedTutorial.Anchor("LeftGesture", GUILayoutUtility.GetLastRect());
 
                 GUILayout.Space(6);
 
@@ -462,9 +492,12 @@ namespace DiNeTool.InGameChecker
                 EditorGUILayout.EndHorizontal();
 
                 DrawGestureButtons(false);
+                guidedTutorial.Anchor("RightGesture", GUILayoutUtility.GetLastRect());
 
                 EditorGUILayout.EndVertical();
             }
+            guidedTutorial.Draw("LeftGesture");
+            guidedTutorial.Draw("RightGesture");
         }
 
         private void DrawGestureButtons(bool isLeft)
@@ -506,7 +539,11 @@ namespace DiNeTool.InGameChecker
         private void DrawParamsSection()
         {
             var exprParams = _module.Descriptor.expressionParameters;
-            if (exprParams?.parameters == null || exprParams.parameters.Length == 0) return;
+            if (exprParams?.parameters == null || exprParams.parameters.Length == 0)
+            {
+                guidedTutorial.Draw("Parameters", GUILayoutUtility.GetLastRect());
+                return;
+            }
 
             GUILayout.Space(4);
             using (new BgColor(_showParams ? ColAccent : ColCard))
@@ -514,6 +551,7 @@ namespace DiNeTool.InGameChecker
                 if (GUILayout.Button((_showParams ? "▼  " : "▶  ") + T(34), GUILayout.Height(28)))
                     _showParams = !_showParams;
             }
+            guidedTutorial.Draw("Parameters", GUILayoutUtility.GetLastRect());
 
             if (!_showParams) return;
 
@@ -594,8 +632,9 @@ namespace DiNeTool.InGameChecker
                 }
             }
             GUI.enabled = true;
+            guidedTutorial.Draw("Stats", GUILayoutUtility.GetLastRect());
 
-            if (!_showStats) return;
+            if (!_showStats) { guidedTutorial.Draw("Refresh", GUILayoutUtility.GetLastRect()); return; }
 
             if (_statsDirty && _module is { Avatar: not null })
             {
@@ -641,9 +680,11 @@ namespace DiNeTool.InGameChecker
                 using (new BgColor(ColBlue))
                     if (GUILayout.Button(T(19), GUILayout.Height(24)))
                         _statsDirty = true;
+                guidedTutorial.Anchor("Refresh", GUILayoutUtility.GetLastRect());
 
                 EditorGUILayout.EndVertical();
             }
+            guidedTutorial.Draw("Refresh");
         }
 
         private void DrawStatGrid((string label, string value, Color col)[] rows)

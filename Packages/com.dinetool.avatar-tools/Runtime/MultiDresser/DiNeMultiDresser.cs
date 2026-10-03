@@ -733,7 +733,11 @@ public class DiNeMultiDresser : MonoBehaviour, VRC.SDKBase.IEditorOnly
         for (int i = 0; i < layerData.targets.Count; i++)
         {
             AnimationClip clip = new AnimationClip();
-            string rawStateName = $"Changer_{layerData.layerName}_{i}_{layerData.targets[i]?.name ?? "Null"}";
+            // A destroyed Unity object still has a managed reference, so ?. would
+            // call GetName on it. Preserve the default Off slot using Unity's null check.
+            var target = layerData.targets[i];
+            string targetName = target != null ? target.name : "Null";
+            string rawStateName = $"Changer_{layerData.layerName}_{i}_{targetName}";
             string clipName = GetSafeAnimatorName(rawStateName);
             string clipFileName = GetSafeName(rawStateName);
             string clipPath = $"{folderPath}/{clipFileName}.anim";

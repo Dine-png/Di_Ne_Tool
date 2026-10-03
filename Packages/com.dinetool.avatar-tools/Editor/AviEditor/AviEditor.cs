@@ -5,7 +5,7 @@ using System.IO;
 using System.Linq;
 using nadena.dev.modular_avatar.core;
 
-public class ArmatureScalerEditor : EditorWindow
+public partial class ArmatureScalerEditor : EditorWindow
 {
     private const string ArmaturePresetPreferenceKey = "DiNe.AviEditor.ArmaturePreset";
     private const string MaPresetPreferenceKey = "DiNe.AviEditor.MAScalePreset";
@@ -24,12 +24,10 @@ public class ArmatureScalerEditor : EditorWindow
     private LanguagePreset appliedLanguage = (LanguagePreset)(-1);
 
     // ?????? ??????癲ル슢?꾤땟?????????
-    private enum EditorMode { Armature, ShapeKey, Expression, ShapeKeyEditor, Extra }
+    private enum EditorMode { Armature = 0, ShapeKeyEditor = 3, Extra = 4 }
     private enum ArmatureEditMode { DirectTransform, ModularAvatarScale }
-    private enum ShapeKeyWorkspaceMode { Expression, ShapeKey }
     [SerializeField] private EditorMode currentMode = EditorMode.Armature;
     [SerializeField] private ArmatureEditMode armatureEditMode = ArmatureEditMode.DirectTransform;
-    [SerializeField] private ShapeKeyWorkspaceMode shapeKeyWorkspaceMode = ShapeKeyWorkspaceMode.Expression;
 
     [SerializeField] private GameObject targetAvatarRoot;
 
@@ -43,6 +41,8 @@ public class ArmatureScalerEditor : EditorWindow
     private Texture2D windowIcon;
     private Texture2D tabIcon;
     private Font      titleFont;
+    private GUIStyle themedButtonStyle;
+    private GUIStyle themedBoldButtonStyle;
     [SerializeField] private Vector2 scrollPosition;
     private Texture2D selectedButtonTex;
 
@@ -56,47 +56,16 @@ public class ArmatureScalerEditor : EditorWindow
     [SerializeField] private int    selectedPresetIndex = -1;
     [SerializeField] private string selectedPresetName  = "";
 
-    private string[] maPresetFiles;
-    [SerializeField] private int selectedMaPresetIndex = -1;
-    [SerializeField] private string selectedMaPresetName = "";
+    private string armaturePresetStatus = "";
+    private int skippedPresetEntries;
     [SerializeField] private List<string> maAdjustChildPositionParts = new List<string>();
 
     // ?????? ??ш끽維곻쭚?? ?嶺뚮㉡?€쾮???????
 // ?????? Animation Freezer ??ш끽維????????
-    [SerializeField] private AnimationClip animationClip;
-    [SerializeField] private float clipTime = 0.0f;
-    [SerializeField] private bool  _realtimePreview = false;
-    private string[] SK_TEXT;
+    // Each editor owns a separate renderer in its private preview scene.
+    private DiNeAviHeadPreview _headPreview;
 
-    // ???怨좊룴??(???⑤챷?????⑥ロ떘 ????щ빘???됰씭肄??T??????れ삀?節낆젂??獄?筌뤿뱶????낆뒩?戮⑤뭄????Β???
-    private Dictionary<SkinnedMeshRenderer, float[]>                          _snapShapeKeys  = new Dictionary<SkinnedMeshRenderer, float[]>();
-    private Dictionary<Transform, (Vector3 pos, Quaternion rot, Vector3 scl)> _snapTransforms = new Dictionary<Transform, (Vector3, Quaternion, Vector3)>();
-    private bool   _hasSnapshot;
-    private GameObject _prevSnapshotTarget;
-
-    // ?????? Expression ????ш끽維????????
-    private SkinnedMeshRenderer      _bodySmr;
-    private RenderTexture            _faceRT;
-    private DiNeAviHeadPreview        _headPreview;
-    private bool                     _facePreviewDirty = true;
-    private AnimationClip            _exprClip;
-    private string                   _exprNewClipName = "New Expression";
-    private float[]                  _exprShapeValues;
-    private Vector2                  _exprShapeScroll;
-    private Vector2                  _exprMainScroll;
-    private string                   _exprShapeSearch = "";
-    // VRChat FX
-    private UnityEditor.Animations.AnimatorController _exprFxController;
-    private int                      _exprFxLayerSel  = 0;   // 0=LeftHand 1=RightHand
-    private int                      _exprFxStateSel  = -1;
-    private bool                     _exprFxExpanded      = false;
-    private bool                     _exprFxPreviewMode   = false;
-    private float[]                  _exprWorkingValues;
-    private GameObject               _prevExprTarget;
-    // ??筌?痢⑼┼???????ш낄援???????????
-    [SerializeField] private bool    _includeGestureKeys  = true;
-
-    // ?????? ShapeKey Editor ????ш끽維????????
+    // Mesh shape-key editing stays in Avi Editor.
     private SkinnedMeshRenderer   _skeSmr;
     private int                   _skeSubMode            = 0;  // 0=????궈?┼??뵯????琉왈?1=???쒓낯?????꾨탿
     // ????궈?癲ル슢?????琉왈?
@@ -171,21 +140,18 @@ public class ArmatureScalerEditor : EditorWindow
         selectedButtonTex = MakeTex(1, 1, new Color(0.30f, 0.82f, 0.76f, 1f));
         LanguagePreset selectedLanguage = language;
         SetLanguage(selectedLanguage);
-        SetShapeKeyLanguage(selectedLanguage);
         appliedLanguage = selectedLanguage;
-        if (currentMode == EditorMode.ShapeKeyEditor)
-            shapeKeyWorkspaceMode = ShapeKeyWorkspaceMode.ShapeKey;
-        else if (currentMode == EditorMode.Expression)
-            shapeKeyWorkspaceMode = ShapeKeyWorkspaceMode.Expression;
+        if (currentMode != EditorMode.Armature && currentMode != EditorMode.ShapeKeyEditor && currentMode != EditorMode.Extra)
+            currentMode = EditorMode.Armature;
         InitializeValues();
         if (targetAvatarRoot != null)
         {
             boneMapping = ArmatureScalerCore.AssignBoneMappings(targetAvatarRoot);
             LoadCurrentValues();
         }
-        
+
         RefreshPresetList();
-        
+
         EditorApplication.update += OnEditorUpdate;
         EditorApplication.projectChanged += OnProjectAssetsChanged;
         Undo.undoRedoPerformed += OnUndoRedo;
@@ -194,17 +160,12 @@ public class ArmatureScalerEditor : EditorWindow
 
     void OnDisable()
     {
+        _tutorial?.Suspend();
         EditorApplication.update -= OnEditorUpdate;
         EditorApplication.projectChanged -= OnProjectAssetsChanged;
         Undo.undoRedoPerformed -= OnUndoRedo;
         EditorApplication.playModeStateChanged -= OnPreviewPlayModeChanged;
 
-        if (_faceRT != null)
-        {
-            _faceRT.Release();
-            DestroyImmediate(_faceRT);
-            _faceRT = null;
-        }
         if (_skePreviewRT != null)
         {
             _skePreviewRT.Release();
@@ -219,7 +180,6 @@ public class ArmatureScalerEditor : EditorWindow
     {
         _headPreview?.Dispose();
         _headPreview = null;
-        _facePreviewDirty = true;
         _skePreviewDirty = true;
     }
 
@@ -242,49 +202,11 @@ public class ArmatureScalerEditor : EditorWindow
 
     private void OnUndoRedo()
     {
+        LoadCurrentValues();
+        armaturePresetStatus = "";
         SkeRestoreAndClearPreview();
         _skeModifyScale = 100f;
         ReleaseHeadPreview();
-        if (currentMode != EditorMode.ShapeKey || animationClip == null || targetAvatarRoot == null)
-        {
-            Repaint();
-            return;
-        }
-
-        AnimationCurve firstCurve = null;
-        SkinnedMeshRenderer firstSmr = null;
-        int firstIdx = -1;
-
-        foreach (var b in AnimationUtility.GetCurveBindings(animationClip))
-        {
-            if (!b.propertyName.StartsWith("blendShape.")) continue;
-            var tr = string.IsNullOrEmpty(b.path) ? targetAvatarRoot.transform : targetAvatarRoot.transform.Find(b.path);
-            if (tr == null) continue;
-            var smr = tr.GetComponent<SkinnedMeshRenderer>();
-            if (smr == null || smr.sharedMesh == null) continue;
-            int idx = smr.sharedMesh.GetBlendShapeIndex(b.propertyName.Substring("blendShape.".Length));
-            if (idx < 0) continue;
-            firstCurve = AnimationUtility.GetEditorCurve(animationClip, b);
-            firstSmr = smr;
-            firstIdx = idx;
-            break;
-        }
-
-        if (firstCurve != null && firstSmr != null && firstIdx >= 0)
-        {
-            float currentVal = firstSmr.GetBlendShapeWeight(firstIdx);
-            float bestTime = clipTime;
-            float bestDiff = float.MaxValue;
-            int steps = 200;
-            for (int i = 0; i <= steps; i++)
-            {
-                float t = animationClip.length * i / steps;
-                float diff = Mathf.Abs(firstCurve.Evaluate(t) - currentVal);
-                if (diff < bestDiff) { bestDiff = diff; bestTime = t; }
-            }
-            clipTime = bestTime;
-        }
-
         Repaint();
     }
 
@@ -337,7 +259,7 @@ public class ArmatureScalerEditor : EditorWindow
         boneTransform = mappedTransform;
         return true;
     }
-    
+
     void OnFocus()
     {
         RefreshPresetList();
@@ -349,17 +271,21 @@ public class ArmatureScalerEditor : EditorWindow
         Repaint();
     }
 
-    private void RefreshPresetList(string preferredPresetPath = null, string preferredMaPresetPath = null)
+    private void RefreshPresetList(string preferredPresetPath = null)
     {
         if (string.IsNullOrEmpty(preferredPresetPath) &&
             presetFiles != null && selectedPresetIndex >= 0 && selectedPresetIndex < presetFiles.Length)
             preferredPresetPath = presetFiles[selectedPresetIndex];
-        if (string.IsNullOrEmpty(preferredMaPresetPath) &&
-            maPresetFiles != null && selectedMaPresetIndex >= 0 && selectedMaPresetIndex < maPresetFiles.Length)
-            preferredMaPresetPath = maPresetFiles[selectedMaPresetIndex];
-
         string contextPath = GetPresetContextPath();
-        presetFiles = DiNePresetAssetSelector.FindPresetPaths<ArmatureScalerPresetData>();
+        presetFiles = DiNePresetAssetSelector.FindPresetPaths<ArmatureScalerPresetData>()
+            .Concat(DiNePresetAssetSelector.FindPresetPaths<MAScaleAdjusterPresetData>())
+            .Distinct(System.StringComparer.OrdinalIgnoreCase)
+            .OrderBy(Path.GetFileNameWithoutExtension, System.StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(path => path, System.StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (string.IsNullOrEmpty(preferredPresetPath) &&
+            string.IsNullOrEmpty(EditorPrefs.GetString(ArmaturePresetPreferenceKey + ".Guid", "")))
+            preferredPresetPath = EditorPrefs.GetString(MaPresetPreferenceKey + ".Path", "");
         selectedPresetIndex = DiNePresetAssetSelector.RestoreSelection(
             ArmaturePresetPreferenceKey,
             presetFiles,
@@ -367,16 +293,6 @@ public class ArmatureScalerEditor : EditorWindow
             contextPath);
         selectedPresetName = selectedPresetIndex >= 0
             ? Path.GetFileNameWithoutExtension(presetFiles[selectedPresetIndex])
-            : "";
-
-        maPresetFiles = DiNePresetAssetSelector.FindPresetPaths<MAScaleAdjusterPresetData>();
-        selectedMaPresetIndex = DiNePresetAssetSelector.RestoreSelection(
-            MaPresetPreferenceKey,
-            maPresetFiles,
-            preferredMaPresetPath,
-            contextPath);
-        selectedMaPresetName = selectedMaPresetIndex >= 0
-            ? Path.GetFileNameWithoutExtension(maPresetFiles[selectedMaPresetIndex])
             : "";
     }
 
@@ -389,22 +305,13 @@ public class ArmatureScalerEditor : EditorWindow
 
     private void SelectArmaturePreset(int index)
     {
+        armaturePresetStatus = "";
         selectedPresetIndex = index;
         selectedPresetName = index >= 0 && index < presetFiles.Length
             ? Path.GetFileNameWithoutExtension(presetFiles[index])
             : "";
         if (index >= 0 && index < presetFiles.Length)
             DiNePresetAssetSelector.RememberSelection(ArmaturePresetPreferenceKey, presetFiles[index]);
-    }
-
-    private void SelectMaPreset(int index)
-    {
-        selectedMaPresetIndex = index;
-        selectedMaPresetName = index >= 0 && index < maPresetFiles.Length
-            ? Path.GetFileNameWithoutExtension(maPresetFiles[index])
-            : "";
-        if (index >= 0 && index < maPresetFiles.Length)
-            DiNePresetAssetSelector.RememberSelection(MaPresetPreferenceKey, maPresetFiles[index]);
     }
 
     private void InitializeValues()
@@ -415,7 +322,7 @@ public class ArmatureScalerEditor : EditorWindow
             {
                 if (!scaleValues.ContainsKey(part)) scaleValues.Add(part, Vector3.one);
                 else scaleValues[part] = Vector3.one;
-                
+
                 if (!rotationValues.ContainsKey(part)) rotationValues.Add(part, Quaternion.identity);
                 else rotationValues[part] = Quaternion.identity;
 
@@ -447,7 +354,7 @@ public class ArmatureScalerEditor : EditorWindow
     {
         if (obj == null) return;
         EditorUtility.SetDirty(obj);
-        
+
         #if UNITY_EDITOR
         if (PrefabUtility.IsPartOfPrefabInstance(obj))
         {
@@ -457,6 +364,9 @@ public class ArmatureScalerEditor : EditorWindow
     }
     void OnGUI()
     {
+        BeginTutorialFrame();
+        try
+        {
         Color headerBackground = GUI.backgroundColor;
         GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
 
@@ -482,9 +392,9 @@ public class ArmatureScalerEditor : EditorWindow
 
         GUILayout.Space(4);
         GUILayout.Label(Tr(
-                "Easily and safely edit your avatar's armature, shapekeys, and extra settings.",
-                "아바타의 아마추어, 쉐이프키와 기타 설정을 쉽고 안전하게 편집합니다.",
-                "アバターのアーマチュア、シェイプキー、追加設定を簡単かつ安全に編集します。"),
+                "Edit your avatar's armature, mesh shape keys, and PhysBone settings.",
+                "아바타의 본, 메시 쉐이프키와 PhysBone 설정을 편집합니다.",
+                "アバターのボーン、メッシュのシェイプキー、PhysBone設定を編集します。"),
             new GUIStyle(EditorStyles.wordWrappedLabel)
             { alignment = TextAnchor.MiddleCenter, fontSize = 12, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } });
 
@@ -497,8 +407,8 @@ public class ArmatureScalerEditor : EditorWindow
         LanguagePreset selectedLanguage = language;
         if (selectedLanguage != appliedLanguage)
         {
+            armaturePresetStatus = "";
             SetLanguage(selectedLanguage);
-            SetShapeKeyLanguage(selectedLanguage);
             appliedLanguage = selectedLanguage;
         }
 
@@ -507,20 +417,20 @@ public class ArmatureScalerEditor : EditorWindow
         int newLanguageIndex = DrawCustomToolbar(currentLanguageIndex, languageButtons, 35);
         if (newLanguageIndex != currentLanguageIndex)
         {
+            armaturePresetStatus = "";
             language = (LanguagePreset)newLanguageIndex;
             selectedLanguage = language;
             SetLanguage(selectedLanguage);
-            SetShapeKeyLanguage(selectedLanguage);
             appliedLanguage = selectedLanguage;
         }
+        _tutorial.DrawControls();
         GUILayout.Space(15);
 
         string[] modeLabels =
         {
             Tr("Armature", "아마추어", "アーマチュア"),
-            Tr("Animation", "애니메이션", "アニメーション"),
             Tr("Shape Key", "쉐이프키", "シェイプキー"),
-            Tr("Extra", "엑스트라", "エクストラ")
+            Tr("PhysBone", "PhysBone", "PhysBone")
         };
         int currentMainMode = GetMainModeIndex();
         int newMainMode = DrawCustomToolbar(currentMainMode, modeLabels, 35);
@@ -531,87 +441,30 @@ public class ArmatureScalerEditor : EditorWindow
 
         if (currentMode == EditorMode.Armature)
             DrawArmatureGUI();
-        else if (currentMode == EditorMode.ShapeKey)
-            DrawShapeKeyGUI();
-        else if (currentMode == EditorMode.Expression || currentMode == EditorMode.ShapeKeyEditor)
-            DrawShapeKeyWorkspaceGUI();
+        else if (currentMode == EditorMode.ShapeKeyEditor)
+            DrawShapeKeyEditorGUI();
         else
             DrawExtraGUI();
+            }
+        finally { _tutorial.EndFrame(); }
     }
 
     private int GetMainModeIndex()
     {
-        switch (currentMode)
-        {
-            case EditorMode.Armature:
-                return 0;
-            case EditorMode.ShapeKey:
-                return 1;
-            case EditorMode.Expression:
-            case EditorMode.ShapeKeyEditor:
-                return 2;
-            case EditorMode.Extra:
-                return 3;
-            default:
-                return 0;
-        }
+        return currentMode == EditorMode.ShapeKeyEditor ? 1 : currentMode == EditorMode.Extra ? 2 : 0;
     }
 
     private void SetMainModeIndex(int index)
     {
-        switch (index)
-        {
-            case 0:
-                currentMode = EditorMode.Armature;
-                break;
-            case 1:
-                currentMode = EditorMode.ShapeKey;
-                break;
-            case 2:
-                currentMode = shapeKeyWorkspaceMode == ShapeKeyWorkspaceMode.Expression
-                    ? EditorMode.Expression
-                    : EditorMode.ShapeKeyEditor;
-                break;
-            case 3:
-                currentMode = EditorMode.Extra;
-                break;
-            default:
-                currentMode = EditorMode.Armature;
-                break;
-        }
-
+        currentMode = index == 1 ? EditorMode.ShapeKeyEditor : index == 2 ? EditorMode.Extra : EditorMode.Armature;
+        SkeRestoreAndClearPreview();
         GUI.FocusControl(null);
     }
 
-    private void DrawShapeKeyWorkspaceGUI()
-    {
-        string[] workspaceLabels =
-        {
-            Tr("Expression", "표정", "表情"),
-            Tr("Shape Key", "쉐이프키", "シェイプキー")
-        };
-
-        int currentWorkspaceMode = (int)shapeKeyWorkspaceMode;
-        int newWorkspaceMode = DrawCustomToolbar(currentWorkspaceMode, workspaceLabels, 35);
-        if (newWorkspaceMode != currentWorkspaceMode)
-        {
-            shapeKeyWorkspaceMode = (ShapeKeyWorkspaceMode)newWorkspaceMode;
-            currentMode = shapeKeyWorkspaceMode == ShapeKeyWorkspaceMode.Expression
-                ? EditorMode.Expression
-                : EditorMode.ShapeKeyEditor;
-            GUI.FocusControl(null);
-        }
-
-        GUILayout.Space(8);
-
-        if (shapeKeyWorkspaceMode == ShapeKeyWorkspaceMode.Expression)
-            DrawExpressionGUI();
-        else
-            DrawShapeKeyEditorGUI();
-    }
 
     private void DrawExtraGUI()
     {
+        GameObject tutorialPreviousAvatar = targetAvatarRoot;
         EditorGUILayout.BeginHorizontal();
         EditorGUI.BeginChangeCheck();
         GameObject nextAvatarRoot = (GameObject)EditorGUILayout.ObjectField(
@@ -621,6 +474,7 @@ public class ArmatureScalerEditor : EditorWindow
                     "하위 PhysBone을 일괄 편집할 아바타 루트입니다.",
                     "子PhysBoneを一括編集するアバタールートです。")),
             targetAvatarRoot, typeof(GameObject), true);
+        TutorialAnchor("avatar");
         if (EditorGUI.EndChangeCheck())
         {
             targetAvatarRoot = nextAvatarRoot;
@@ -649,7 +503,10 @@ public class ArmatureScalerEditor : EditorWindow
         }
         GUI.backgroundColor = previousBackground;
         EditorGUI.EndDisabledGroup();
+        TutorialAnchor("refresh");
         EditorGUILayout.EndHorizontal();
+        if (targetAvatarRoot != tutorialPreviousAvatar) TutorialNotify("avatar");
+        TutorialDraw("avatar", "refresh");
 
         GUILayout.Space(6);
 
@@ -663,6 +520,7 @@ public class ArmatureScalerEditor : EditorWindow
             return;
         }
 
+        _tutorial?.BeginScrollScope();
         _extraScroll = EditorGUILayout.BeginScrollView(_extraScroll);
 
         DiNePhysBoneBatchSummary total = DiNePhysBoneBatchUtility.GetSummary(
@@ -716,11 +574,13 @@ public class ArmatureScalerEditor : EditorWindow
             MessageType.Info);
 
         EditorGUILayout.EndScrollView();
+        _tutorial?.EndScrollScope(GUILayoutUtility.GetLastRect());
     }
 
     private void DrawPhysBoneBatchRow(
         DiNePhysBoneBatchSetting setting, string title, string description)
     {
+        string tutorialPrefix = setting == DiNePhysBoneBatchSetting.AllowGrabbing ? "grab" : setting == DiNePhysBoneBatchSetting.AllowPosing ? "pose" : "collision";
         DiNePhysBoneBatchSummary summary = DiNePhysBoneBatchUtility.GetSummary(targetAvatarRoot, setting);
 
         EditorGUILayout.BeginVertical("GroupBox");
@@ -743,6 +603,7 @@ public class ArmatureScalerEditor : EditorWindow
                 "見つかったすべてのPhysBoneでこの設定をオンにします。"));
         if (GUILayout.Button(enableContent, GUILayout.Height(30)))
             ApplyPhysBoneBatchSetting(setting, true, title);
+        TutorialAnchor(tutorialPrefix + "-on");
 
         GUI.backgroundColor = previousBackground;
         GUIContent disableContent = new GUIContent(
@@ -752,10 +613,12 @@ public class ArmatureScalerEditor : EditorWindow
                 "見つかったすべてのPhysBoneでこの設定をオフにします。"));
         if (GUILayout.Button(disableContent, GUILayout.Height(30)))
             ApplyPhysBoneBatchSetting(setting, false, title);
+        TutorialAnchor(tutorialPrefix + "-off");
 
         GUI.backgroundColor = previousBackground;
         EditorGUILayout.EndHorizontal();
         EditorGUILayout.EndVertical();
+        TutorialDraw(tutorialPrefix + "-on", tutorialPrefix + "-off");
     }
 
     private string FormatPhysBoneSummary(DiNePhysBoneBatchSummary summary)
@@ -799,9 +662,11 @@ public class ArmatureScalerEditor : EditorWindow
 
     private void DrawArmatureGUI()
     {
+        GameObject tutorialPreviousAvatar = targetAvatarRoot;
         // 다른 탭에서 대상 아바타가 바뀌었으면 본 매핑을 다시 만든다.
         if (targetAvatarRoot != _boneMappingRoot && Event.current.type == EventType.Layout)
         {
+            armaturePresetStatus = "";
             _boneMappingRoot = targetAvatarRoot;
             selectedPart = HumanoidBodyPart.None;
             if (targetAvatarRoot != null)
@@ -819,9 +684,11 @@ public class ArmatureScalerEditor : EditorWindow
         EditorGUILayout.BeginHorizontal();
         EditorGUI.BeginChangeCheck();
         targetAvatarRoot = (GameObject)EditorGUILayout.ObjectField(UI_TEXT[0], targetAvatarRoot, typeof(GameObject), true);
+        TutorialAnchor("avatar");
 
         if (EditorGUI.EndChangeCheck())
         {
+            armaturePresetStatus = "";
             if (targetAvatarRoot != null)
             {
                 boneMapping = ArmatureScalerCore.AssignBoneMappings(targetAvatarRoot);
@@ -847,7 +714,10 @@ public class ArmatureScalerEditor : EditorWindow
         }
         GUI.backgroundColor = _prevBg;
         EditorGUI.EndDisabledGroup();
+        TutorialAnchor("refresh");
         EditorGUILayout.EndHorizontal();
+        if (targetAvatarRoot != tutorialPreviousAvatar) TutorialNotify("avatar");
+        TutorialDraw("avatar", "refresh");
 
         GUILayout.Space(4);
         string[] armatureModes =
@@ -856,6 +726,9 @@ public class ArmatureScalerEditor : EditorWindow
             Tr("MA Scale Adjustment", "MA 비율 조정", "MA比率調整")
         };
         int nextArmatureMode = DrawCustomToolbar((int)armatureEditMode, armatureModes, 30);
+        TutorialAnchor("direct-mode");
+        TutorialAnchor("ma-mode");
+        TutorialDraw("direct-mode", "ma-mode");
         if (nextArmatureMode != (int)armatureEditMode)
         {
             armatureEditMode = (ArmatureEditMode)nextArmatureMode;
@@ -864,87 +737,20 @@ public class ArmatureScalerEditor : EditorWindow
             GUI.FocusControl(null);
         }
 
-        if (armatureEditMode == ArmatureEditMode.DirectTransform)
-        {
-        EditorGUILayout.BeginVertical("box");
-        EditorGUILayout.LabelField(UI_TEXT[27], EditorStyles.boldLabel);
-        int nextPreset = DiNePresetAssetSelector.DrawPopup(
-            new GUIContent(
-                Tr("Select Preset", "프리셋 선택", "プリセット選択"),
-                Tr("Presets in the project are detected automatically.", "프로젝트의 프리셋을 자동으로 인식합니다.", "プロジェクト内のプリセットを自動検出します。")),
-            selectedPresetIndex,
-            presetFiles,
-            Tr("No presets found", "프리셋 없음", "プリセットなし"));
-        if (nextPreset != selectedPresetIndex)
-            SelectArmaturePreset(nextPreset);
+        DrawArmaturePresetGUI();
 
-        GUILayout.Space(3f);
-        EditorGUI.BeginDisabledGroup(targetAvatarRoot == null || selectedPresetIndex == -1);
-        if (DrawThemedButton(
-                UI_TEXT[28],
-                new Color(0.30f, 0.82f, 0.76f),
-                true,
-                GUILayout.Height(28f)))
-            LoadSelectedPreset(true, true, true);
-
-        EditorGUILayout.BeginHorizontal();
-        if (GUILayout.Button(UI_TEXT[39]))
-        {
-            LoadSelectedPreset(true, false, false);
-        }
-        if (GUILayout.Button(UI_TEXT[40]))
-        {
-            LoadSelectedPreset(false, true, false);
-        }
-        if (GUILayout.Button(UI_TEXT[43]))
-        {
-            LoadSelectedPreset(false, false, true);
-        }
-        EditorGUILayout.EndHorizontal();
-        
-        EditorGUI.EndDisabledGroup();
-
-        EditorGUI.BeginDisabledGroup(targetAvatarRoot == null);
-        if (GUILayout.Button(Tr("＋ Save as New Preset", "＋ 새 프리셋으로 저장", "＋ 新規プリセットとして保存"), GUILayout.Height(25f)))
-            SaveNewPreset();
-        EditorGUI.EndDisabledGroup();
-        
-        EditorGUILayout.BeginHorizontal();
-        EditorGUI.BeginDisabledGroup(selectedPresetIndex == -1 || presetFiles == null);
-        if (DrawThemedButton(
-                UI_TEXT[31],
-                new Color(0.78f, 0.34f, 0.34f),
-                false,
-                GUILayout.Height(23f)))
-        {
-            if (EditorUtility.DisplayDialog(UI_TEXT[31], UI_TEXT[32] + selectedPresetName + UI_TEXT[33], UI_TEXT[34], UI_TEXT[35]))
-            {
-                string deletedPath = presetFiles[selectedPresetIndex];
-                DeletePreset(deletedPath);
-                RefreshPresetList(preferredPresetPath: deletedPath);
-            }
-        }
-        EditorGUI.EndDisabledGroup();
-
-        if (GUILayout.Button(UI_TEXT[36]))
-        {
-            ResetScalesToDefault();
-        }
-        EditorGUILayout.EndHorizontal();
-        
-        EditorGUILayout.EndVertical();
-        }
-        else
-        {
-            DrawMAPresetGUI();
-        }
-
+        _tutorial?.BeginScrollScope();
         scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
+        HumanoidBodyPart tutorialPreviousPart = selectedPart;
         DrawBodyMap();
+        TutorialAnchor("bone");
+        if (selectedPart != tutorialPreviousPart) TutorialNotify("bone");
         EditorGUILayout.EndScrollView();
-        
+        _tutorial?.EndScrollScope(GUILayoutUtility.GetLastRect());
+        TutorialDraw("bone");
+
         GuiLine(1, 10);
-        
+
         EditorGUILayout.BeginVertical("box");
         GUILayout.Label(UI_TEXT[24], EditorStyles.boldLabel);
 
@@ -958,13 +764,15 @@ public class ArmatureScalerEditor : EditorWindow
             Vector3 scale = GetSelectedScale();
             EditorGUI.BeginChangeCheck();
             float uniformScale = EditorGUILayout.FloatField(UI_TEXT[26], scale.x);
+            TutorialAnchor(armatureEditMode == ArmatureEditMode.DirectTransform ? "scale-uniform" : "ma-scale-uniform");
             if (EditorGUI.EndChangeCheck())
             {
                 ApplySelectedScale(new Vector3(uniformScale, uniformScale, uniformScale));
             }
-            
+
             EditorGUI.BeginChangeCheck();
             Vector3 newScale = EditorGUILayout.Vector3Field(GetPartName(selectedPart) + $" Scale", scale);
+            TutorialAnchor(armatureEditMode == ArmatureEditMode.DirectTransform ? "scale-vector" : "ma-scale-vector");
             if (EditorGUI.EndChangeCheck())
             {
                 ApplySelectedScale(newScale);
@@ -976,23 +784,25 @@ public class ArmatureScalerEditor : EditorWindow
             GUILayout.Space(10);
             GUILayout.Label(UI_TEXT[41], EditorStyles.boldLabel);
             Vector3 position = GetPartPosition(selectedPart);
-            
+
             EditorGUI.BeginChangeCheck();
             Vector3 newPosition = EditorGUILayout.Vector3Field(UI_TEXT[42], position);
+            TutorialAnchor("position");
             if (EditorGUI.EndChangeCheck())
             {
                 UpdatePartPosition(newPosition);
                 ArmatureScalerLogic.ApplyPosition(boneMapping, MapToHumanBodyBones(positionValues));
             }
-            
+
             if (CanRotate(selectedPart))
             {
                 GUILayout.Space(10);
                 GUILayout.Label(UI_TEXT[37], EditorStyles.boldLabel);
                 Quaternion rotation = GetPartRotation(selectedPart);
-                
+
                 EditorGUI.BeginChangeCheck();
                 Quaternion newRotation = Quaternion.Euler(EditorGUILayout.Vector3Field(UI_TEXT[38], rotation.eulerAngles));
+                TutorialAnchor("rotation");
                 if (EditorGUI.EndChangeCheck())
                 {
                     UpdatePartRotation(newRotation);
@@ -1005,57 +815,116 @@ public class ArmatureScalerEditor : EditorWindow
         {
             EditorGUILayout.LabelField(UI_TEXT[25]);
         }
-        
+
         EditorGUILayout.EndVertical();
+        TutorialDraw("scale-uniform", "scale-vector", "position", "rotation", "ma-scale-uniform", "ma-scale-vector");
     }
 
     // ?????? ???ル늅??씤異?에?ル씔???癲ル슢?꾤땟???GUI ??????
-    private void DrawMAPresetGUI()
+    private void DrawArmaturePresetGUI()
     {
         EditorGUILayout.BeginVertical("box");
-        EditorGUILayout.LabelField(Tr("MA Scale Presets", "MA 비율 프리셋", "MA比率プリセット"), EditorStyles.boldLabel);
+        EditorGUILayout.LabelField(Tr("Armature Presets", "아마추어 프리셋", "アーマチュアプリセット"), EditorStyles.boldLabel);
+        EditorGUILayout.LabelField(Tr(
+            "Save direct bone size, position and rotation together with MA Scale Adjuster values.",
+            "기본 뼈의 크기·위치·회전과 MA Scale Adjuster 값을 함께 저장합니다.",
+            "ボーンのサイズ・位置・回転とMA Scale Adjusterの値をまとめて保存します。"), EditorStyles.wordWrappedMiniLabel);
+        GUILayout.Space(3f);
         int nextPreset = DiNePresetAssetSelector.DrawPopup(
             new GUIContent(
                 Tr("Select Preset", "프리셋 선택", "プリセット選択"),
-                Tr("MA presets in the project are detected automatically.", "프로젝트의 MA 프리셋을 자동으로 인식합니다.", "プロジェクト内のMAプリセットを自動検出します。")),
-            selectedMaPresetIndex,
-            maPresetFiles,
-            Tr("No MA presets found", "MA 프리셋 없음", "MAプリセットなし"));
-        if (nextPreset != selectedMaPresetIndex)
-            SelectMaPreset(nextPreset);
+                Tr("Project presets, including older bone and MA presets, are detected automatically.",
+                    "기존 기본 뼈·MA 프리셋도 자동으로 인식합니다.",
+                    "従来のボーン・MAプリセットも自動検出します。")),
+            selectedPresetIndex,
+            presetFiles,
+            Tr("No presets found", "프리셋 없음", "プリセットなし"));
+        TutorialAnchor("preset");
+        if (nextPreset != selectedPresetIndex)
+            SelectArmaturePreset(nextPreset);
+
+        bool hasSelection = presetFiles != null && selectedPresetIndex >= 0 && selectedPresetIndex < presetFiles.Length;
+        ArmatureScalerPresetData selectedPreset = hasSelection
+            ? AssetDatabase.LoadAssetAtPath<ArmatureScalerPresetData>(presetFiles[selectedPresetIndex]) : null;
+        bool hasDirectData = selectedPreset != null;
+        bool hasMaData = hasSelection && (selectedPreset == null || selectedPreset.maScales?.Count > 0);
+        if (hasSelection && !hasDirectData)
+            EditorGUILayout.LabelField(Tr("Legacy MA preset: loads MA values only.", "기존 MA 프리셋: MA 값만 불러옵니다.",
+                "従来のMAプリセット：MAの値のみ読み込みます。"), EditorStyles.wordWrappedMiniLabel);
 
         GUILayout.Space(3f);
-
-        EditorGUI.BeginDisabledGroup(targetAvatarRoot == null || selectedMaPresetIndex < 0);
+        EditorGUI.BeginDisabledGroup(targetAvatarRoot == null || !hasSelection);
         if (DrawThemedButton(
-                Tr("Install Selected MA Preset", "선택한 MA 프리셋 설치", "選択したMAプリセットを適用"),
-                new Color(0.30f, 0.82f, 0.76f), true, GUILayout.Height(26)))
-            LoadSelectedMAPreset();
+                new GUIContent(Tr("Load Entire Preset", "프리셋 전체 불러오기", "プリセット全体を読み込む"),
+                    Tr("Apply the saved direct bone values and MA Scale Adjusters together. Missing Adjusters are added.",
+                        "저장된 기본 뼈 값과 MA Scale Adjuster를 함께 적용합니다. 없는 Adjuster는 추가합니다.",
+                        "保存したボーンの値とMA Scale Adjusterをまとめて適用します。未追加のAdjusterは追加します。")),
+                new Color(0.30f, 0.82f, 0.76f), true, GUILayout.Height(28)))
+            LoadSelectedPreset();
+        TutorialAnchor("preset-load");
+
+        EditorGUI.BeginDisabledGroup(!hasDirectData);
+        EditorGUILayout.BeginHorizontal();
+        if (GUILayout.Button(new GUIContent(Tr("Bone Scale Only", "기본 크기만", "ボーンサイズのみ"),
+                Tr("Load direct bone scale without changing MA Scale Adjusters, rotation or position.",
+                    "MA Scale Adjuster·회전·위치를 유지하고 기본 뼈 크기만 불러옵니다.",
+                    "MA Scale Adjuster・回転・位置を保持し、ボーンのサイズのみ読み込みます。")), GUILayout.Height(24)))
+            LoadSelectedPreset(true, false, false, false);
+        TutorialAnchor("preset-scale");
+        if (GUILayout.Button(new GUIContent(Tr("Rotation Only", "회전만", "回転のみ"),
+                Tr("Load saved bone rotations only.", "저장된 뼈 회전만 불러옵니다.", "保存したボーンの回転のみ読み込みます。")), GUILayout.Height(24)))
+            LoadSelectedPreset(false, true, false, false);
+        TutorialAnchor("preset-rotation");
+        if (GUILayout.Button(new GUIContent(Tr("Position Only", "위치만", "位置のみ"),
+                Tr("Load saved bone positions only.", "저장된 뼈 위치만 불러옵니다.", "保存したボーンの位置のみ読み込みます。")), GUILayout.Height(24)))
+            LoadSelectedPreset(false, false, true, false);
+        TutorialAnchor("preset-position");
+        EditorGUILayout.EndHorizontal();
+        EditorGUI.EndDisabledGroup();
+        EditorGUI.BeginDisabledGroup(!hasMaData);
+        if (GUILayout.Button(new GUIContent(Tr("MA Scale Adjuster Only", "MA Scale Adjuster만 불러오기", "MA Scale Adjusterのみ読み込む"),
+                Tr("Apply MA values and saved child-position options without loading direct bone values.",
+                    "기본 뼈 값을 불러오지 않고 MA 값과 저장된 자식 위치 조정 옵션을 적용합니다.",
+                    "ボーンの値を読み込まず、MAの値と保存した子位置調整オプションを適用します。")), GUILayout.Height(24)))
+            LoadSelectedPreset(false, false, false, true);
+        TutorialAnchor("preset-ma");
+        EditorGUI.EndDisabledGroup();
         EditorGUI.EndDisabledGroup();
 
         EditorGUI.BeginDisabledGroup(targetAvatarRoot == null);
         if (GUILayout.Button(
-                Tr("＋ Save Current as New Preset", "＋ 현재 비율을 새 프리셋으로 저장", "＋ 現在の比率を新規プリセットとして保存"),
-                GUILayout.Height(25f)))
-            SaveNewMAPreset();
+                new GUIContent(Tr("＋ Save Both as New Preset", "＋ 두 조정값을 새 프리셋으로 저장", "＋ 両方の調整値を新規プリセットとして保存"),
+                    Tr("Save the current values from both editing modes in one asset.",
+                        "두 조정 모드의 현재 값을 하나의 에셋에 저장합니다.",
+                        "両方の調整モードの現在値を1つのアセットに保存します。")), GUILayout.Height(30f)))
+            SaveNewPreset();
+        TutorialAnchor("preset-save");
         EditorGUI.EndDisabledGroup();
 
-        EditorGUI.BeginDisabledGroup(selectedMaPresetIndex < 0);
-        if (DrawThemedButton(
-                Tr("Delete Selected MA Preset", "선택한 MA 프리셋 삭제", "選択したMAプリセットを削除"),
-                new Color(0.78f, 0.34f, 0.34f), false, GUILayout.Height(23)) &&
-            EditorUtility.DisplayDialog(
-                Tr("Delete MA Preset", "MA 프리셋 삭제", "MAプリセットを削除"),
-                Tr($"Delete '{selectedMaPresetName}'?", $"'{selectedMaPresetName}' 프리셋을 삭제할까요?", $"'{selectedMaPresetName}' を削除しますか？"),
-                Tr("Delete", "삭제", "削除"), Tr("Cancel", "취소", "キャンセル")))
+        EditorGUILayout.BeginHorizontal();
+        EditorGUI.BeginDisabledGroup(!hasSelection);
+        if (DrawThemedButton(UI_TEXT[31], new Color(0.78f, 0.34f, 0.34f), false, GUILayout.Height(24)) &&
+            EditorUtility.DisplayDialog(UI_TEXT[31], UI_TEXT[32] + selectedPresetName + UI_TEXT[33], UI_TEXT[34], UI_TEXT[35]))
         {
-            string deletedPath = maPresetFiles[selectedMaPresetIndex];
-            AssetDatabase.DeleteAsset(deletedPath);
-            AssetDatabase.Refresh();
-            RefreshPresetList(preferredMaPresetPath: deletedPath);
+            string deletedPath = presetFiles[selectedPresetIndex];
+            DeletePreset(deletedPath);
+            armaturePresetStatus = "";
+            RefreshPresetList(preferredPresetPath: deletedPath);
         }
+        TutorialAnchor("preset-delete");
         EditorGUI.EndDisabledGroup();
+        if (armatureEditMode == ArmatureEditMode.DirectTransform)
+        {
+            EditorGUI.BeginDisabledGroup(targetAvatarRoot == null);
+            if (GUILayout.Button(UI_TEXT[36], GUILayout.Height(24))) ResetScalesToDefault();
+            TutorialAnchor("reset-scales");
+            EditorGUI.EndDisabledGroup();
+        }
+        EditorGUILayout.EndHorizontal();
+        if (!string.IsNullOrEmpty(armaturePresetStatus))
+            EditorGUILayout.HelpBox(armaturePresetStatus, skippedPresetEntries > 0 ? MessageType.Warning : MessageType.Info);
         EditorGUILayout.EndVertical();
+        TutorialDraw("preset", "preset-load", "preset-scale", "preset-rotation", "preset-position", "preset-ma", "preset-save", "preset-delete", "reset-scales");
     }
 
     private bool DrawMASelectedPartControls()
@@ -1071,6 +940,7 @@ public class ArmatureScalerEditor : EditorWindow
                     Tr("Add MA Scale Adjuster", "MA Scale Adjuster 추가", "MA Scale Adjusterを追加"),
                     new Color(0.30f, 0.82f, 0.76f), true, GUILayout.Height(25)))
                 SetMAScale(boneTransform, Vector3.one, "Add MA Scale Adjuster", adjustChildPositions);
+            TutorialAnchor("ma-add");
         }
         else
         {
@@ -1078,6 +948,7 @@ public class ArmatureScalerEditor : EditorWindow
                 Tr("Adjust Child Positions", "자식 위치 조정", "子位置調整"),
                 adjustChildPositions,
                 GUILayout.Height(25));
+            TutorialAnchor("ma-children");
             if (nextAdjustChildPositions != adjustChildPositions)
             {
                 adjustChildPositions = nextAdjustChildPositions;
@@ -1098,7 +969,9 @@ public class ArmatureScalerEditor : EditorWindow
                 Selection.activeGameObject = boneTransform.gameObject;
             }
         }
+        TutorialAnchor("ma-remove");
         EditorGUILayout.EndHorizontal();
+        TutorialDraw("ma-add", "ma-children", "ma-remove");
 
         return boneTransform.GetComponent<ModularAvatarScaleAdjuster>() != null;
     }
@@ -1213,525 +1086,19 @@ public class ArmatureScalerEditor : EditorWindow
             float.IsNaN(scale.z) || float.IsInfinity(scale.z) ? 1f : Mathf.Max(minimum, scale.z));
     }
 
-    private void SaveNewMAPreset()
-    {
-        if (targetAvatarRoot == null) return;
-        MAScaleAdjusterPresetData preset = ScriptableObject.CreateInstance<MAScaleAdjusterPresetData>();
-        foreach (HumanoidBodyPart part in System.Enum.GetValues(typeof(HumanoidBodyPart)))
-        {
-            if (part == HumanoidBodyPart.None || !TryGetLiveBoneTransform(GetBoneType(part), out Transform boneTransform)) continue;
-            ModularAvatarScaleAdjuster adjuster = boneTransform.GetComponent<ModularAvatarScaleAdjuster>();
-            if (adjuster != null)
-                preset.entries.Add(new MAScaleAdjusterPresetData.Entry(
-                    part.ToString(), adjuster.Scale, GetMAAdjustChildPositions(part)));
-        }
-
-        if (preset.entries.Count == 0)
-        {
-            DestroyImmediate(preset);
-            EditorUtility.DisplayDialog(Tr("No MA Adjusters", "MA Adjuster 없음", "MA Adjusterがありません"),
-                Tr("No mapped bones have an MA Scale Adjuster.", "매핑된 뼈에 MA Scale Adjuster가 없습니다.",
-                    "マッピングされたボーンにMA Scale Adjusterがありません。"), "OK");
-            return;
-        }
-
-        string path = EditorUtility.SaveFilePanelInProject(Tr("Save MA Scale Preset", "MA 비율 프리셋 저장", "MA比率プリセットを保存"),
-            "NewMAScalePreset", "asset", Tr("Choose a save location.", "저장 위치를 선택하세요.", "保存先を選択してください。"));
-        if (string.IsNullOrEmpty(path))
-        {
-            DestroyImmediate(preset);
-            return;
-        }
-
-        MAScaleAdjusterPresetData existing = AssetDatabase.LoadAssetAtPath<MAScaleAdjusterPresetData>(path);
-        if (existing != null)
-        {
-            if (!EditorUtility.DisplayDialog(Tr("Overwrite Preset", "프리셋 덮어쓰기", "プリセットを上書き"),
-                    Tr("Overwrite the existing MA preset?", "기존 MA 프리셋을 덮어쓸까요?", "既存のMAプリセットを上書きしますか？"),
-                    Tr("Overwrite", "덮어쓰기", "上書き"), Tr("Cancel", "취소", "キャンセル")))
-            {
-                DestroyImmediate(preset);
-                return;
-            }
-            Undo.RecordObject(existing, "Overwrite MA Scale Preset");
-            existing.entries.Clear();
-            foreach (var entry in preset.entries)
-                existing.entries.Add(new MAScaleAdjusterPresetData.Entry(
-                    entry.part,
-                    entry.Scale,
-                    entry.adjustChildPositions));
-            EditorUtility.SetDirty(existing);
-            DestroyImmediate(preset);
-        }
-        else
-        {
-            AssetDatabase.CreateAsset(preset, path);
-        }
-
-        AssetDatabase.SaveAssets();
-        AssetDatabase.Refresh();
-        RefreshPresetList(preferredMaPresetPath: path);
-    }
-
-    private void LoadSelectedMAPreset()
-    {
-        if (targetAvatarRoot == null || maPresetFiles == null || selectedMaPresetIndex < 0 ||
-            selectedMaPresetIndex >= maPresetFiles.Length) return;
-        DiNePresetAssetSelector.RememberSelection(MaPresetPreferenceKey, maPresetFiles[selectedMaPresetIndex]);
-        MAScaleAdjusterPresetData preset = AssetDatabase.LoadAssetAtPath<MAScaleAdjusterPresetData>(maPresetFiles[selectedMaPresetIndex]);
-        if (preset == null) return;
-
-        int installable = 0;
-        int existingAdjusters = 0;
-        int missing = 0;
-        int childPositionAdjustments = 0;
-        foreach (MAScaleAdjusterPresetData.Entry entry in preset.entries)
-        {
-            if (!System.Enum.TryParse(entry.part, out HumanoidBodyPart part) || part == HumanoidBodyPart.None ||
-                !TryGetLiveBoneTransform(GetBoneType(part), out Transform boneTransform))
-            {
-                missing++;
-                continue;
-            }
-            installable++;
-            if (boneTransform.GetComponent<ModularAvatarScaleAdjuster>() != null) existingAdjusters++;
-            if (entry.adjustChildPositions) childPositionAdjustments++;
-        }
-
-        string confirmation = Tr(
-            $"Install on {installable} bones? {existingAdjusters} existing Adjusters will be updated; {missing} entries will be skipped. {childPositionAdjustments} entries will also change direct child positions.",
-            $"{installable}개 뼈에 설치할까요? 기존 Adjuster {existingAdjusters}개는 갱신되고 {missing}개 항목은 건너뜁니다. {childPositionAdjustments}개 항목은 직계 자식 위치도 변경합니다.",
-            $"{installable}個のボーンに適用しますか？既存Adjuster {existingAdjusters}個を更新し、{missing}項目をスキップします。{childPositionAdjustments}項目は直下の子位置も変更します。" );
-        if (!EditorUtility.DisplayDialog(
-                Tr("Install MA Preset", "MA 프리셋 설치", "MAプリセットを適用"), confirmation,
-                Tr("Install", "설치", "適用"), Tr("Cancel", "취소", "キャンセル"))) return;
-
-        int undoGroup = Undo.GetCurrentGroup();
-        Undo.SetCurrentGroupName("Install MA Scale Preset");
-        int installed = 0;
-        int skipped = 0;
-        foreach (MAScaleAdjusterPresetData.Entry entry in preset.entries)
-        {
-            if (!System.Enum.TryParse(entry.part, out HumanoidBodyPart part) || part == HumanoidBodyPart.None ||
-                !TryGetLiveBoneTransform(GetBoneType(part), out Transform boneTransform))
-            {
-                skipped++;
-                continue;
-            }
-            SetMAAdjustChildPositions(part, entry.adjustChildPositions);
-            SetMAScale(boneTransform, entry.Scale, "Install MA Scale Preset", entry.adjustChildPositions);
-            installed++;
-        }
-        Undo.CollapseUndoOperations(undoGroup);
-        Repaint();
-
-        EditorUtility.DisplayDialog(Tr("MA Preset Installed", "MA 프리셋 설치 완료", "MAプリセット適用完了"),
-            Tr($"Installed on {installed} bones. Skipped {skipped} entries.",
-                $"{installed}개 뼈에 설치했습니다. {skipped}개 항목을 건너뛰었습니다.",
-                $"{installed}個のボーンに適用しました。{skipped}項目をスキップしました。"), "OK");
-    }
-
-    private void DrawShapeKeyGUI()
-    {
-        // ?????怨뚮뼚????????筌????怨좊룴??(?縕?猿녿뎨?T??????れ삀?節낆젂??
-        if (targetAvatarRoot != _prevSnapshotTarget)
-        {
-            _prevSnapshotTarget = targetAvatarRoot;
-            if (targetAvatarRoot != null) TakeSnapshot();
-        }
-
-        EditorGUILayout.BeginVertical("box");
-        EditorGUILayout.LabelField(SK_TEXT[0], EditorStyles.boldLabel);
-        GUILayout.Space(3);
-        
-        EditorGUILayout.BeginHorizontal();
-        targetAvatarRoot = (GameObject)EditorGUILayout.ObjectField(SK_TEXT[1], targetAvatarRoot, typeof(GameObject), true);
-
-        EditorGUI.BeginDisabledGroup(targetAvatarRoot == null);
-        var _prevBg = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
-        if (GUILayout.Button(new GUIContent("↺", Tr("Refresh", "새로고침", "更新")), GUILayout.Width(28), GUILayout.Height(18)))
-        {
-            if (targetAvatarRoot != null)
-            {
-                TakeSnapshot();
-                Debug.Log("[Avi Editor] " + Tr("Snapshot refreshed.", "현재 상태를 원본 스냅샷으로 다시 저장했습니다.", "現在の状態をスナップショットとして保存し直しました。"));
-            }
-        }
-        GUI.backgroundColor = _prevBg;
-        EditorGUI.EndDisabledGroup();
-        EditorGUILayout.EndHorizontal();
-
-        animationClip    = (AnimationClip)EditorGUILayout.ObjectField(SK_TEXT[2], animationClip, typeof(AnimationClip), false);
-        EditorGUILayout.EndVertical();
-
-        GUILayout.Space(5);
-
-        EditorGUI.BeginDisabledGroup(targetAvatarRoot == null || animationClip == null);
-
-        EditorGUILayout.BeginVertical("box");
-        EditorGUILayout.BeginHorizontal();
-        EditorGUILayout.LabelField(SK_TEXT[3], EditorStyles.boldLabel);
-        GUILayout.FlexibleSpace();
-        if (animationClip != null)
-            GUILayout.Label($"{clipTime:F3}s / {animationClip.length:F3}s",
-                new GUIStyle(EditorStyles.miniLabel) { alignment = TextAnchor.MiddleRight, normal = { textColor = new Color(0.6f, 0.6f, 0.6f) } });
-        GUILayout.Space(4);
-        var _prevRtBg = GUI.backgroundColor;
-        GUI.backgroundColor = _realtimePreview ? new Color(0.30f, 0.82f, 0.76f) : new Color(0.35f, 0.35f, 0.38f);
-        var rtStyle = new GUIStyle(GUI.skin.button)
-        {
-            fontSize  = 10,
-            fontStyle = FontStyle.Bold,
-            normal    = { textColor = _realtimePreview ? Color.white : new Color(0.7f, 0.7f, 0.7f) },
-            hover     = { textColor = Color.white },
-        };
-        if (GUILayout.Button(SK_TEXT[13], rtStyle, GUILayout.Height(18)))
-            SetRealtimePreview(!_realtimePreview);
-        GUI.backgroundColor = _prevRtBg;
-        EditorGUILayout.EndHorizontal();
-        GUILayout.Space(3);
-
-        EditorGUI.BeginChangeCheck();
-        clipTime = EditorGUILayout.Slider(clipTime, 0f, animationClip != null ? animationClip.length : 1f);
-        if (EditorGUI.EndChangeCheck())
-        {
-            ApplyShapeKeys();
-            if (_realtimePreview) PreviewPoseNoUndo();
-        }
-
-        EditorGUILayout.EndVertical();
-        EditorGUI.EndDisabledGroup();
-
-        GUILayout.Space(8);
-
-        EditorGUI.BeginDisabledGroup(targetAvatarRoot == null || animationClip == null);
-
-        var btnStyle = new GUIStyle(GUI.skin.button)
-        {
-            fontSize    = 12,
-            fontStyle   = FontStyle.Bold,
-            fixedHeight = 36,
-            normal      = { textColor = Color.white },
-            hover       = { textColor = Color.white },
-        };
-        var prevBgGroup = GUI.backgroundColor;
-
-        EditorGUILayout.BeginHorizontal();
-
-        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
-        if (GUILayout.Button(SK_TEXT[4], btnStyle))
-        {
-            ApplyShapeKeys();
-            Debug.Log($"[Avi Editor] {targetAvatarRoot.name} - {SK_TEXT[7]}");
-        }
-
-        GUI.backgroundColor = new Color(0.25f, 0.65f, 0.60f);
-        if (GUILayout.Button(SK_TEXT[5], btnStyle))
-        {
-            ApplyPose();
-            Debug.Log($"[Avi Editor] {targetAvatarRoot.name} - {SK_TEXT[8]}");
-        }
-
-        GUI.backgroundColor = new Color(0.21f, 0.21f, 0.24f);
-        if (GUILayout.Button(SK_TEXT[6], new GUIStyle(btnStyle)
-            { normal = { textColor = new Color(0.30f, 0.82f, 0.76f) }, hover = { textColor = Color.white } }))
-        {
-            ApplyShapeKeys();
-            ApplyPose();
-            Debug.Log($"[Avi Editor] {targetAvatarRoot.name} - {SK_TEXT[9]}");
-        }
-
-        EditorGUILayout.EndHorizontal();
-        GUI.backgroundColor = prevBgGroup;
-
-        EditorGUI.EndDisabledGroup();
-
-        GUILayout.Space(5);
-
-        // ?????? ?怨뚮옖甕???類????(????궈???縕?猿녿뎨???棺??짆?먰맪????ㅼ굣?? ??????
-        EditorGUI.BeginDisabledGroup(targetAvatarRoot == null || !_hasSnapshot);
-        GUI.backgroundColor = new Color(0.21f, 0.21f, 0.24f);
-        if (GUILayout.Button(SK_TEXT[10], new GUIStyle(GUI.skin.button)
-        {
-            fontSize    = 12,
-            fontStyle   = FontStyle.Bold,
-            fixedHeight = 30,
-            normal      = { textColor = new Color(0.85f, 0.85f, 0.85f) },
-            hover       = { textColor = Color.white },
-        }))
-        {
-            RestoreToOriginal();
-            Debug.Log($"[Avi Editor] {SK_TEXT[11]}");
-        }
-        GUI.backgroundColor = prevBgGroup;
-        EditorGUI.EndDisabledGroup();
-
-        GUILayout.Space(5);
-        EditorGUILayout.HelpBox(SK_TEXT[12], MessageType.Info);
-    }
-
-    private void ApplyShapeKeys()
-    {
-        if (targetAvatarRoot == null || animationClip == null) return;
-
-        foreach (var b in AnimationUtility.GetCurveBindings(animationClip))
-        {
-            if (!b.propertyName.StartsWith("blendShape.")) continue;
-            var curve = AnimationUtility.GetEditorCurve(animationClip, b);
-            if (curve == null) continue;
-
-            var t = string.IsNullOrEmpty(b.path) ? targetAvatarRoot.transform : targetAvatarRoot.transform.Find(b.path);
-            if (t == null) continue;
-            var smr = t.GetComponent<SkinnedMeshRenderer>();
-            if (smr == null || smr.sharedMesh == null) continue;
-            int idx = smr.sharedMesh.GetBlendShapeIndex(b.propertyName.Substring("blendShape.".Length));
-            if (idx < 0) continue;
-
-            Undo.RecordObject(smr, "Avi Editor Freeze ShapeKey");
-            smr.SetBlendShapeWeight(idx, curve.Evaluate(clipTime));
-            ForceUpdateScene(smr);
-        }
-    }
-
     // --- ???쒓낯???ApplyPose ??딅텑???---
-    private void ApplyPose()
-    {
-        if (targetAvatarRoot == null || animationClip == null) return;
-
-        // Undo ??れ삀??쎈뭄????????ш끽維곻쭚?? ???쒓낮彛???ш끽維?琯???????????덊렡. (SampleAnimation??癲ル슢??? ?怨뚮옖筌?????쒓낯????????源끹걬雅?퍔源???
-        Undo.RegisterFullObjectHierarchyUndo(targetAvatarRoot, "Avi Editor Freeze Pose");
-
-        // 1. ??ш끽維????????ш낄援?????ㅺ컼???袁⑸즲??罹?
-        var smrs = targetAvatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true);
-        var backupWeights = new Dictionary<SkinnedMeshRenderer, float[]>();
-        foreach (var smr in smrs)
-        {
-            if (smr.sharedMesh == null) continue;
-            int count = smr.sharedMesh.blendShapeCount;
-            var weights = new float[count];
-            for (int i = 0; i < count; i++) weights[i] = smr.GetBlendShapeWeight(i);
-            backupWeights[smr] = weights;
-        }
-
-        // 2. Unity ???⑤챷沅???れ삀?????⑥?????ル늅??씤異?에?ル씔?????ш끽維?????ㅼ굣??
-        // (????れ삀???????ㅽ떝???????嶺뚮ㅎ?닻???沃섃뫗援?????Β????? ???????????嶺뚮Ĳ?놅쭕???ㅼ굣筌뤿뱶?????ㅼ굣???筌뤾퍓???
-        animationClip.SampleAnimation(targetAvatarRoot, clipTime);
-
-        // 3. ??????ш낄援?????ㅺ컼???怨뚮옖甕??(???????影??탿????????ш낄援???SampleAnimation ???⑤챷?????ㅺ컼?얜쑚????嚥▲꺃???
-        foreach (var kvp in backupWeights)
-        {
-            var smr = kvp.Key;
-            var weights = kvp.Value;
-            for (int i = 0; i < weights.Length; i++)
-            {
-                smr.SetBlendShapeWeight(i, weights[i]);
-            }
-            ForceUpdateScene(smr);
-        }
-
-        // ??ш끽維??Transform ?怨뚮뼚??濡ろ뜑??듭쒜?????袁⑸즵???
-        var allTransforms = targetAvatarRoot.GetComponentsInChildren<Transform>(true);
-        foreach (var t in allTransforms)
-        {
-            ForceUpdateScene(t);
-        }
-    }
-
-    private bool ClipHasPoseData()
-    {
-        if (animationClip == null) return false;
-        foreach (var b in AnimationUtility.GetCurveBindings(animationClip))
-            if (!b.propertyName.StartsWith("blendShape.")) return true;
-        return false;
-    }
-
-    private void PreviewPoseNoUndo()
-    {
-        if (targetAvatarRoot == null || animationClip == null) return;
-        if (!ClipHasPoseData()) return;
-
-        // ??ш끽維????????ш낄援?????ㅺ컼???袁⑸즲??罹?
-        var smrs = targetAvatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true);
-        var backup = new Dictionary<SkinnedMeshRenderer, float[]>();
-        foreach (var smr in smrs)
-        {
-            if (smr.sharedMesh == null) continue;
-            int cnt = smr.sharedMesh.blendShapeCount;
-            var w = new float[cnt];
-            for (int i = 0; i < cnt; i++) w[i] = smr.GetBlendShapeWeight(i);
-            backup[smr] = w;
-        }
-
-        // Undo ???⑤챶????ш끽維?????ル늅??씤異?에?ル씔??????ㅼ굣??(????
-        animationClip.SampleAnimation(targetAvatarRoot, clipTime);
-
-        // ??????ш낄援???怨뚮옖甕??(???κ옇?壤????)
-        foreach (var kvp in backup)
-        {
-            for (int i = 0; i < kvp.Value.Length; i++)
-                kvp.Key.SetBlendShapeWeight(i, kvp.Value[i]);
-            ForceUpdateScene(kvp.Key);
-        }
-        foreach (var t in targetAvatarRoot.GetComponentsInChildren<Transform>(true))
-            ForceUpdateScene(t);
-    }
-
-    private void RestoreTransformsOnly()
-    {
-        if (targetAvatarRoot == null || !_hasSnapshot) return;
-
-        foreach (var kvp in _snapTransforms)
-        {
-            if (kvp.Key == null) continue;
-            kvp.Key.localPosition = kvp.Value.pos;
-            kvp.Key.localRotation = kvp.Value.rot;
-            kvp.Key.localScale    = kvp.Value.scl;
-            ForceUpdateScene(kvp.Key);
-        }
-
-        if (SceneView.lastActiveSceneView != null)
-            SceneView.lastActiveSceneView.Repaint();
-    }
-
-    private void SetRealtimePreview(bool on)
-    {
-        _realtimePreview = on;
-        if (!on)
-        {
-            RestoreTransformsOnly();
-            ApplyShapeKeys();
-        }
-    }
 
     // ??ш끽維곻쭚?? ???ル늅?????縕?猿녿뎨?T???????怨좊룴??????
-    private void TakeSnapshot()
-    {
-        _snapShapeKeys.Clear();
-        _snapTransforms.Clear();
-        if (targetAvatarRoot == null) { _hasSnapshot = false; return; }
 
-        foreach (var smr in targetAvatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
-        {
-            if (smr.sharedMesh == null) continue;
-            int cnt = smr.sharedMesh.blendShapeCount;
-            var w = new float[cnt];
-            for (int i = 0; i < cnt; i++) w[i] = smr.GetBlendShapeWeight(i);
-            _snapShapeKeys[smr] = w;
-        }
-        foreach (Transform t in targetAvatarRoot.GetComponentsInChildren<Transform>(true))
-            _snapTransforms[t] = (t.localPosition, t.localRotation, t.localScale);
-
-        _hasSnapshot = true;
-    }
-
-    private void RestoreToOriginal()
-    {
-        if (targetAvatarRoot == null) return;
-
-        foreach (var smr in targetAvatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
-        {
-            if (smr.sharedMesh == null) continue;
-            Undo.RecordObject(smr, "Avi Editor Restore SMR");
-            int count = smr.sharedMesh.blendShapeCount;
-            _snapShapeKeys.TryGetValue(smr, out var snap);
-            for (int i = 0; i < count; i++)
-            {
-                smr.SetBlendShapeWeight(i, snap != null && i < snap.Length ? snap[i] : 0f);
-            }
-            ForceUpdateScene(smr);
-        }
-
-        foreach (var kvp in _snapTransforms)
-        {
-            if (kvp.Key == null) continue;
-            Undo.RecordObject(kvp.Key, "Avi Editor Restore Pose");
-            kvp.Key.localPosition = kvp.Value.pos;
-            kvp.Key.localRotation = kvp.Value.rot;
-            kvp.Key.localScale    = kvp.Value.scl;
-            ForceUpdateScene(kvp.Key);
-        }
-
-        if (SceneView.lastActiveSceneView != null)
-        {
-            SceneView.lastActiveSceneView.Repaint();
-        }
-
-        clipTime = 0f;
-        GUI.FocusControl(null);
-    }
-    private void SetShapeKeyLanguage(LanguagePreset lang)
-    {
-        switch (lang)
-        {
-            case LanguagePreset.Korean:
-                SK_TEXT = new[]
-                {
-                    "대상 설정",
-                    "대상 오브젝트 (루트)",
-                    "애니메이션 클립",
-                    "시간 조정",
-                    "쉐이프키만 적용",
-                    "포즈만 적용",
-                    "전체 적용",
-                    "쉐이프키 적용 완료.",
-                    "포즈 적용 완료.",
-                    "전체 적용 완료.",
-                    "원본으로 초기화 (T포즈/0)",
-                    "원본 상태로 복원했습니다. (프리팹 또는 T포즈/쉐이프키 0)",
-                    "슬라이더는 미리보기용이며 버튼은 씬에 적용됩니다.",
-                    "실시간 미리보기",
-                };
-                break;
-            case LanguagePreset.Japanese:
-                SK_TEXT = new[]
-                {
-                    "対象設定",
-                    "対象オブジェクト (ルート)",
-                    "アニメーションクリップ",
-                    "時間調整",
-                    "シェイプキーのみ適用",
-                    "ポーズのみ適用",
-                    "すべて適用",
-                    "シェイプキーを適用しました。",
-                    "ポーズを適用しました。",
-                    "すべて適用しました。",
-                    "初期状態に戻す (Tポーズ/0)",
-                    "元の状態に復元しました。 (Prefab または Tポーズ/シェイプキー 0)",
-                    "スライダーはプレビュー用で、ボタンはシーンに適用されます。",
-                    "リアルタイムプレビュー",
-                };
-                break;
-            default:
-                SK_TEXT = new[]
-                {
-                    "Target Settings",
-                    "Target Object (Root)",
-                    "Animation Clip",
-                    "Time Adjustment",
-                    "Shape Keys Only",
-                    "Pose Only",
-                    "Apply All",
-                    "Shape Keys: applied.",
-                    "Pose: applied.",
-                    "All: applied.",
-                    "Initialize Original (T-Pose/0)",
-                    "Restored to original state (Prefab or T-Pose/ShapeKeys 0).",
-                    "Slide to preview. Buttons apply to scene.",
-                    "Real-time Preview",
-                };
-                break;
-        }
-    }
     private void DrawBoneButton(HumanoidBodyPart part, string buttonText, float width, float height)
     {
         HumanoidBodyPart previousSelectedPart = selectedPart;
         HumanBodyBones boneType = GetBoneType(part);
         string boneName = TryGetLiveBoneTransform(boneType, out Transform liveBone) ? liveBone.name : UI_TEXT[30];
         string display = boneName == UI_TEXT[30] ? buttonText : boneName;
-        
+
         GUIStyle buttonStyle = new GUIStyle(GUI.skin.button);
-        
+
         if (selectedPart == part)
         {
             buttonStyle.normal.background = selectedButtonTex;
@@ -1748,17 +1115,17 @@ public class ArmatureScalerEditor : EditorWindow
 
         bool isEnabled = boneName != UI_TEXT[30];
         EditorGUI.BeginDisabledGroup(!isEnabled);
-        
+
         if (GUILayout.Button(display, buttonStyle, GUILayout.Width(width), GUILayout.Height(height)))
         {
             GUI.FocusControl(null);
-            
+
             if (armatureEditMode == ArmatureEditMode.DirectTransform &&
                 previousSelectedPart != part && previousSelectedPart != HumanoidBodyPart.None)
             {
                 ApplyCurrentChanges(previousSelectedPart);
             }
-            
+
             selectedPart = part;
             HumanBodyBones selectedBoneType = GetBoneType(part);
             if (TryGetLiveBoneTransform(selectedBoneType, out Transform boneTransform))
@@ -1775,7 +1142,7 @@ public class ArmatureScalerEditor : EditorWindow
                 lastKnownPosition = Vector3.zero;
             }
         }
-        
+
         EditorGUI.EndDisabledGroup();
     }
 
@@ -1805,13 +1172,13 @@ public class ArmatureScalerEditor : EditorWindow
                part == HumanoidBodyPart.Neck ||
                part == HumanoidBodyPart.LeftShoulder || part == HumanoidBodyPart.RightShoulder;
     }
-    
+
     private Vector3 GetPartScale(HumanoidBodyPart part)
     {
         if (scaleValues.TryGetValue(part, out Vector3 s)) return s;
         return Vector3.one;
     }
-    
+
     private Quaternion GetPartRotation(HumanoidBodyPart part)
     {
         if (rotationValues.TryGetValue(part, out Quaternion r)) return r;
@@ -1832,7 +1199,7 @@ public class ArmatureScalerEditor : EditorWindow
             lastKnownScale = newScale;
         }
     }
-    
+
     private void UpdatePartRotation(Quaternion newRotation)
     {
         if (selectedPart != HumanoidBodyPart.None && rotationValues.ContainsKey(selectedPart))
@@ -1850,7 +1217,7 @@ public class ArmatureScalerEditor : EditorWindow
             lastKnownPosition = newPosition;
         }
     }
-    
+
     private string GetBoneName(HumanoidBodyPart part)
     {
         HumanBodyBones boneType = GetBoneType(part);
@@ -1891,7 +1258,7 @@ public class ArmatureScalerEditor : EditorWindow
             default: return "None";
         }
     }
-    
+
     private HumanBodyBones GetBoneType(HumanoidBodyPart part)
     {
         switch (part)
@@ -1953,7 +1320,7 @@ public class ArmatureScalerEditor : EditorWindow
         }
         return result;
     }
-    
+
     // ?????? ??ш끽維곻쭚?? ?嶺뚮㉡?€쾮???節뚮쳮雅???筌?六???????
     private string GetShortLabel(HumanoidBodyPart part)
     {
@@ -2069,7 +1436,7 @@ public class ArmatureScalerEditor : EditorWindow
         DrawLineAA(new Vector2(cx + legSplit + 8, footY), new Vector2(cx + legSplit + 22, footY + 18), lc, lw);
 
         float r = 12;
-        float rs = 8; 
+        float rs = 8;
 
         DrawJointButton(HumanoidBodyPart.Head, headC, r);
         DrawJointButton(HumanoidBodyPart.Neck, new Vector2(cx, neckTop + 8), rs);
@@ -2265,7 +1632,102 @@ public class ArmatureScalerEditor : EditorWindow
         result.Apply();
         return result;
     }
-    private void LoadSelectedPreset(bool applyScale = true, bool applyRotation = true, bool applyPosition = true)
+    private bool TryGetPresetBone(string key, out HumanoidBodyPart part, out Transform boneTransform)
+    {
+        boneTransform = null;
+        return System.Enum.TryParse(key, out part) && part != HumanoidBodyPart.None &&
+            System.Enum.IsDefined(typeof(HumanoidBodyPart), part) &&
+            TryGetLiveBoneTransform(GetBoneType(part), out boneTransform);
+    }
+
+    private void CaptureArmaturePreset(ArmatureScalerPresetData preset)
+    {
+        preset.scales.dictionary.Clear();
+        preset.rotations.dictionary.Clear();
+        preset.positions.dictionary.Clear();
+        if (preset.maScales == null) preset.maScales = new List<MAScaleAdjusterPresetData.Entry>();
+        preset.maScales.Clear();
+
+        // Read the scene instead of the editing-mode cache, which can be stale in MA mode.
+        foreach (HumanoidBodyPart part in System.Enum.GetValues(typeof(HumanoidBodyPart)))
+        {
+            if (part == HumanoidBodyPart.None || !TryGetLiveBoneTransform(GetBoneType(part), out Transform boneTransform)) continue;
+            string key = part.ToString();
+            preset.scales[key] = new ArmatureScalerPresetData.SerializableVector3(boneTransform.localScale);
+            preset.positions[key] = new ArmatureScalerPresetData.SerializableVector3(boneTransform.localPosition);
+            if (CanRotate(part))
+                preset.rotations[key] = new ArmatureScalerPresetData.SerializableQuaternion(boneTransform.localRotation);
+            ModularAvatarScaleAdjuster adjuster = boneTransform.GetComponent<ModularAvatarScaleAdjuster>();
+            if (adjuster != null)
+                preset.maScales.Add(new MAScaleAdjusterPresetData.Entry(key, adjuster.Scale, GetMAAdjustChildPositions(part)));
+        }
+        preset.scales.OnBeforeSerialize();
+        preset.rotations.OnBeforeSerialize();
+        preset.positions.OnBeforeSerialize();
+    }
+
+    // Returns skipped entries. Unrecorded Adjusters are preserved, including for legacy presets.
+    private int ApplyMAPresetEntries(IReadOnlyList<MAScaleAdjusterPresetData.Entry> entries)
+    {
+        if (entries == null) return 0;
+        int skipped = 0;
+        foreach (var entry in entries)
+        {
+            if (entry == null || !TryGetPresetBone(entry.part, out HumanoidBodyPart part, out Transform boneTransform))
+            {
+                skipped++;
+                continue;
+            }
+            SetMAAdjustChildPositions(part, entry.adjustChildPositions);
+            SetMAScale(boneTransform, entry.Scale, "Load Armature Preset", entry.adjustChildPositions);
+        }
+        return skipped;
+    }
+
+    private void ApplyArmaturePreset(ArmatureScalerPresetData preset, bool applyScale, bool applyRotation,
+        bool applyPosition, bool applyMaScale)
+    {
+        if (preset == null || targetAvatarRoot == null) return;
+        Undo.IncrementCurrentGroup();
+        int undoGroup = Undo.GetCurrentGroup();
+        Undo.SetCurrentGroupName("Load Armature Preset");
+        Undo.RecordObject(this, "Load Armature Preset");
+        skippedPresetEntries = 0;
+        try
+        {
+            // MA child adjustment comes first. Saved absolute bone positions below take precedence,
+            // so mapped children are restored exactly while unrecorded children retain MA behavior.
+            if (applyMaScale) skippedPresetEntries += ApplyMAPresetEntries(preset.maScales);
+            var keys = new HashSet<string>();
+            if (applyScale && preset.scales != null) keys.UnionWith(preset.scales.dictionary.Keys);
+            if (applyRotation && preset.rotations != null) keys.UnionWith(preset.rotations.dictionary.Keys);
+            if (applyPosition && preset.positions != null) keys.UnionWith(preset.positions.dictionary.Keys);
+            foreach (string key in keys)
+            {
+                if (!TryGetPresetBone(key, out HumanoidBodyPart part, out Transform boneTransform))
+                {
+                    skippedPresetEntries++;
+                    continue;
+                }
+                Undo.RecordObject(boneTransform, "Load Armature Preset");
+                if (applyScale && preset.scales != null && preset.scales.TryGetValue(key, out var scale) && scale != null)
+                    boneTransform.localScale = scale.ToVector3();
+                if (applyRotation && CanRotate(part) && preset.rotations != null && preset.rotations.TryGetValue(key, out var rotation) && rotation != null)
+                    boneTransform.localRotation = rotation.ToQuaternion();
+                if (applyPosition && preset.positions != null && preset.positions.TryGetValue(key, out var position) && position != null)
+                    boneTransform.localPosition = position.ToVector3();
+                ForceUpdateScene(boneTransform);
+            }
+            LoadCurrentValues();
+        }
+        finally
+        {
+            Undo.CollapseUndoOperations(undoGroup);
+        }
+    }
+
+    private void LoadSelectedPreset(bool applyScale = true, bool applyRotation = true, bool applyPosition = true,
+        bool applyMaScale = true)
     {
         if (targetAvatarRoot == null)
         {
@@ -2273,67 +1735,45 @@ public class ArmatureScalerEditor : EditorWindow
             return;
         }
 
-        if (selectedPresetIndex >= 0 && selectedPresetIndex < presetFiles.Length)
+        if (presetFiles != null && selectedPresetIndex >= 0 && selectedPresetIndex < presetFiles.Length)
         {
             string filePath = presetFiles[selectedPresetIndex];
             DiNePresetAssetSelector.RememberSelection(ArmaturePresetPreferenceKey, filePath);
             ArmatureScalerPresetData loadedData = AssetDatabase.LoadAssetAtPath<ArmatureScalerPresetData>(filePath);
             if (loadedData != null)
             {
-                if (applyScale)
-                {
-                    scaleValues.Clear();
-                    foreach (var kvp in loadedData.scales.dictionary)
-                    {
-                        if (System.Enum.TryParse(kvp.Key, out HumanoidBodyPart part))
-                            scaleValues[part] = kvp.Value.ToVector3();
-                    }
-                    ArmatureScalerLogic.ApplyScale(boneMapping, MapToHumanBodyBones(scaleValues));
-                }
-
-                if (applyRotation)
-                {
-                    rotationValues.Clear();
-                    foreach (var kvp in loadedData.rotations.dictionary)
-                    {
-                        if (System.Enum.TryParse(kvp.Key, out HumanoidBodyPart part))
-                            rotationValues[part] = kvp.Value.ToQuaternion();
-                    }
-                    ArmatureScalerLogic.ApplyRotation(boneMapping, MapToHumanBodyBonesForRotation(rotationValues));
-                }
-
-                if (applyPosition)
-                {
-                    positionValues.Clear();
-                    foreach (var kvp in loadedData.positions.dictionary)
-                    {
-                        if (System.Enum.TryParse(kvp.Key, out HumanoidBodyPart part))
-                            positionValues[part] = kvp.Value.ToVector3();
-                    }
-                    ArmatureScalerLogic.ApplyPosition(boneMapping, MapToHumanBodyBones(positionValues));
-                }
-
-                string appliedType = "preset";
-                if (applyScale && applyRotation && applyPosition) appliedType = "full preset";
-                else
-                {
-                    List<string> types = new List<string>();
-                    if (applyScale) types.Add("scale");
-                    if (applyRotation) types.Add("rotation");
-                    if (applyPosition) types.Add("position");
-                    appliedType = string.Join(", ", types) + " preset";
-                }
-
-                Debug.Log($"Preset '{Path.GetFileNameWithoutExtension(filePath)}' loaded successfully as {appliedType}.");
+                ApplyArmaturePreset(loadedData, applyScale, applyRotation, applyPosition, applyMaScale);
             }
             else
             {
-                Debug.LogError("Preset file could not be loaded.");
+                MAScaleAdjusterPresetData legacyPreset = AssetDatabase.LoadAssetAtPath<MAScaleAdjusterPresetData>(filePath);
+                if (legacyPreset == null || !applyMaScale) return;
+                Undo.IncrementCurrentGroup();
+                int undoGroup = Undo.GetCurrentGroup();
+                Undo.SetCurrentGroupName("Load Armature Preset");
+                Undo.RecordObject(this, "Load Armature Preset");
+                try
+                {
+                    skippedPresetEntries = ApplyMAPresetEntries(legacyPreset.entries);
+                    LoadCurrentValues();
+                }
+                finally
+                {
+                    Undo.CollapseUndoOperations(undoGroup);
+                }
             }
+            string name = Path.GetFileNameWithoutExtension(filePath);
+            armaturePresetStatus = Tr($"Loaded '{name}'.", $"'{name}' 프리셋을 불러왔습니다.", $"'{name}' を読み込みました。");
+            if (skippedPresetEntries > 0)
+                armaturePresetStatus += Tr($" Skipped {skippedPresetEntries} missing or invalid entries.",
+                    $" 찾을 수 없거나 잘못된 항목 {skippedPresetEntries}개를 건너뛰었습니다.",
+                    $" 見つからない、または無効な{skippedPresetEntries}項目をスキップしました。");
+            Repaint();
         }
     }
     private void SaveNewPreset()
     {
+        if (targetAvatarRoot == null) return;
         string path = EditorUtility.SaveFilePanelInProject(
             Tr("Save Armature Preset", "아마추어 프리셋 저장", "アーマチュアプリセットを保存"),
             "NewArmaturePreset",
@@ -2342,6 +1782,15 @@ public class ArmatureScalerEditor : EditorWindow
         if (string.IsNullOrEmpty(path)) return;
 
         ArmatureScalerPresetData preset = AssetDatabase.LoadAssetAtPath<ArmatureScalerPresetData>(path);
+        if (preset == null && AssetDatabase.LoadMainAssetAtPath(path) != null)
+        {
+            EditorUtility.DisplayDialog(Tr("Choose a New Preset File", "새 프리셋 파일 선택", "新しいプリセットファイルを選択"),
+                Tr("This file is a different asset type. Save the combined preset under a new name.",
+                    "이 파일은 다른 종류의 에셋입니다. 통합 프리셋을 새 이름으로 저장하세요.",
+                    "このファイルは別のアセット形式です。統合プリセットを新しい名前で保存してください。"),
+                Tr("OK", "확인", "確認"));
+            return;
+        }
         bool isNew = preset == null;
         if (!isNew)
         {
@@ -2358,23 +1807,7 @@ public class ArmatureScalerEditor : EditorWindow
             preset = ScriptableObject.CreateInstance<ArmatureScalerPresetData>();
         }
 
-        preset.scales.dictionary.Clear();
-        preset.scales.keys.Clear();
-        preset.scales.values.Clear();
-        preset.rotations.dictionary.Clear();
-        preset.rotations.keys.Clear();
-        preset.rotations.values.Clear();
-        preset.positions.dictionary.Clear();
-        preset.positions.keys.Clear();
-        preset.positions.values.Clear();
-
-        foreach (var kvp in scaleValues)
-            preset.scales.dictionary.Add(kvp.Key.ToString(), new ArmatureScalerPresetData.SerializableVector3(kvp.Value));
-        foreach (var kvp in rotationValues)
-            if (CanRotate(kvp.Key))
-                preset.rotations.dictionary.Add(kvp.Key.ToString(), new ArmatureScalerPresetData.SerializableQuaternion(kvp.Value));
-        foreach (var kvp in positionValues)
-            preset.positions.dictionary.Add(kvp.Key.ToString(), new ArmatureScalerPresetData.SerializableVector3(kvp.Value));
+        CaptureArmaturePreset(preset);
 
         if (isNew)
             AssetDatabase.CreateAsset(preset, path);
@@ -2384,7 +1817,10 @@ public class ArmatureScalerEditor : EditorWindow
         AssetDatabase.Refresh();
         RefreshPresetList(preferredPresetPath: path);
         EditorGUIUtility.PingObject(preset);
-        Debug.Log(Tr($"Preset saved: {path}", $"프리셋 저장 완료: {path}", $"プリセットを保存しました: {path}"));
+        skippedPresetEntries = 0;
+        armaturePresetStatus = Tr($"Saved bone and MA values: {Path.GetFileNameWithoutExtension(path)}",
+            $"기본 뼈·MA 값 저장 완료: {Path.GetFileNameWithoutExtension(path)}",
+            $"ボーン・MAの値を保存しました: {Path.GetFileNameWithoutExtension(path)}");
     }
     private void DeletePreset(string filePath)
     {
@@ -2418,7 +1854,7 @@ public class ArmatureScalerEditor : EditorWindow
         {
             var prevBg = GUI.backgroundColor;
             GUI.backgroundColor = (i == selected) ? new Color(0.30f, 0.82f, 0.76f) : new Color(0.5f, 0.5f, 0.5f, 1f);
-            GUIStyle style = new GUIStyle(GUI.skin.button) { 
+            GUIStyle style = new GUIStyle(GUI.skin.button) {
                 fontStyle = (i == selected) ? FontStyle.Bold : FontStyle.Normal,
                 fontSize = 12,
                 normal = { textColor = (i == selected) ? Color.white : new Color(0.8f, 0.8f, 0.8f) }
@@ -2493,143 +1929,32 @@ public class ArmatureScalerEditor : EditorWindow
         bool bold,
         params GUILayoutOption[] options)
     {
+        return DrawThemedButton(new GUIContent(label), backgroundColor, bold, options);
+    }
+
+    private bool DrawThemedButton(
+        GUIContent label,
+        Color backgroundColor,
+        bool bold,
+        params GUILayoutOption[] options)
+    {
         Color previousBackground = GUI.backgroundColor;
         GUI.backgroundColor = backgroundColor;
-        GUIStyle style = new GUIStyle(GUI.skin.button)
+        GUIStyle style = bold ? themedBoldButtonStyle : themedButtonStyle;
+        if (style == null)
         {
-            fontStyle = bold ? FontStyle.Bold : FontStyle.Normal,
-            fontSize = 12,
-            normal = { textColor = Color.white }
-        };
+            style = new GUIStyle(GUI.skin.button)
+            {
+                fontStyle = bold ? FontStyle.Bold : FontStyle.Normal,
+                fontSize = 12,
+                normal = { textColor = Color.white }
+            };
+            if (bold) themedBoldButtonStyle = style;
+            else themedButtonStyle = style;
+        }
         bool pressed = GUILayout.Button(label, style, options);
         GUI.backgroundColor = previousBackground;
         return pressed;
-    }
-
-    private void DrawExpressionGUI()
-    {
-        if (targetAvatarRoot != _prevExprTarget)
-        {
-            _prevExprTarget = targetAvatarRoot;
-            RefreshBodySmr();
-            _facePreviewDirty = true;
-        }
-
-        var prevBg = GUI.backgroundColor;
-
-        EditorGUILayout.BeginVertical("box");
-        EditorGUILayout.LabelField(language == LanguagePreset.Korean  ? "대상 설정"
-                                 : language == LanguagePreset.Japanese ? "対象設定" : "Target", EditorStyles.boldLabel);
-
-        EditorGUILayout.BeginHorizontal();
-        EditorGUI.BeginChangeCheck();
-        targetAvatarRoot = (GameObject)EditorGUILayout.ObjectField(
-            language == LanguagePreset.Korean  ? "아바타 루트"
-          : language == LanguagePreset.Japanese ? "アバタールート" : "Avatar Root",
-            targetAvatarRoot, typeof(GameObject), true);
-        if (EditorGUI.EndChangeCheck())
-        {
-            RefreshBodySmr();
-            _facePreviewDirty = true;
-        }
-
-        EditorGUI.BeginDisabledGroup(targetAvatarRoot == null);
-        var _prevBgExpr = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
-        if (GUILayout.Button("↺", GUILayout.Width(28), GUILayout.Height(18)))
-        {
-            RefreshBodySmr();
-            _facePreviewDirty = true;
-            Debug.Log("[Avi Editor] 표정 타겟 메쉬와 FX 컨트롤러를 새로고침했습니다.");
-        }
-        GUI.backgroundColor = _prevBgExpr;
-        EditorGUI.EndDisabledGroup();
-        EditorGUILayout.EndHorizontal();
-
-        if (_bodySmr == null && targetAvatarRoot != null)
-            EditorGUILayout.HelpBox(
-                language == LanguagePreset.Korean  ? "Body 메쉬를 찾을 수 없습니다."
-              : language == LanguagePreset.Japanese ? "Bodyメッシュが見つかりません。" : "Body mesh not found.",
-                MessageType.Warning);
-
-        EditorGUILayout.EndVertical();
-        GUILayout.Space(5);
-
-        if (targetAvatarRoot == null || _bodySmr == null)
-        {
-            EditorGUILayout.HelpBox(
-                language == LanguagePreset.Korean  ? "아바타를 할당하면 표정 편집을 시작합니다."
-              : language == LanguagePreset.Japanese ? "アバタを割り当てて表情編集を開始します。" : "Assign an avatar to start editing expressions.",
-                MessageType.Info);
-            return;
-        }
-
-        DrawFacePreview();
-        GUILayout.Space(5);
-
-        _exprMainScroll = EditorGUILayout.BeginScrollView(_exprMainScroll);
-        DrawExpressionClipSection(prevBg);
-        GUILayout.Space(5);
-
-        DrawExpressionFxSection(prevBg);
-        GUILayout.Space(5);
-
-        DrawExpressionShapeKeys(prevBg);
-
-        EditorGUILayout.EndScrollView();
-        GUI.backgroundColor = prevBg;
-    }
-    private void DrawFacePreview()
-    {
-        float size = HeadPreviewSize;
-        Rect previewRect = GUILayoutUtility.GetRect(size, size, GUILayout.ExpandWidth(false));
-        previewRect.x = Mathf.Max(0f, (position.width - size) * 0.5f);
-
-        Color bgCol = EditorGUIUtility.isProSkin ? new Color(0.22f, 0.22f, 0.22f) : new Color(0.76f, 0.76f, 0.76f);
-        EditorGUI.DrawRect(previewRect, bgCol);
-
-        if (Event.current.type == EventType.Repaint)
-        {
-            RenderFacePreview((int)size);
-            if (_faceRT != null)
-                GUI.DrawTexture(previewRect, _faceRT, ScaleMode.ScaleToFit, true);
-            _facePreviewDirty = false;
-        }
-
-        if (HandleHeadPreviewInput(previewRect))
-        {
-            _facePreviewDirty = true;
-            _skePreviewDirty  = true;
-        }
-        DrawHeadPreviewToolbar(previewRect);
-
-        if (Event.current.type == EventType.Used)
-            _facePreviewDirty = true;
-    }
-
-    private void RenderFacePreview(int size)
-    {
-        if (_bodySmr == null || targetAvatarRoot == null) return;
-        if (size <= 0) return;
-        if (!_facePreviewDirty && _faceRT != null && _faceRT.width == size) return;
-
-        if (_faceRT == null || _faceRT.width != size)
-        {
-            if (_faceRT != null)
-            {
-                _faceRT.Release();
-                DestroyImmediate(_faceRT);
-            }
-            _faceRT = new RenderTexture(size, size, 24, RenderTextureFormat.ARGB32)
-                { hideFlags = HideFlags.HideAndDontSave };
-            _faceRT.antiAliasing = 2;
-            _faceRT.Create();
-        }
-
-        var weights = new Dictionary<int, float>();
-        if (_exprShapeValues != null)
-            for (int i = 0; i < _exprShapeValues.Length; i++) weights[i] = _exprShapeValues[i];
-        RenderHeadPreviewTo(_faceRT, _bodySmr, weights);
     }
 
     // ── 얼굴 미리보기 공용 로직 (표정 / 쉐이프키 탭 공용) ──────────────
@@ -2638,132 +1963,13 @@ public class ArmatureScalerEditor : EditorWindow
     // 아바타 키가 다르거나 루트가 회전돼 있으면 얼굴이 화면 밖으로 벗어났다.
     private bool ComputeHeadFraming(Renderer fallbackRenderer, out Vector3 focus, out Vector3 faceDir, out float headSize)
     {
-        focus    = Vector3.zero;
-        faceDir  = Vector3.forward;
-        headSize = 0.25f;
-
-        Transform head = null, leftEye = null, rightEye = null, leftArm = null, rightArm = null;
-        Transform root = targetAvatarRoot != null && fallbackRenderer != null &&
-                         fallbackRenderer.transform.IsChildOf(targetAvatarRoot.transform)
-            ? targetAvatarRoot.transform : fallbackRenderer != null ? fallbackRenderer.transform.root : null;
-
-        // 1) 휴머노이드 아바타가 있으면 본 이름 추측보다 우선한다.
-        var animator = root != null ? root.GetComponentInChildren<Animator>(true) : null;
-        if (animator != null && animator.avatar != null && animator.isHuman)
-        {
-            head     = animator.GetBoneTransform(HumanBodyBones.Head);
-            leftEye  = animator.GetBoneTransform(HumanBodyBones.LeftEye);
-            rightEye = animator.GetBoneTransform(HumanBodyBones.RightEye);
-            leftArm  = animator.GetBoneTransform(HumanBodyBones.LeftUpperArm);
-            rightArm = animator.GetBoneTransform(HumanBodyBones.RightUpperArm);
-        }
-
-        // 2) 이름 기반 매핑으로 보완 (표정 탭에서는 boneMapping 이 아직 비어 있을 수 있다)
-        if (root != null && (head == null || leftEye == null || rightEye == null || leftArm == null || rightArm == null))
-        {
-            var previewBones = ArmatureScalerCore.AssignBoneMappings(root.gameObject);
-            if (previewBones != null)
-            {
-                Transform t;
-                if (head     == null && previewBones.TryGetValue(HumanBodyBones.Head,          out t)) head     = t;
-                if (leftEye  == null && previewBones.TryGetValue(HumanBodyBones.LeftEye,       out t)) leftEye  = t;
-                if (rightEye == null && previewBones.TryGetValue(HumanBodyBones.RightEye,      out t)) rightEye = t;
-                if (leftArm  == null && previewBones.TryGetValue(HumanBodyBones.LeftUpperArm,  out t)) leftArm  = t;
-                if (rightArm == null && previewBones.TryGetValue(HumanBodyBones.RightUpperArm, out t)) rightArm = t;
-            }
-        }
-
-        // 3) 정면 방향: 좌우 대칭 본으로 오른쪽 축을 구해 계산한다.
-        //    루트 오브젝트가 회전돼 있거나 루트가 아바타 상위 부모여도 정확하다.
-        //    눈 → 팔 순서. 눈이 있으면 머리를 돌려 놓은 아바타도 얼굴 정면을 잡는다.
-        Vector3 fwd = ForwardFromPair(leftEye, rightEye);
-        if (fwd.sqrMagnitude < 1e-6f) fwd = ForwardFromPair(leftArm, rightArm);
-        if (fwd.sqrMagnitude < 1e-6f)
-        {
-            Transform fb = root != null ? root : (fallbackRenderer != null ? fallbackRenderer.transform : null);
-            if (fb != null)
-            {
-                Vector3 rf = fb.forward; rf.y = 0f;
-                if (rf.sqrMagnitude > 1e-6f) fwd = rf.normalized;
-            }
-        }
-        if (fwd.sqrMagnitude < 1e-6f) fwd = Vector3.forward;
-        faceDir = fwd.normalized;
-
-        // 4) 머리 위치와 크기
-        if (head != null)
-        {
-            Vector3 headPos = head.position;
-
-            // 체형 비율 추정 (머리 본 높이의 약 16% ≒ 머리 높이)
-            float est = 0.22f;
-            if (root != null)
-            {
-                float h = headPos.y - root.position.y;
-                if (h > 0.05f) est = h * 0.16f;
-            }
-            // 메쉬 바운드 상단으로 실측 후, 추정치 범위 안으로 제한한다.
-            headSize = est;
-            if (fallbackRenderer != null)
-            {
-                float measured = GetHeadFramingBounds(fallbackRenderer).max.y - headPos.y;
-                if (measured > 0.01f)
-                    headSize = Mathf.Clamp(measured, est * 0.6f, est * 2.5f);
-            }
-            headSize = Mathf.Max(0.05f, headSize);
-
-            focus = headPos + Vector3.up * headSize * 0.5f;
-            if (leftEye != null && rightEye != null)
-                focus = (leftEye.position + rightEye.position) * 0.5f;
-        }
-        else if (fallbackRenderer != null)
-        {
-            var b = GetHeadFramingBounds(fallbackRenderer);
-            headSize = Mathf.Max(0.05f, b.size.y * 0.16f);
-            focus    = new Vector3(b.center.x, b.max.y - headSize * 0.5f, b.center.z);
-        }
-        else
-        {
-            return false;
-        }
-
-        return true;
+        return DiNeAvatarHeadFraming.Compute(targetAvatarRoot, fallbackRenderer, out focus, out faceDir, out headSize);
     }
 
     // Renderer bounds may be enlarged for culling (often to several metres).
     // Measure the posed vertices without changing the renderer or its source mesh.
-    private static Bounds GetHeadFramingBounds(Renderer renderer)
-    {
-        if (!(renderer is SkinnedMeshRenderer skin) || skin.sharedMesh == null)
-            return renderer.bounds;
-
-        var baked = new Mesh { hideFlags = HideFlags.HideAndDontSave };
-        try
-        {
-            skin.BakeMesh(baked, false);
-            Vector3[] vertices = baked.vertices;
-            if (vertices.Length == 0) return renderer.bounds;
-            Matrix4x4 toWorld = skin.transform.localToWorldMatrix;
-            var bounds = new Bounds(toWorld.MultiplyPoint3x4(vertices[0]), Vector3.zero);
-            for (int i = 1; i < vertices.Length; i++)
-                bounds.Encapsulate(toWorld.MultiplyPoint3x4(vertices[i]));
-            return bounds;
-        }
-        finally
-        {
-            DestroyImmediate(baked);
-        }
-    }
 
     // 좌(왼쪽 본) → 우(오른쪽 본) 벡터에서 정면 방향을 구한다.
-    private static Vector3 ForwardFromPair(Transform left, Transform right)
-    {
-        if (left == null || right == null) return Vector3.zero;
-        Vector3 r = right.position - left.position;
-        r.y = 0f;
-        if (r.sqrMagnitude < 1e-6f) return Vector3.zero;
-        return Vector3.Cross(r.normalized, Vector3.up).normalized;
-    }
 
     private void RenderHeadPreviewTo(RenderTexture rt, SkinnedMeshRenderer fallbackRenderer,
         IReadOnlyDictionary<int, float> weights = null, Mesh previewMesh = null)
@@ -2833,6 +2039,7 @@ public class ArmatureScalerEditor : EditorWindow
     private void DrawHeadPreviewToolbar(Rect r)
     {
         var resetRect = new Rect(r.xMax - 26f, r.y + 4f, 22f, 18f);
+        TutorialAnchor("head-reset", resetRect);
         var tip = new GUIContent("⟳", Tr("Reset view (drag: rotate, wheel: zoom, alt+drag: pan)",
                                          "시점 초기화 (드래그: 회전, 휠: 확대, Alt+드래그: 이동)",
                                          "視点リセット (ドラッグ: 回転, ホイール: ズーム, Alt+ドラッグ: 移動)"));
@@ -2848,645 +2055,22 @@ public class ArmatureScalerEditor : EditorWindow
         _headPrevPitch    = 0f;
         _headPrevZoom     = 1f;
         _headPrevPan      = Vector2.zero;
-        _facePreviewDirty = true;
         _skePreviewDirty  = true;
         Repaint();
-    }
-    private void DrawExpressionClipSection(Color prevBg)
-    {
-        EditorGUILayout.BeginVertical("box");
-
-        string clipLabel    = language == LanguagePreset.Korean  ? "표정 애니메이션"
-                            : language == LanguagePreset.Japanese ? "表情アニメーション" : "Expression Clip";
-        string newLabel     = language == LanguagePreset.Korean  ? "새로 만들기"
-                            : language == LanguagePreset.Japanese ? "新規作成" : "New";
-        string overwrite    = language == LanguagePreset.Korean  ? "덮어쓰기 저장"
-                            : language == LanguagePreset.Japanese ? "上書き保存" : "Overwrite";
-        string saveAsNew    = language == LanguagePreset.Korean  ? "새 파일로 저장"
-                            : language == LanguagePreset.Japanese ? "新規ファイル保存" : "Save as New";
-
-        EditorGUILayout.LabelField(clipLabel, EditorStyles.boldLabel);
-
-        EditorGUILayout.BeginHorizontal();
-        EditorGUI.BeginChangeCheck();
-        _exprClip = (AnimationClip)EditorGUILayout.ObjectField(_exprClip, typeof(AnimationClip), false);
-        if (EditorGUI.EndChangeCheck() && _exprClip != null)
-        {
-            LoadExpressionFromClip();
-        }
-        if (GUILayout.Button(newLabel, GUILayout.Width(80)))
-        {
-            _exprClip        = null;
-            _exprNewClipName = "New Expression";
-        }
-        EditorGUILayout.EndHorizontal();
-
-        if (_exprClip == null)
-        {
-            _exprNewClipName = EditorGUILayout.TextField(
-                language == LanguagePreset.Korean ? "클립 이름" : language == LanguagePreset.Japanese ? "クリップ名" : "Clip Name",
-                _exprNewClipName);
-        }
-
-        // 제스처 쉐이프키 포함 옵션
-        string gestureKeyLabel = language == LanguagePreset.Korean  ? "재스쳐 클립의 쉐이프키 0값 포함"
-                               : language == LanguagePreset.Japanese ? "ジェスチャークリップのシェイプキー0値を含める"
-                               : "Include Gesture ShapeKeys at 0";
-        string gestureKeyTooltip = language == LanguagePreset.Korean
-            ? "FX 컨트롤러의 재스쳐 애니메이션에 사용된 쉐이프키를 0값으로 함께 저장합니다.\n표정이 겹쳐 일그러지는 현상을 방지합니다."
-            : language == LanguagePreset.Japanese
-            ? "FXコントローラーのジェスチャーアニメーションで使用されているシェイプキーを0値で一緒に保存します。\n表情が重なって歪む現象を防ぎます。"
-            : "Also saves shapekeys used in gesture animations at value 0.\nPrevents expression blending artifacts.";
-        _includeGestureKeys = EditorGUILayout.ToggleLeft(
-            new GUIContent(gestureKeyLabel, gestureKeyTooltip),
-            _includeGestureKeys);
-
-        EditorGUILayout.BeginHorizontal();
-
-        GUI.backgroundColor = new Color(0.25f, 0.65f, 0.60f);
-        EditorGUI.BeginDisabledGroup(_exprClip == null);
-        if (GUILayout.Button(overwrite, GUILayout.ExpandWidth(true), GUILayout.Height(28)))
-            SaveExpressionClip(overwriteExisting: true);
-        EditorGUI.EndDisabledGroup();
-
-        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
-        if (GUILayout.Button(saveAsNew, GUILayout.ExpandWidth(true), GUILayout.Height(28)))
-            SaveExpressionClip(overwriteExisting: false);
-
-        GUI.backgroundColor = prevBg;
-        EditorGUILayout.EndHorizontal();
-
-        EditorGUILayout.EndVertical();
-    }
-
-    private void DrawExpressionFxSection(Color prevBg)
-    {
-        string fxTitle      = language == LanguagePreset.Korean  ? "VRChat FX 연동"
-                            : language == LanguagePreset.Japanese ? "VRChat FX 連携" : "VRChat FX";
-        string replaceLabel = language == LanguagePreset.Korean  ? "현재 표정으로 교체"
-                            : language == LanguagePreset.Japanese ? "現在の表情に差し替え" : "Replace with Current";
-
-        _exprFxExpanded = EditorGUILayout.BeginFoldoutHeaderGroup(_exprFxExpanded, fxTitle);
-        if (_exprFxExpanded)
-        {
-            EditorGUILayout.BeginVertical("box");
-
-            EditorGUI.BeginChangeCheck();
-            _exprFxController = (UnityEditor.Animations.AnimatorController)EditorGUILayout.ObjectField(
-                "FX Controller", _exprFxController,
-                typeof(UnityEditor.Animations.AnimatorController), false);
-            if (EditorGUI.EndChangeCheck()) _exprFxStateSel = -1;
-
-            if (_exprFxController != null)
-            {
-                var layerNames = GetHandLayerNames(_exprFxController);
-                if (layerNames.Length > 0)
-                {
-                    GUILayout.Space(4);
-                    _exprFxLayerSel = Mathf.Clamp(_exprFxLayerSel, 0, layerNames.Length - 1);
-                    _exprFxLayerSel = GUILayout.Toolbar(_exprFxLayerSel, layerNames);
-                    GUILayout.Space(4);
-
-                    var clips = GetHandLayerClips(_exprFxController, layerNames[_exprFxLayerSel]);
-                    if (clips.Length == 0)
-                    {
-                        EditorGUILayout.LabelField(
-                            language == LanguagePreset.Korean ? "레이어에 애니메이션이 없습니다."
-                          : language == LanguagePreset.Japanese ? "レイヤーにアニメーションがありません。"
-                          : "No animations in this layer.", EditorStyles.miniLabel);
-                    }
-                    else
-                    {
-                        var clipNameStyle = new GUIStyle(EditorStyles.miniLabel)
-                        {
-                            alignment = TextAnchor.MiddleRight,
-                            normal    = { textColor = new Color(0.55f, 0.55f, 0.55f) },
-                        };
-
-                        for (int i = 0; i < clips.Length; i++)
-                        {
-                            EditorGUILayout.BeginHorizontal();
-                            bool sel = _exprFxStateSel == i;
-
-                            GUI.backgroundColor = sel ? new Color(0.30f, 0.82f, 0.76f) : prevBg;
-                            string stateLabel = clips[i].state != null ? clips[i].state.name : "(no state)";
-                            if (GUILayout.Button(stateLabel, GUILayout.ExpandWidth(true), GUILayout.Height(22)))
-                            {
-                                if (sel)
-                                {
-                                    _exprFxStateSel    = -1;
-                                    _exprFxPreviewMode = false;
-                                    RestoreWorkingValues();
-                                }
-                                else
-                                {
-                                    if (!_exprFxPreviewMode) SaveWorkingValues();
-                                    _exprFxStateSel    = i;
-                                    _exprFxPreviewMode = true;
-                                    PreviewFxClip(clips[i].clip);
-                                }
-                            }
-                            GUI.backgroundColor = prevBg;
-
-                            string clipName = clips[i].clip != null ? clips[i].clip.name : "(empty)";
-                            GUILayout.Label(clipName, clipNameStyle, GUILayout.Width(110));
-
-                            GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
-                            if (GUILayout.Button(replaceLabel, GUILayout.Width(110), GUILayout.Height(22)))
-                            {
-                                string stateName2 = clips[i].state != null ? clips[i].state.name : "?";
-                                string confirmMsg =
-                                    language == LanguagePreset.Korean
-                                    ? $"'{stateName2}' 슬롯의 애니메이션을 현재 표정으로 교체합니다.\n(Ctrl+Z로 되돌릴 수 있습니다)"
-                                    : language == LanguagePreset.Japanese
-                                    ? $"'{stateName2}' スロットのアニメーションを現在の表情に差し替えます。\n(Ctrl+Z で元に戻せます)"
-                                    : $"Replace the animation in '{stateName2}' with the current expression?\n(Undoable with Ctrl+Z)";
-                                string confirmTitle =
-                                    language == LanguagePreset.Korean  ? "표정 교체 확인"
-                                  : language == LanguagePreset.Japanese ? "表情差し替え確認" : "Confirm Replace";
-                                string ok  = language == LanguagePreset.Korean  ? "교체" : language == LanguagePreset.Japanese ? "差し替え" : "Replace";
-                                string cancel = language == LanguagePreset.Korean  ? "취소" : language == LanguagePreset.Japanese ? "キャンセル" : "Cancel";
-                                if (EditorUtility.DisplayDialog(confirmTitle, confirmMsg, ok, cancel))
-                                    ReplaceClipInFxLayer(_exprFxController, layerNames[_exprFxLayerSel], i);
-                            }
-                            GUI.backgroundColor = prevBg;
-                            EditorGUILayout.EndHorizontal();
-                        }
-                    }
-                }
-                else
-                {
-                    EditorGUILayout.HelpBox(
-                        language == LanguagePreset.Korean  ? "Left Hand 또는 Right Hand 레이어를 찾을 수 없습니다."
-                      : language == LanguagePreset.Japanese ? "Left Hand / Right Hand レイヤーが見つかりません。"
-                      : "No Left Hand or Right Hand layers found.", MessageType.Warning);
-                }
-            }
-
-            EditorGUILayout.EndVertical();
-        }
-        EditorGUILayout.EndFoldoutHeaderGroup();
-    }
-
-    private void DrawExpressionShapeKeys(Color prevBg)
-    {
-        if (_bodySmr == null || _bodySmr.sharedMesh == null) return;
-
-        int count = _bodySmr.sharedMesh.blendShapeCount;
-        if (_exprShapeValues == null || _exprShapeValues.Length != count)
-        {
-            _exprShapeValues = new float[count];
-            for (int i = 0; i < count; i++)
-                _exprShapeValues[i] = _bodySmr.GetBlendShapeWeight(i);
-        }
-
-        EditorGUILayout.BeginVertical("box");
-        string skLabel = language == LanguagePreset.Korean  ? $"쉐이프키  ({count}개)"
-                       : language == LanguagePreset.Japanese ? $"シェイプキー  ({count}個)" : $"Shape Keys  ({count})";
-        EditorGUILayout.LabelField(skLabel, EditorStyles.boldLabel);
-
-        _exprShapeSearch = EditorGUILayout.TextField("", _exprShapeSearch, EditorStyles.toolbarSearchField);
-        GUILayout.Space(3);
-
-        EditorGUILayout.BeginHorizontal();
-        GUILayout.FlexibleSpace();
-        GUI.backgroundColor = new Color(0.21f, 0.21f, 0.24f);
-        string resetAll = language == LanguagePreset.Korean  ? "전체 초기화"
-                        : language == LanguagePreset.Japanese ? "全てリセット" : "Reset All";
-        if (GUILayout.Button(resetAll, GUILayout.Width(90), GUILayout.Height(22)))
-        {
-            for (int i = 0; i < count; i++)
-            {
-                _exprShapeValues[i] = 0f;
-            }
-            _facePreviewDirty = true;
-        }
-        GUI.backgroundColor = prevBg;
-        EditorGUILayout.EndHorizontal();
-        GUILayout.Space(3);
-
-        string searchLower = _exprShapeSearch.ToLower();
-        for (int i = 0; i < count; i++)
-        {
-            string shapeName = _bodySmr.sharedMesh.GetBlendShapeName(i);
-            if (!string.IsNullOrEmpty(searchLower) && !shapeName.ToLower().Contains(searchLower))
-                continue;
-
-            EditorGUILayout.BeginHorizontal();
-            GUILayout.Label(shapeName, GUILayout.Width(160));
-
-            EditorGUI.BeginChangeCheck();
-            float newVal = EditorGUILayout.Slider(_exprShapeValues[i], 0f, 100f);
-            if (EditorGUI.EndChangeCheck())
-            {
-                _exprShapeValues[i] = newVal;
-                _facePreviewDirty = true;
-                Repaint();
-            }
-            EditorGUILayout.EndHorizontal();
-        }
-
-        GUILayout.Space(20);
-        EditorGUILayout.EndVertical();
-    }
-    private void SaveWorkingValues()
-    {
-        if (_bodySmr == null || _bodySmr.sharedMesh == null) return;
-        int cnt = _bodySmr.sharedMesh.blendShapeCount;
-        _exprWorkingValues = new float[cnt];
-        for (int i = 0; i < cnt; i++)
-            _exprWorkingValues[i] = _exprShapeValues != null ? _exprShapeValues[i] : _bodySmr.GetBlendShapeWeight(i);
-    }
-
-    private void RestoreWorkingValues()
-    {
-        if (_bodySmr == null || _exprWorkingValues == null) return;
-        int cnt = Mathf.Min(_exprWorkingValues.Length, _bodySmr.sharedMesh.blendShapeCount);
-        for (int i = 0; i < cnt; i++)
-        {
-            if (_exprShapeValues != null && i < _exprShapeValues.Length)
-                _exprShapeValues[i] = _exprWorkingValues[i];
-        }
-        _facePreviewDirty = true;
-        Repaint();
-    }
-
-    private void PreviewFxClip(AnimationClip clip)
-    {
-        if (clip == null || _bodySmr == null || _bodySmr.sharedMesh == null) return;
-        int cnt = _bodySmr.sharedMesh.blendShapeCount;
-        if (_exprShapeValues == null || _exprShapeValues.Length != cnt)
-        {
-            _exprShapeValues = new float[cnt];
-            for (int i = 0; i < cnt; i++) _exprShapeValues[i] = _bodySmr.GetBlendShapeWeight(i);
-        }
-        // Start every FX preview from the user's working expression; absent curves keep it.
-        if (_exprWorkingValues != null)
-            System.Array.Copy(_exprWorkingValues, _exprShapeValues, Mathf.Min(cnt, _exprWorkingValues.Length));
-
-        string smrPath = AnimationUtility.CalculateTransformPath(_bodySmr.transform, targetAvatarRoot.transform);
-        foreach (var b in AnimationUtility.GetCurveBindings(clip))
-        {
-            if (!b.propertyName.StartsWith("blendShape.")) continue;
-            if (b.path != smrPath) continue;
-            var curve = AnimationUtility.GetEditorCurve(clip, b);
-            if (curve == null) continue;
-            string skName = b.propertyName.Substring("blendShape.".Length);
-            int idx = _bodySmr.sharedMesh.GetBlendShapeIndex(skName);
-            if (idx < 0) continue;
-            float val = curve.Evaluate(0f);
-            if (_exprShapeValues != null && idx < _exprShapeValues.Length)
-                _exprShapeValues[idx] = val;
-        }
-
-        _facePreviewDirty = true;
-        Repaint();
-    }
-
-    private void RefreshBodySmr()
-    {
-        _bodySmr = null;
-        _exprShapeValues = null;
-        _exprWorkingValues = null;
-        _exprFxPreviewMode = false;
-        ReleaseHeadPreview();
-        if (targetAvatarRoot == null) return;
-
-        if (boneMapping == null)
-            boneMapping = ArmatureScalerCore.AssignBoneMappings(targetAvatarRoot);
-
-        foreach (var smr in targetAvatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
-        {
-            if (smr.name == "Body")
-            {
-                _bodySmr = smr;
-                break;
-            }
-        }
-
-        if (_bodySmr == null)
-        {
-            int best = -1;
-            foreach (var smr in targetAvatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
-            {
-                if (smr.sharedMesh == null) continue;
-                int cnt = smr.sharedMesh.blendShapeCount;
-                if (cnt > best) { best = cnt; _bodySmr = smr; }
-            }
-        }
-
-        if (_bodySmr != null && _bodySmr.sharedMesh != null)
-        {
-            int cnt = _bodySmr.sharedMesh.blendShapeCount;
-            _exprShapeValues = new float[cnt];
-            for (int i = 0; i < cnt; i++)
-                _exprShapeValues[i] = _bodySmr.GetBlendShapeWeight(i);
-        }
-
-        _exprFxController = null;
-        _exprFxStateSel   = -1;
-        AutoFindFxController();
-    }
-
-    private void LoadExpressionFromClip()
-    {
-        if (_exprClip == null || _bodySmr == null || _bodySmr.sharedMesh == null) return;
-
-        int cnt = _bodySmr.sharedMesh.blendShapeCount;
-        if (_exprShapeValues == null || _exprShapeValues.Length != cnt)
-        {
-            _exprShapeValues = new float[cnt];
-            for (int i = 0; i < cnt; i++) _exprShapeValues[i] = _bodySmr.GetBlendShapeWeight(i);
-        }
-
-        foreach (var b in AnimationUtility.GetCurveBindings(_exprClip))
-        {
-            if (!b.propertyName.StartsWith("blendShape.")) continue;
-            var curve = AnimationUtility.GetEditorCurve(_exprClip, b);
-            if (curve == null) continue;
-
-            var t = string.IsNullOrEmpty(b.path) ? targetAvatarRoot.transform
-                    : targetAvatarRoot.transform.Find(b.path);
-            if (t == null || t.GetComponent<SkinnedMeshRenderer>() != _bodySmr) continue;
-
-            string skName = b.propertyName.Substring("blendShape.".Length);
-            int idx = _bodySmr.sharedMesh.GetBlendShapeIndex(skName);
-            if (idx < 0) continue;
-
-            float val = curve.Evaluate(0f);
-            _exprShapeValues[idx] = val;
-        }
-
-        _facePreviewDirty = true;
-        Repaint();
-    }
-
-    private void SaveExpressionClip(bool overwriteExisting = false)
-    {
-        if (_bodySmr == null || _bodySmr.sharedMesh == null) return;
-
-        AnimationClip clip;
-        string path;
-
-        if (overwriteExisting && _exprClip != null)
-        {
-            clip = _exprClip;
-            path = AssetDatabase.GetAssetPath(clip);
-        }
-        else
-        {
-            clip = new AnimationClip();
-            string dir = "Assets/Di Ne/Expressions";
-            if (!System.IO.Directory.Exists(dir)) System.IO.Directory.CreateDirectory(dir);
-            string baseName = string.IsNullOrEmpty(_exprNewClipName) ? "New Expression" : _exprNewClipName;
-            if (!overwriteExisting && _exprClip != null)
-                baseName = _exprClip.name;
-            path = AssetDatabase.GenerateUniqueAssetPath($"{dir}/{baseName}.anim");
-        }
-
-        Undo.RecordObject(clip, "Save Expression Clip");
-        clip.ClearCurves();
-
-        // ??筌?痢⑼┼?????????れ삀??쎈뭄????????ш낄援??????????쒓낯??(0???????????
-        HashSet<string> gestureShapeKeyNames = (_includeGestureKeys && _exprFxController != null)
-            ? CollectGestureShapeKeys(_exprFxController)
-            : new HashSet<string>();
-
-        string smrPath = AnimationUtility.CalculateTransformPath(_bodySmr.transform, targetAvatarRoot.transform);
-        int cnt = _bodySmr.sharedMesh.blendShapeCount;
-        for (int i = 0; i < cnt; i++)
-        {
-            float val = _exprShapeValues != null ? _exprShapeValues[i] : _bodySmr.GetBlendShapeWeight(i);
-            string shapeName = _bodySmr.sharedMesh.GetBlendShapeName(i);
-
-            // val??0????????筌?痢⑼┼??????????????????ш낄援???0??좊즴????肉???れ삀??쎈뭄?
-            if (val == 0f && !gestureShapeKeyNames.Contains(shapeName)) continue;
-
-            string propName = "blendShape." + shapeName;
-            var curve = AnimationCurve.Constant(0f, 0f, val);
-            AnimationUtility.SetEditorCurve(clip,
-                EditorCurveBinding.FloatCurve(smrPath, typeof(SkinnedMeshRenderer), propName), curve);
-        }
-
-        if (!overwriteExisting || _exprClip == null)
-        {
-            AssetDatabase.CreateAsset(clip, path);
-            _exprClip = clip;
-        }
-        else
-        {
-            EditorUtility.SetDirty(clip);
-        }
-
-        AssetDatabase.SaveAssets();
-        AssetDatabase.Refresh();
-        Debug.Log($"[Avi Editor] Expression saved → {path}");
     }
 
     /// <summary>
     /// FX ???爾??용굞肉???곷첓??癲ル슢?꾤땟??????ル늅??씤異?에?ル씔????????????blendShape ??ш끽維곩ㅇ???紐껎룂 ?????shapekey癲??????쒓낯???筌뤾퍓???
     /// ??좊즴???0?????100???????れ삀??쎈뭄????????ш낄援??????????? ?袁⑸즵????筌뤾퍓???
     /// </summary>
-    private HashSet<string> CollectGestureShapeKeys(UnityEditor.Animations.AnimatorController ctrl)
-    {
-        var result = new HashSet<string>();
-        var visitedClips = new HashSet<int>();
-
-        foreach (var layer in ctrl.layers)
-        {
-            CollectFromStateMachine(layer.stateMachine, result, visitedClips);
-        }
-        return result;
-    }
-
-    private void CollectFromStateMachine(
-        UnityEditor.Animations.AnimatorStateMachine sm,
-        HashSet<string> result,
-        HashSet<int> visitedClips)
-    {
-        if (sm == null) return;
-
-        foreach (var childState in sm.states)
-        {
-            var clip = childState.state.motion as AnimationClip;
-            if (clip != null && visitedClips.Add(clip.GetInstanceID()))
-                CollectShapeKeysFromClip(clip, result);
-        }
-        // ??筌먐삳빘 ????읐??熬곣뫀肄??沃섃뫗援???????琉?
-        foreach (var sub in sm.stateMachines)
-            CollectFromStateMachine(sub.stateMachine, result, visitedClips);
-    }
-
-    private void CollectShapeKeysFromClip(AnimationClip clip, HashSet<string> result)
-    {
-        foreach (var binding in AnimationUtility.GetCurveBindings(clip))
-        {
-            if (binding.type != typeof(SkinnedMeshRenderer)) continue;
-            if (!binding.propertyName.StartsWith("blendShape.")) continue;
-            // "blendShape.ShapeName" ??"ShapeName"
-            string shapeName = binding.propertyName.Substring("blendShape.".Length);
-            result.Add(shapeName);
-        }
-    }
-
-    private void AutoFindFxController()
-    {
-        if (targetAvatarRoot == null) return;
-
-        System.Type vrcDescType = null;
-        foreach (var asm in System.AppDomain.CurrentDomain.GetAssemblies())
-        {
-            vrcDescType = asm.GetType("VRC.SDK3.Avatars.Components.VRCAvatarDescriptor");
-            if (vrcDescType != null) break;
-        }
-
-        if (vrcDescType != null)
-        {
-            var desc = targetAvatarRoot.GetComponent(vrcDescType);
-            if (desc != null)
-            {
-                var layersProp = vrcDescType.GetField("baseAnimationLayers",
-                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                if (layersProp != null)
-                {
-                    var layers = layersProp.GetValue(desc) as System.Array;
-                    if (layers != null)
-                    {
-                        foreach (var layer in layers)
-                        {
-                            var layerType = layer.GetType();
-                            var typeProp  = layerType.GetField("type",
-                                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                            var animProp  = layerType.GetField("animatorController",
-                                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                            var defProp   = layerType.GetField("isDefault",
-                                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                            if (typeProp == null || animProp == null) continue;
-
-                            string typeStr = typeProp.GetValue(layer).ToString();
-                            if (typeStr != "FX") continue;
-
-                            bool isDef = defProp != null && (bool)defProp.GetValue(layer);
-                            if (isDef) continue;
-
-                            var ctrl = animProp.GetValue(layer) as UnityEditor.Animations.AnimatorController;
-                            if (ctrl != null) { _exprFxController = ctrl; return; }
-                        }
-                    }
-                }
-            }
-        }
-
-        var rootAnimator = targetAvatarRoot.GetComponent<Animator>();
-        if (rootAnimator != null)
-        {
-            var ctrl = rootAnimator.runtimeAnimatorController as UnityEditor.Animations.AnimatorController;
-            if (ctrl != null)
-            {
-                foreach (var layer in ctrl.layers)
-                {
-                    string n = layer.name.ToLower();
-                    if (n.Contains("left hand") || n.Contains("right hand") || n == "fx")
-                    {
-                        _exprFxController = ctrl;
-                        return;
-                    }
-                }
-            }
-        }
-
-        foreach (var anim in targetAvatarRoot.GetComponentsInChildren<Animator>(true))
-        {
-            var ctrl = anim.runtimeAnimatorController as UnityEditor.Animations.AnimatorController;
-            if (ctrl == null) continue;
-            bool hasHand = false;
-            foreach (var layer in ctrl.layers)
-            {
-                string n = layer.name.ToLower();
-                if (n.Contains("left hand") || n.Contains("right hand")) { hasHand = true; break; }
-            }
-            if (hasHand) { _exprFxController = ctrl; return; }
-        }
-
-        string[] guids = AssetDatabase.FindAssets("t:AnimatorController FX", new[] { "Assets" });
-        foreach (var guid in guids)
-        {
-            string p = AssetDatabase.GUIDToAssetPath(guid);
-            var ctrl = AssetDatabase.LoadAssetAtPath<UnityEditor.Animations.AnimatorController>(p);
-            if (ctrl == null) continue;
-            foreach (var layer in ctrl.layers)
-            {
-                string n = layer.name.ToLower();
-                if (n.Contains("left hand") || n.Contains("right hand"))
-                {
-                    _exprFxController = ctrl;
-                    return;
-                }
-            }
-        }
-
-        Debug.LogWarning("[Avi Editor] FX controller not found. Please assign it manually.");
-    }
-
-    private string[] GetHandLayerNames(UnityEditor.Animations.AnimatorController ctrl)
-    {
-        var result = new System.Collections.Generic.List<string>();
-        foreach (var layer in ctrl.layers)
-        {
-            string n = layer.name.ToLower();
-            if (n.Contains("left hand") || n.Contains("lefthand") || n.Contains("right hand") || n.Contains("righthand"))
-                result.Add(layer.name);
-        }
-        return result.ToArray();
-    }
-
-    private struct FxClipEntry { public AnimationClip clip; public UnityEditor.Animations.AnimatorState state; }
-    private FxClipEntry[] GetHandLayerClips(UnityEditor.Animations.AnimatorController ctrl, string layerName)
-    {
-        var result = new System.Collections.Generic.List<FxClipEntry>();
-        foreach (var layer in ctrl.layers)
-        {
-            if (layer.name != layerName) continue;
-            foreach (var state in layer.stateMachine.states)
-            {
-                var motion = state.state.motion as AnimationClip;
-                result.Add(new FxClipEntry { clip = motion, state = state.state });
-            }
-        }
-        return result.ToArray();
-    }
-
-    private void ReplaceClipInFxLayer(UnityEditor.Animations.AnimatorController ctrl, string layerName, int stateIndex)
-    {
-        AnimationClip targetClip = _exprClip;
-        if (targetClip == null)
-        {
-            SaveExpressionClip();
-            targetClip = _exprClip;
-        }
-        if (targetClip == null) return;
-
-        foreach (var layer in ctrl.layers)
-        {
-            if (layer.name != layerName) continue;
-            if (stateIndex < layer.stateMachine.states.Length)
-            {
-                var fxState = layer.stateMachine.states[stateIndex].state;
-                Undo.RecordObject(fxState, "Replace FX Clip");
-                fxState.motion = targetClip;
-                EditorUtility.SetDirty(fxState);
-                AssetDatabase.SaveAssets();
-                Debug.Log($"[Avi Editor] Replaced clip in {layerName}[{stateIndex}] → {targetClip.name}");
-            }
-            break;
-        }
-    }
 
     // ??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已?
     //  SHAPE KEY EDITOR TAB
     // ??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已?
     private void DrawShapeKeyEditorGUI()
     {
+        GameObject tutorialPreviousAvatar = targetAvatarRoot;
+        SkinnedMeshRenderer tutorialPreviousMesh = _skeSmr;
         var prevBg = GUI.backgroundColor;
 
         // ─ 대상 설정 ────────────────────────────────────────────────────────
@@ -3502,6 +2086,7 @@ public class ArmatureScalerEditor : EditorWindow
             language == LanguagePreset.Korean  ? "아바타 루트"
           : language == LanguagePreset.Japanese ? "アバタールート" : "Avatar Root",
             targetAvatarRoot, typeof(GameObject), true);
+        TutorialAnchor("avatar");
         if (EditorGUI.EndChangeCheck() || targetAvatarRoot != _skePrevTarget)
         {
             _skePrevTarget = targetAvatarRoot;
@@ -3524,13 +2109,17 @@ public class ArmatureScalerEditor : EditorWindow
         }
         GUI.backgroundColor = prevBg;
         EditorGUI.EndDisabledGroup();
+        TutorialAnchor("refresh");
         EditorGUILayout.EndHorizontal();
+        if (targetAvatarRoot != tutorialPreviousAvatar) TutorialNotify("avatar");
+        TutorialDraw("avatar", "refresh");
 
         EditorGUI.BeginChangeCheck();
         _skeSmr = (SkinnedMeshRenderer)EditorGUILayout.ObjectField(
             language == LanguagePreset.Korean  ? "대상 메쉬"
           : language == LanguagePreset.Japanese ? "対象メッシュ" : "Target Mesh",
             _skeSmr, typeof(SkinnedMeshRenderer), true);
+        TutorialAnchor("mesh");
         if (EditorGUI.EndChangeCheck())
         {
             SkeResetTarget();
@@ -3539,6 +2128,8 @@ public class ArmatureScalerEditor : EditorWindow
         }
 
         EditorGUILayout.EndVertical();
+        if (_skeSmr != tutorialPreviousMesh || targetAvatarRoot != tutorialPreviousAvatar) TutorialNotify("mesh");
+        TutorialDraw("mesh");
         GUILayout.Space(5);
 
         if (_skePreviewSource != _skeSmr) SkeResetTarget();
@@ -3583,6 +2174,7 @@ public class ArmatureScalerEditor : EditorWindow
 
         // ─ 프리뷰 ────────────────────────────────────────────────────────────
         DrawSkePreview();
+        _tutorial?.BeginScrollScope();
         _skeOuterScroll = EditorGUILayout.BeginScrollView(_skeOuterScroll);
         EditorGUILayout.LabelField(Tr(
             "Preview stays in this window. Create / Apply saves the mesh to the avatar.",
@@ -3604,6 +2196,7 @@ public class ArmatureScalerEditor : EditorWindow
         }
         GUILayout.Space(8);
         EditorGUILayout.EndScrollView();
+        _tutorial?.EndScrollScope(GUILayoutUtility.GetLastRect());
     }
     // Keep the face visible while controls scroll, with room left for controls in short windows.
     private float HeadPreviewSize => Mathf.Max(1f, Mathf.Min(position.width - 20f, 360f,
@@ -3629,9 +2222,12 @@ public class ArmatureScalerEditor : EditorWindow
         if (HandleHeadPreviewInput(previewRect))
         {
             _skePreviewDirty  = true;
-            _facePreviewDirty = true;
         }
         DrawHeadPreviewToolbar(previewRect);
+        TutorialAnchor("head-rotate", previewRect);
+        TutorialAnchor("head-zoom", previewRect);
+        TutorialAnchor("head-pan", previewRect);
+        TutorialDraw("head-rotate", "head-zoom", "head-pan", "head-reset");
 
         if (Event.current.type == EventType.Used)
             _skePreviewDirty = true;
@@ -3670,6 +2266,8 @@ public class ArmatureScalerEditor : EditorWindow
                 { fontStyle = FontStyle.Bold, normal = { textColor = Color.white } };
         }
         _skeSearch = EditorGUILayout.TextField("", _skeSearch, EditorStyles.toolbarSearchField);
+        TutorialAnchor("shape-search");
+        TutorialDraw("shape-search");
         GUILayout.Space(2);
         string searchLower = _skeSearch.ToLower();
         string modifyPreviewTooltip = Tr(
@@ -3677,6 +2275,7 @@ public class ArmatureScalerEditor : EditorWindow
             "아바타의 다른 값은 유지하고 이 키만 미리 봅니다. 다시 누르면 원래 값으로 돌아갑니다.",
             "アバターの他の値を維持して、このキーだけをプレビューします。もう一度押すと元の値に戻ります。");
 
+        _tutorial?.BeginScrollScope();
         _skeSKListScroll = EditorGUILayout.BeginScrollView(_skeSKListScroll, GUILayout.Height(210));
         for (int i = 0; i < shapeNames.Length; i++)
         {
@@ -3701,6 +2300,7 @@ public class ArmatureScalerEditor : EditorWindow
                     SkeApplyMixPreview(_skeMixEntries);
                 }
                 EditorGUI.EndDisabledGroup();
+                TutorialAnchor("mix-add");
                 GUI.backgroundColor = prevBg;
             }
             else // ─ 수정하기: 클릭으로 대상 선택 (+ 믹스 추가 버튼) ─
@@ -3712,6 +2312,7 @@ public class ArmatureScalerEditor : EditorWindow
                 {
                     SkeSelectModifyTarget(i);
                 }
+                TutorialAnchor("shape-select");
                 if (listMode == 2) // 믹스 추가 버튼
                 {
                     GUI.backgroundColor = isInModMix ? new Color(0.30f, 0.82f, 0.76f) : prevBg;
@@ -3722,19 +2323,23 @@ public class ArmatureScalerEditor : EditorWindow
                         _skeModifyMixEntries.Add(new DiNeSkeMixEntry { index = i, weight = 100f });
                         SkeApplyMixPreview(_skeModifyMixEntries);
                     }
+                    TutorialAnchor("mix-add");
                     EditorGUI.EndDisabledGroup();
                 }
                 GUI.backgroundColor = prevBg;
             }
 
             EditorGUILayout.EndHorizontal();
+            TutorialDraw("mix-add", "shape-select");
         }
         EditorGUILayout.EndScrollView();
+        _tutorial?.EndScrollScope(GUILayoutUtility.GetLastRect());
     }
     private bool DrawSkeMixList(List<DiNeSkeMixEntry> mixList, string[] shapeNames,
         Vector2 scroll, out Vector2 newScroll, Color prevBg, bool isModifyMix)
     {
         bool changed = false;
+        _tutorial?.BeginScrollScope();
         newScroll = EditorGUILayout.BeginScrollView(scroll, GUILayout.MaxHeight(150));
         int removeAt = -1;
         for (int i = 0; i < mixList.Count; i++)
@@ -3745,14 +2350,18 @@ public class ArmatureScalerEditor : EditorWindow
             GUILayout.Label(n, GUILayout.Width(115));
             EditorGUI.BeginChangeCheck();
             entry.weight = EditorGUILayout.Slider(entry.weight, 0f, 200f);
+            TutorialAnchor("mix-weight");
             if (EditorGUI.EndChangeCheck()) changed = true;
             if (GUILayout.Button(new GUIContent("−", Tr("Remove from mix", "믹스에서 제거", "ミックスから削除")),
                     GUILayout.Width(22), GUILayout.Height(18)))
                 removeAt = i;
+            TutorialAnchor("mix-remove");
             GUI.backgroundColor = prevBg;
             EditorGUILayout.EndHorizontal();
+            TutorialDraw("mix-weight", "mix-remove");
         }
         EditorGUILayout.EndScrollView();
+        _tutorial?.EndScrollScope(GUILayoutUtility.GetLastRect());
         if (removeAt >= 0) { mixList.RemoveAt(removeAt); changed = true; }
         return changed;
     }
@@ -3785,18 +2394,22 @@ public class ArmatureScalerEditor : EditorWindow
         GUI.backgroundColor = new Color(0.27f, 0.55f, 0.82f);
         string prevL = language == LanguagePreset.Korean ? "미리보기 갱신" : language == LanguagePreset.Japanese ? "プレビュー更新" : "Update Preview";
         if (GUILayout.Button(prevL, GUILayout.Height(22))) SkeApplyMixPreview(_skeMixEntries);
+        TutorialAnchor("mix-preview");
         GUI.backgroundColor = new Color(0.38f, 0.38f, 0.38f);
         string restL = language == LanguagePreset.Korean ? "원본 복원" : language == LanguagePreset.Japanese ? "元に戻す" : "Restore";
         if (GUILayout.Button(restL, GUILayout.Height(22))) { SkeRestoreAndClearPreview(); _skePreviewDirty = true; }
+        TutorialAnchor("mix-restore");
         GUI.backgroundColor = prevBg;
         EditorGUILayout.EndHorizontal();
         EditorGUILayout.EndVertical();
+        TutorialDraw("mix-preview", "mix-restore");
         GUILayout.Space(5);
 
         // ─ 이름 + 생성 ───────────────────────────────────────────────────────
         EditorGUILayout.BeginVertical("box");
         string nameLabel = language == LanguagePreset.Korean ? "새 쉐이프키 이름" : language == LanguagePreset.Japanese ? "新規シェイプキー名" : "New Shape Key Name";
         _skeNewName = EditorGUILayout.TextField(nameLabel, _skeNewName);
+        TutorialAnchor("shape-name");
         GUILayout.Space(4);
         bool canCreate = _skeMixEntries.Count > 0 && !string.IsNullOrWhiteSpace(_skeNewName);
         EditorGUI.BeginDisabledGroup(!canCreate);
@@ -3818,8 +2431,10 @@ public class ArmatureScalerEditor : EditorWindow
             }
         }
         GUI.backgroundColor = prevBg;
+        TutorialAnchor("shape-create");
         EditorGUI.EndDisabledGroup();
         EditorGUILayout.EndVertical();
+        TutorialDraw("shape-name", "shape-create");
     }
 
     private void DrawSkeModify(string[] shapeNames, Color prevBg)
@@ -3872,6 +2487,7 @@ public class ArmatureScalerEditor : EditorWindow
             string scaleLabel = language == LanguagePreset.Korean ? "새 배율 (%)" : language == LanguagePreset.Japanese ? "新しい倍率 (%)" : "New Scale (%)";
             EditorGUI.BeginChangeCheck();
             _skeModifyScale = EditorGUILayout.Slider(scaleLabel, _skeModifyScale, 0f, 200f);
+            TutorialAnchor("shape-scale");
             if (EditorGUI.EndChangeCheck())
             {
                 if (!_skePreviewWeights.ContainsKey(_skeModifyIndex))
@@ -3888,6 +2504,7 @@ public class ArmatureScalerEditor : EditorWindow
                 Tr("Test this key at different weights without changing the scene.",
                     "씬을 변경하지 않고 이 키를 여러 값으로 확인합니다.",
                     "シーンを変更せず、このキーを異なる値で確認します。")), previewWeight, 0f, 100f);
+            TutorialAnchor("shape-preview-weight");
             if (EditorGUI.EndChangeCheck())
             {
                 _skePreviewWeights[_skeModifyIndex] = previewWeight;
@@ -3921,12 +2538,15 @@ public class ArmatureScalerEditor : EditorWindow
             }
             GUI.backgroundColor = prevBg;
             EditorGUI.EndDisabledGroup();
+            TutorialAnchor("shape-apply-scale");
             if (GUILayout.Button(Tr("Restore preview", "미리보기 초기화", "プレビューをリセット"), GUILayout.Height(24)))
             {
                 SkeRestoreAndClearPreview();
                 Repaint();
             }
+            TutorialAnchor("shape-reset-preview");
             EditorGUILayout.EndVertical();
+            TutorialDraw("shape-scale", "shape-preview-weight", "shape-apply-scale", "shape-reset-preview");
         }
         else
         {
@@ -3947,11 +2567,14 @@ public class ArmatureScalerEditor : EditorWindow
             GUI.backgroundColor = new Color(0.27f, 0.55f, 0.82f);
             string prevL2 = language == LanguagePreset.Korean ? "미리보기 갱신" : language == LanguagePreset.Japanese ? "プレビュー更新" : "Update Preview";
             if (GUILayout.Button(prevL2, GUILayout.Height(22))) SkeApplyMixPreview(_skeModifyMixEntries);
+            TutorialAnchor("mix-preview");
             GUI.backgroundColor = new Color(0.38f, 0.38f, 0.38f);
             string restL2 = language == LanguagePreset.Korean ? "원본 복원" : language == LanguagePreset.Japanese ? "元に戻す" : "Restore";
             if (GUILayout.Button(restL2, GUILayout.Height(22))) { SkeRestoreAndClearPreview(); _skePreviewDirty = true; }
+            TutorialAnchor("mix-restore");
             GUI.backgroundColor = prevBg;
             EditorGUILayout.EndHorizontal();
+            TutorialDraw("mix-preview", "mix-restore");
             GUILayout.Space(4);
 
             bool canReplace = _skeModifyMixEntries.Count > 0;
@@ -3976,8 +2599,10 @@ public class ArmatureScalerEditor : EditorWindow
                 }
             }
             GUI.backgroundColor = prevBg;
+            TutorialAnchor("shape-replace");
             EditorGUI.EndDisabledGroup();
             EditorGUILayout.EndVertical();
+            TutorialDraw("shape-replace");
         }
     }
     private void SkeSelectModifyTarget(int keyIndex)
@@ -4102,7 +2727,6 @@ public class ArmatureScalerEditor : EditorWindow
         // The saved mesh now includes this factor; start the next edit at 100%.
         _skeModifyScale = 100f;
         _skePreviewDirty = true;
-        _facePreviewDirty = true;
         Repaint();
     }
 }

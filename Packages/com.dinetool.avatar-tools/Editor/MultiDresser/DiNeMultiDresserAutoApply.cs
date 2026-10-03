@@ -2176,7 +2176,9 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         }
         catch (Exception e)
         {
-            Debug.LogError($"[DiNe] Failed to generate '{dresser.name}': {e.Message}\n{e.StackTrace}");
+            // Let the preprocess hook reject the build and restore the temporary
+            // session instead of uploading partially generated dresser data.
+            throw new InvalidOperationException($"[DiNe] Failed to generate '{dresser.name}'.", e);
         }
     }
 

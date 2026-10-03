@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEditor;
 
-public class DiNeTexturePreviewWindow : EditorWindow
+public partial class DiNeTexturePreviewWindow : EditorWindow
 {
     private Texture _texture;
     private Vector2 _scroll;
@@ -38,32 +38,40 @@ public class DiNeTexturePreviewWindow : EditorWindow
         win.ShowUtility();
     }
 
-    void OnGUI()
+    void DrawToolGUI()
     {
         if (_texture == null) { Close(); return; }
 
         // ── 상단 정보바 ──
         EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
         GUILayout.Label($"{_texture.name}   {_texture.width} × {_texture.height}",
-            new GUIStyle(EditorStyles.boldLabel) { fontSize = 11 });
+            new GUIStyle(EditorStyles.boldLabel) { fontSize = 11 }, GUILayout.MinWidth(0), GUILayout.ExpandWidth(true));
         GUILayout.FlexibleSpace();
 
         // 줌 슬라이더
-        GUILayout.Label("Zoom", GUILayout.Width(36));
+        GUILayout.Label(PreviewText("Zoom", "확대", "拡大"), GUILayout.Width(36));
         _zoom = GUILayout.HorizontalSlider(_zoom, 0.1f, 4f, GUILayout.Width(80));
+        guidedTutorial.Anchor("Zoom", GUILayoutUtility.GetLastRect());
         if (GUILayout.Button("1:1", EditorStyles.toolbarButton, GUILayout.Width(28)))
             { _zoom = 1f; ResizeToZoom(); }
-        if (GUILayout.Button("Fit", EditorStyles.toolbarButton, GUILayout.Width(28)))
+        guidedTutorial.Anchor("ActualSize", GUILayoutUtility.GetLastRect());
+        if (GUILayout.Button(PreviewText("Fit", "맞춤", "合わせる"), EditorStyles.toolbarButton, GUILayout.Width(48)))
             { _zoom = 480f / Mathf.Max(_texture.width, _texture.height); ResizeToZoom(); }
+        guidedTutorial.Anchor("Fit", GUILayoutUtility.GetLastRect());
 
         EditorGUILayout.EndHorizontal();
+        guidedTutorial.DrawControls();
+        guidedTutorial.Draw("Zoom");
+        guidedTutorial.Draw("ActualSize");
+        guidedTutorial.Draw("Fit");
 
         // ── 텍스처 표시 ──
         float drawW = _texture.width  * _zoom;
         float drawH = _texture.height * _zoom;
 
+        guidedTutorial.BeginScrollScope();
         _scroll = EditorGUILayout.BeginScrollView(_scroll,
-            GUILayout.Width(position.width), GUILayout.Height(position.height - 22f));
+            GUILayout.ExpandHeight(true), GUILayout.ExpandWidth(true));
 
         Rect texRect = GUILayoutUtility.GetRect(drawW, drawH,
             GUILayout.Width(drawW), GUILayout.Height(drawH));
@@ -75,6 +83,10 @@ public class DiNeTexturePreviewWindow : EditorWindow
             EditorGUI.DrawTextureTransparent(texRect, _texture, ScaleMode.StretchToFill);
 
         EditorGUILayout.EndScrollView();
+        guidedTutorial.EndScrollScope(GUILayoutUtility.GetLastRect());
+        var tutorialImageViewport = GUILayoutUtility.GetLastRect();
+        guidedTutorial.Draw("Image", tutorialImageViewport);
+        guidedTutorial.Draw("Wheel", tutorialImageViewport);
 
         // 마우스 휠 줌
         if (Event.current.type == EventType.ScrollWheel)

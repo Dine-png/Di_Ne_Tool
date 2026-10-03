@@ -7,7 +7,7 @@ using VRC.SDK3.Avatars.Components;
 using VRC.SDK3.Avatars.ScriptableObjects;
 
 [CustomEditor(typeof(DiNeLightingDesigner))]
-public sealed class DiNeLightingDesignerEditor : Editor
+public sealed partial class DiNeLightingDesignerEditor : Editor
 {
     private static readonly Color MintActive = new Color(0.30f, 0.82f, 0.76f);
     private const string SettingsPresetPreferenceKey = "DiNe.LightingDesigner.SettingsPreset";
@@ -68,6 +68,7 @@ public sealed class DiNeLightingDesignerEditor : Editor
 
     private void OnDisable()
     {
+        tutorial?.Suspend();
         EditorApplication.projectChanged -= OnProjectChanged;
     }
 
@@ -78,6 +79,14 @@ public sealed class DiNeLightingDesignerEditor : Editor
     }
 
     public override void OnInspectorGUI()
+    {
+        EnsureTutorial();
+        tutorial.BeginFrame();
+        try { DrawInspectorContent(); }
+        finally { tutorial.EndFrame(); }
+    }
+
+    private void DrawInspectorContent()
     {
         // EnsureDefaults는 대상 오브젝트를 직접 건드리므로 반드시 Update() 앞에서 호출해야 한다.
         // 뒤에서 부르면 ApplyModifiedProperties가 옛 배열로 덮어써 추가된 항목이 사라진다.
@@ -92,10 +101,14 @@ public sealed class DiNeLightingDesignerEditor : Editor
             35f);
         CurrentLanguage = (DiNeLightingLanguage)languageIndex;
         GUILayout.Space(15f);
+        DrawTutorialControls();
 
         DrawSettingsPreset();
         EditorGUILayout.Space(8f);
         DrawModeTabs();
+        if (tutorial.IsActive && tutorialCourse < 5 && _settingsMode != (tutorialCourse < 2 ? 0 : 1)
+            && tutorial.CurrentStepId != "avatar" && tutorial.CurrentStepId != "targets" && tutorial.CurrentStepId != "automatic")
+            tutorial.Draw(tutorial.CurrentStepId, GUILayoutUtility.GetLastRect());
         EditorGUILayout.Space(8f);
 
         if (_settingsMode == 0)
@@ -194,26 +207,44 @@ public sealed class DiNeLightingDesignerEditor : Editor
                 _settingsPresetPaths,
                 T("프리셋 없음", "No presets found", "プリセットなし"));
             if (selected != _settingsPresetIndex)
+            {
                 SelectSettingsPreset(selected);
+                tutorial.NotifyAction("settings-select");
+            }
+            tutorial.Draw("settings-select", GUILayoutUtility.GetLastRect());
 
             using (new EditorGUILayout.HorizontalScope())
             {
                 using (new EditorGUI.DisabledScope(_settingsPreset == null))
                 {
                     if (MintButton(T("불러오기", "Load", "読み込み"), 24f))
+                    {
                         ApplySelectedPreset();
+                        tutorial.NotifyAction("settings-load");
+                    }
+                    tutorial.Anchor("settings-load", GUILayoutUtility.GetLastRect());
 
                     if (GUILayout.Button(
                         T("현재 설정으로 덮어쓰기", "Overwrite with Current", "現在の設定で上書き"),
                         GUILayout.Height(24f)))
+                    {
                         OverwriteSelectedPreset();
+                        tutorial.NotifyAction("settings-overwrite");
+                    }
+                    tutorial.Anchor("settings-overwrite", GUILayoutUtility.GetLastRect());
                 }
             }
+            tutorial.Draw("settings-load");
+            tutorial.Draw("settings-overwrite");
 
             if (GUILayout.Button(
                 T("＋ 새 프리셋으로 저장", "＋ Save as New Preset", "＋ 新規プリセットとして保存"),
                 GUILayout.Height(26f)))
+            {
                 SaveNewPreset();
+                tutorial.NotifyAction("settings-save");
+            }
+            tutorial.Draw("settings-save", GUILayoutUtility.GetLastRect());
 
             EditorGUILayout.LabelField(
                 T(
@@ -239,6 +270,7 @@ public sealed class DiNeLightingDesignerEditor : Editor
             GUILayout.Label(T("기본 동작", "General", "基本動作"), EditorStyles.boldLabel);
 
             var useEnable = serializedObject.FindProperty("useEnableToggle");
+            EditorGUI.BeginChangeCheck();
             EditorGUILayout.PropertyField(
                 useEnable,
                 new GUIContent(
@@ -247,16 +279,20 @@ public sealed class DiNeLightingDesignerEditor : Editor
                         "끄면 원래 머티리얼 값으로 돌아갑니다. 1 bit.",
                         "When disabled, materials return to their original values. 1 bit.",
                         "OFFにするとマテリアルの元の値に戻ります。1 bit。")));
+            if (EditorGUI.EndChangeCheck()) tutorial.NotifyAction("master");
+            Rect enableRect = GUILayoutUtility.GetLastRect();
+            tutorial.Draw("master", enableRect);
+            if (!useEnable.boolValue) { tutorial.Draw("master-default", enableRect); tutorial.Draw("master-saved", enableRect); }
             if (useEnable.boolValue)
             {
                 using (new EditorGUI.IndentLevelScope())
                 {
-                    EditorGUILayout.PropertyField(
+                    TutorialProperty(
                         serializedObject.FindProperty("enableDefaultOn"),
-                        new GUIContent(T("기본 켜짐", "Default On", "デフォルトON")));
-                    EditorGUILayout.PropertyField(
+                        new GUIContent(T("기본 켜짐", "Default On", "デフォルトON")), "master-default");
+                    TutorialProperty(
                         serializedObject.FindProperty("enableSaved"),
-                        new GUIContent(T("값 저장", "Saved", "値を保存")));
+                        new GUIContent(T("값 저장", "Saved", "値を保存")), "master-saved");
                 }
             }
         }
@@ -333,12 +369,20 @@ public sealed class DiNeLightingDesignerEditor : Editor
         {
             string displayName = DiNeLightingLocalization.ControlName(control);
             string tooltip = DiNeLightingLocalization.ControlTooltip(control);
+            EditorGUI.BeginChangeCheck();
             enabled.boolValue = EditorGUILayout.ToggleLeft(
                 new GUIContent($"{displayName}  ({def.CostBits} bits)", tooltip),
                 enabled.boolValue,
                 EditorStyles.boldLabel);
+            if (EditorGUI.EndChangeCheck()) tutorial.NotifyAction(ControlTutorialId(control, "enabled"));
+            Rect toggleRect = GUILayoutUtility.GetLastRect();
+            tutorial.Draw(ControlTutorialId(control, "enabled"), toggleRect);
 
-            if (!enabled.boolValue) return;
+            if (!enabled.boolValue)
+            {
+                TutorialControlFallback(control, toggleRect);
+                return;
+            }
 
             // 항목 설정은 별도 버튼 없이 활성화 즉시 노출한다.
             using (new EditorGUI.IndentLevelScope())
@@ -348,26 +392,29 @@ public sealed class DiNeLightingDesignerEditor : Editor
                     if (control == DiNeLightingControl.LightMin)
                         DrawLightingRange();
 
-                    EditorGUILayout.PropertyField(
+                    TutorialProperty(
                         element.FindPropertyRelative("initialValue"),
                         new GUIContent(
                             T("초기값", "Initial Value", "初期値"),
                             T(
                                 "메뉴에 처음 들어갔을 때의 위치입니다. 0은 최소 밝기, 1은 최대 밝기입니다.",
                                 "Initial menu position. 0 uses minimum brightness and 1 uses maximum brightness.",
-                                "メニューの初期位置です。0で最小明るさ、1で最大明るさになります。")));
+                                "メニューの初期位置です。0で最小明るさ、1で最大明るさになります。")), ControlTutorialId(control, "initial"));
                 }
                 else
                 {
                     var initial = element.FindPropertyRelative("initialValue");
+                    EditorGUI.BeginChangeCheck();
                     initial.floatValue = EditorGUILayout.Toggle(
                         T("기본 켜짐", "Default On", "デフォルトON"),
                         initial.floatValue > 0.5f) ? 1f : 0f;
+                    if (EditorGUI.EndChangeCheck()) tutorial.NotifyAction(ControlTutorialId(control, "initial"));
+                    tutorial.Draw(ControlTutorialId(control, "initial"), GUILayoutUtility.GetLastRect());
                 }
 
-                EditorGUILayout.PropertyField(
+                TutorialProperty(
                     element.FindPropertyRelative("saved"),
-                    new GUIContent(T("값 저장", "Saved", "値を保存")));
+                    new GUIContent(T("값 저장", "Saved", "値を保存")), ControlTutorialId(control, "saved"));
 
                 DrawControlExtras(control);
             }
@@ -379,30 +426,30 @@ public sealed class DiNeLightingDesignerEditor : Editor
         switch (control)
         {
             case DiNeLightingControl.OutlineTint:
-                EditorGUILayout.PropertyField(
+                TutorialProperty(
                     serializedObject.FindProperty("outlineTintFrom"),
-                    new GUIContent(T("0일 때 색", "Color at 0", "0のときの色")));
-                EditorGUILayout.PropertyField(
+                    new GUIContent(T("0일 때 색", "Color at 0", "0のときの色")), "outline-from");
+                TutorialProperty(
                     serializedObject.FindProperty("outlineTintTo"),
-                    new GUIContent(T("1일 때 색", "Color at 1", "1のときの色")));
+                    new GUIContent(T("1일 때 색", "Color at 1", "1のときの色")), "outline-to");
                 break;
 
             case DiNeLightingControl.OutlineWidth:
-                EditorGUILayout.PropertyField(
+                TutorialProperty(
                     serializedObject.FindProperty("outlineWidthMax"),
-                    new GUIContent(T("최대 두께", "Maximum Width", "最大幅")));
+                    new GUIContent(T("최대 두께", "Maximum Width", "最大幅")), "outline-width");
                 break;
 
             case DiNeLightingControl.Reflectance:
-                EditorGUILayout.PropertyField(
+                TutorialProperty(
                     serializedObject.FindProperty("reflectanceMax"),
-                    new GUIContent(T("최대 반사율", "Maximum Reflectance", "最大反射率")));
+                    new GUIContent(T("최대 반사율", "Maximum Reflectance", "最大反射率")), "reflectance-max");
                 break;
 
             case DiNeLightingControl.LightDirection:
-                EditorGUILayout.PropertyField(
+                TutorialProperty(
                     serializedObject.FindProperty("lightDirection"),
-                    new GUIContent(T("고정 방향", "Fixed Direction", "固定方向")));
+                    new GUIContent(T("고정 방향", "Fixed Direction", "固定方向")), "light-direction");
                 break;
         }
     }
@@ -412,23 +459,23 @@ public sealed class DiNeLightingDesignerEditor : Editor
         var maxLight = serializedObject.FindProperty("maxLightValue");
         var minLight = serializedObject.FindProperty("minLightValue");
 
-        EditorGUILayout.PropertyField(
+        TutorialProperty(
             maxLight,
             new GUIContent(
                 T("최대 밝기", "Maximum Brightness", "最大明るさ"),
                 T(
                     "VRChat 밝기 메뉴가 최댓값일 때 셰이더에 적용할 실제 밝기 수치입니다.",
                     "Actual shader brightness used at the maximum menu value.",
-                    "VRChat明るさメニューが最大のときにシェーダーへ適用する実際の明るさです。")));
+                    "VRChat明るさメニューが最大のときにシェーダーへ適用する実際の明るさです。")), "max-light");
 
-        EditorGUILayout.PropertyField(
+        TutorialProperty(
             minLight,
             new GUIContent(
                 T("최소 밝기", "Minimum Brightness", "最小明るさ"),
                 T(
                     "VRChat 밝기 메뉴가 최솟값일 때 셰이더에 적용할 실제 밝기 수치입니다.",
                     "Actual shader brightness used at the minimum menu value.",
-                    "VRChat明るさメニューが最小のときにシェーダーへ適用する実際の明るさです。")));
+                    "VRChat明るさメニューが最小のときにシェーダーへ適用する実際の明るさです。")), "min-light");
 
         if (minLight.floatValue > maxLight.floatValue)
             minLight.floatValue = maxLight.floatValue;
@@ -459,22 +506,24 @@ public sealed class DiNeLightingDesignerEditor : Editor
         using (new EditorGUILayout.VerticalScope("GroupBox"))
         {
             GUILayout.Label(T("대상", "Targets", "対象"), EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(
+            TutorialProperty(
                 serializedObject.FindProperty("targetShaders"),
-                new GUIContent(T("대상 셰이더", "Target Shaders", "対象シェーダー")));
+                new GUIContent(T("대상 셰이더", "Target Shaders", "対象シェーダー")), "shaders");
 
             _showExcludes = EditorGUILayout.Foldout(
                 _showExcludes,
                 T("제외할 렌더러", "Excluded Renderers", "除外するレンダラー"),
                 true);
+            Rect excludesRect = GUILayoutUtility.GetLastRect();
+            if (!_showExcludes) tutorial.Draw("excludes", excludesRect);
             if (_showExcludes)
             {
                 using (new EditorGUI.IndentLevelScope())
                 {
-                    EditorGUILayout.PropertyField(
+                    TutorialProperty(
                         serializedObject.FindProperty("excludes"),
                         new GUIContent(T("제외 목록", "Exclusion List", "除外リスト")),
-                        true);
+                        "excludes", true);
                 }
             }
         }
@@ -483,6 +532,7 @@ public sealed class DiNeLightingDesignerEditor : Editor
     private void DrawMenuPresets()
     {
         var presetsProperty = serializedObject.FindProperty("presets");
+        Rect fallbackRect = default;
 
         using (new EditorGUILayout.VerticalScope("GroupBox"))
         {
@@ -495,6 +545,7 @@ public sealed class DiNeLightingDesignerEditor : Editor
                         $"VRChat Menu Presets ({presetsProperty.arraySize})",
                         $"VRChatメニュープリセット ({presetsProperty.arraySize})"),
                     true);
+                fallbackRect = GUILayoutUtility.GetLastRect();
                 if (GUILayout.Button(T("추가", "Add", "追加"), EditorStyles.miniButton, GUILayout.Width(48f)))
                 {
                     serializedObject.ApplyModifiedProperties();
@@ -506,9 +557,15 @@ public sealed class DiNeLightingDesignerEditor : Editor
                     EditorUtility.SetDirty(_designer);
                     serializedObject.Update();
                     _showMenuPresets = true;
+                    tutorial.NotifyAction("menu-add");
                     return;
                 }
+                tutorial.Anchor("menu-add", GUILayoutUtility.GetLastRect());
+                if (presetsProperty.arraySize == 0) fallbackRect = GUILayoutUtility.GetLastRect();
             }
+            tutorial.Draw("menu-add");
+            if (!_showMenuPresets || presetsProperty.arraySize == 0)
+                TutorialFallback(fallbackRect, "menu-name", "menu-icon", "menu-include", "menu-value", "menu-delete");
 
             if (!_showMenuPresets) return;
 
@@ -530,6 +587,7 @@ public sealed class DiNeLightingDesignerEditor : Editor
                         "Enable at least one control before adding it to a menu preset.",
                         "メニュープリセットへ追加する前に、制御項目を1つ以上有効にしてください。"),
                     MessageType.Warning);
+                TutorialFallback(GUILayoutUtility.GetLastRect(), "menu-include", "menu-value");
                 return;
             }
 
@@ -541,17 +599,26 @@ public sealed class DiNeLightingDesignerEditor : Editor
                 {
                     using (new EditorGUILayout.HorizontalScope())
                     {
+                        EditorGUI.BeginChangeCheck();
                         EditorGUILayout.PropertyField(element.FindPropertyRelative("name"), GUIContent.none);
+                        if (EditorGUI.EndChangeCheck()) tutorial.NotifyAction("menu-name");
+                        if (i == 0) tutorial.Anchor("menu-name", GUILayoutUtility.GetLastRect());
+                        EditorGUI.BeginChangeCheck();
                         EditorGUILayout.PropertyField(
                             element.FindPropertyRelative("icon"),
                             GUIContent.none,
                             GUILayout.Width(64f));
+                        if (EditorGUI.EndChangeCheck()) tutorial.NotifyAction("menu-icon");
+                        if (i == 0) tutorial.Anchor("menu-icon", GUILayoutUtility.GetLastRect());
                         if (GUILayout.Button(T("삭제", "Delete", "削除"), EditorStyles.miniButton, GUILayout.Width(48f)))
                         {
                             presetsProperty.DeleteArrayElementAtIndex(i);
+                            tutorial.NotifyAction("menu-delete");
                             return;
                         }
+                        if (i == 0) tutorial.Anchor("menu-delete", GUILayoutUtility.GetLastRect());
                     }
+                    if (i == 0) { tutorial.Draw("menu-name"); tutorial.Draw("menu-icon"); tutorial.Draw("menu-delete"); }
 
                     var preset = i < _designer.Presets.Count ? _designer.Presets[i] : null;
                     if (preset == null) continue;
@@ -570,12 +637,14 @@ public sealed class DiNeLightingDesignerEditor : Editor
                                     DiNeLightingLocalization.ControlTooltip(setting.control)),
                                 included,
                                 GUILayout.Width(150f));
+                            if (i == 0 && setting == enabledControls[0]) tutorial.Anchor("menu-include", GUILayoutUtility.GetLastRect());
 
                             using (new EditorGUI.DisabledScope(!nowIncluded))
                             {
                                 float newValue = def.Kind == DiNeLightingControlKind.Toggle
                                     ? (EditorGUILayout.Toggle(value > 0.5f) ? 1f : 0f)
                                     : EditorGUILayout.Slider(value, 0f, 1f);
+                                if (i == 0 && setting == enabledControls[0]) tutorial.Anchor("menu-value", GUILayoutUtility.GetLastRect());
 
                                 if (nowIncluded && (!included || !Mathf.Approximately(newValue, value)))
                                 {
@@ -584,6 +653,8 @@ public sealed class DiNeLightingDesignerEditor : Editor
                                     preset.SetValue(setting.control, newValue);
                                     EditorUtility.SetDirty(_designer);
                                     serializedObject.Update();
+                                    tutorial.NotifyAction("menu-include");
+                                    tutorial.NotifyAction("menu-value");
                                 }
                             }
 
@@ -594,8 +665,10 @@ public sealed class DiNeLightingDesignerEditor : Editor
                                 preset.Remove(setting.control);
                                 EditorUtility.SetDirty(_designer);
                                 serializedObject.Update();
+                                tutorial.NotifyAction("menu-include");
                             }
                         }
+                        if (i == 0 && setting == enabledControls[0]) { tutorial.Draw("menu-include"); tutorial.Draw("menu-value"); }
                     }
                 }
             }
@@ -605,6 +678,7 @@ public sealed class DiNeLightingDesignerEditor : Editor
     private void DrawGroups()
     {
         var groupsProperty = serializedObject.FindProperty("groups");
+        Rect fallbackRect = default;
 
         using (new EditorGUILayout.VerticalScope("GroupBox"))
         {
@@ -617,6 +691,7 @@ public sealed class DiNeLightingDesignerEditor : Editor
                         $"Renderer Groups ({groupsProperty.arraySize})",
                         $"レンダラーグループ ({groupsProperty.arraySize})"),
                     true);
+                fallbackRect = GUILayoutUtility.GetLastRect();
                 if (GUILayout.Button(T("추가", "Add", "追加"), EditorStyles.miniButton, GUILayout.Width(48f)))
                 {
                     serializedObject.ApplyModifiedProperties();
@@ -628,9 +703,15 @@ public sealed class DiNeLightingDesignerEditor : Editor
                     EditorUtility.SetDirty(_designer);
                     serializedObject.Update();
                     _showGroups = true;
+                    tutorial.NotifyAction("group-add");
                     return;
                 }
+                tutorial.Anchor("group-add", GUILayoutUtility.GetLastRect());
+                if (groupsProperty.arraySize == 0) fallbackRect = GUILayoutUtility.GetLastRect();
             }
+            tutorial.Draw("group-add");
+            if (!_showGroups || groupsProperty.arraySize == 0)
+                TutorialFallback(fallbackRect, "group-name", "group-icon", "group-renderers", "group-separate", "group-delete");
 
             if (!_showGroups) return;
 
@@ -653,22 +734,34 @@ public sealed class DiNeLightingDesignerEditor : Editor
                 {
                     using (new EditorGUILayout.HorizontalScope())
                     {
+                        EditorGUI.BeginChangeCheck();
                         EditorGUILayout.PropertyField(element.FindPropertyRelative("name"), GUIContent.none);
+                        if (EditorGUI.EndChangeCheck()) tutorial.NotifyAction("group-name");
+                        if (i == 0) tutorial.Anchor("group-name", GUILayoutUtility.GetLastRect());
+                        EditorGUI.BeginChangeCheck();
                         EditorGUILayout.PropertyField(
                             element.FindPropertyRelative("icon"),
                             GUIContent.none,
                             GUILayout.Width(64f));
+                        if (EditorGUI.EndChangeCheck()) tutorial.NotifyAction("group-icon");
+                        if (i == 0) tutorial.Anchor("group-icon", GUILayoutUtility.GetLastRect());
                         if (GUILayout.Button(T("삭제", "Delete", "削除"), EditorStyles.miniButton, GUILayout.Width(48f)))
                         {
                             groupsProperty.DeleteArrayElementAtIndex(i);
+                            tutorial.NotifyAction("group-delete");
                             return;
                         }
+                        if (i == 0) tutorial.Anchor("group-delete", GUILayoutUtility.GetLastRect());
                     }
+                    if (i == 0) { tutorial.Draw("group-name"); tutorial.Draw("group-icon"); tutorial.Draw("group-delete"); }
 
+                    EditorGUI.BeginChangeCheck();
                     EditorGUILayout.PropertyField(
                         element.FindPropertyRelative("renderers"),
                         new GUIContent(T("렌더러", "Renderers", "レンダラー")),
                         true);
+                    if (EditorGUI.EndChangeCheck()) tutorial.NotifyAction("group-renderers");
+                    if (i == 0) tutorial.Draw("group-renderers", GUILayoutUtility.GetLastRect());
 
                     var group = i < _designer.Groups.Count ? _designer.Groups[i] : null;
                     if (group == null) continue;
@@ -676,6 +769,7 @@ public sealed class DiNeLightingDesignerEditor : Editor
                     EditorGUILayout.LabelField(
                         T("따로 조절할 항목", "Separately Controlled Items", "個別に調整する項目"),
                         EditorStyles.miniBoldLabel);
+                    if (i == 0 && enabledControls.Count == 0) tutorial.Draw("group-separate", GUILayoutUtility.GetLastRect());
                     using (new EditorGUI.IndentLevelScope())
                     {
                         foreach (var setting in enabledControls)
@@ -689,6 +783,7 @@ public sealed class DiNeLightingDesignerEditor : Editor
                                     $"{GetControlDisplayName(setting)}  (+{def.CostBits} bits)",
                                     DiNeLightingLocalization.ControlTooltip(setting.control)),
                                 separated);
+                            if (i == 0 && setting == enabledControls[0]) tutorial.Draw("group-separate", GUILayoutUtility.GetLastRect());
                             if (now == separated) continue;
 
                             serializedObject.ApplyModifiedProperties();
@@ -697,6 +792,7 @@ public sealed class DiNeLightingDesignerEditor : Editor
                             else group.separateControls.Remove(setting.control);
                             EditorUtility.SetDirty(_designer);
                             serializedObject.Update();
+                            tutorial.NotifyAction("group-separate");
                         }
                     }
                 }
@@ -719,6 +815,9 @@ public sealed class DiNeLightingDesignerEditor : Editor
                         "No VRCAvatarDescriptor was found above this object.",
                         "このオブジェクトの親にVRCAvatarDescriptorが見つかりません。"),
                     MessageType.Error);
+                Rect missingRect = GUILayoutUtility.GetLastRect();
+                tutorial.Draw("avatar", missingRect);
+                tutorial.Draw("targets", missingRect);
             }
             else
             {
@@ -730,16 +829,22 @@ public sealed class DiNeLightingDesignerEditor : Editor
                     targetCount > 0
                         ? T($"대상 렌더러 {targetCount}개", $"{targetCount} target renderer(s)", $"対象レンダラー {targetCount}個")
                         : T("대상 렌더러 없음", "No target renderers", "対象レンダラーなし"));
+                Rect targetRect = GUILayoutUtility.GetLastRect();
+                tutorial.Draw("avatar", targetRect);
+                tutorial.Draw("targets", targetRect);
                 EditorGUILayout.LabelField(
                     T(
                         "플레이 모드와 업로드 시 비파괴적으로 자동 적용됩니다.",
                         "Applied automatically and non-destructively in Play Mode and on upload.",
                         "プレイモードとアップロード時に非破壊で自動適用されます。"),
                     EditorStyles.wordWrappedMiniLabel);
+                tutorial.Draw("automatic", GUILayoutUtility.GetLastRect());
             }
 
             DrawBudget(descriptor);
+            tutorial.Draw("budget");
             DrawDiagnostics();
+            tutorial.Draw("diagnostics");
         }
     }
 
@@ -759,6 +864,7 @@ public sealed class DiNeLightingDesignerEditor : Editor
                 $"동기화 파라미터  {total} / {max} bits  (라이팅 {cost})",
                 $"Synced Parameters  {total} / {max} bits  (Lighting {cost})",
                 $"同期パラメーター  {total} / {max} bits  (ライティング {cost})"));
+        tutorial.Anchor("budget", rect);
 
         if (_designer.Presets.Any(preset => preset != null))
         {
@@ -779,6 +885,7 @@ public sealed class DiNeLightingDesignerEditor : Editor
             EditorGUILayout.LabelField(
                 T("확인된 문제 없음", "No issues found", "問題は見つかりませんでした"),
                 EditorStyles.miniLabel);
+            tutorial.Anchor("diagnostics", GUILayoutUtility.GetLastRect());
             return;
         }
 
@@ -789,6 +896,7 @@ public sealed class DiNeLightingDesignerEditor : Editor
             : T($"경고 {warnings}건", $"{warnings} warning(s)", $"警告 {warnings}件");
 
         _showDiagnostics = EditorGUILayout.Foldout(_showDiagnostics, summary, true);
+        tutorial.Anchor("diagnostics", GUILayoutUtility.GetLastRect());
         if (!_showDiagnostics) return;
 
         foreach (var issue in issues.OrderBy(issue => issue.Severity == MessageType.Error ? 0 : 1))
@@ -937,19 +1045,22 @@ public sealed class DiNeLightingDesignerEditor : Editor
 }
 
 [CustomEditor(typeof(DiNeLightingDesignerPreset))]
-public sealed class DiNeLightingDesignerPresetEditor : Editor
+public sealed partial class DiNeLightingDesignerPresetEditor : Editor
 {
     public override void OnInspectorGUI()
     {
-        Rect rect = EditorGUILayout.GetControlRect(false, 42f);
-        EditorGUI.DrawRect(rect, new Color(0.10f, 0.36f, 0.33f));
-        var title = new GUIStyle(EditorStyles.boldLabel)
-        {
-            alignment = TextAnchor.MiddleCenter,
-            fontSize = 15,
-            normal = { textColor = Color.white }
-        };
-        GUI.Label(rect, "LIGHTING PRESET", title);
+        EnsurePresetTutorial();
+        presetTutorial.BeginFrame();
+        try { DrawPresetInspectorContent(); }
+        finally { presetTutorial.EndFrame(); }
+    }
+
+    private void OnDisable() => presetTutorial?.Suspend();
+
+    private void DrawPresetInspectorContent()
+    {
+        DrawPresetHeader();
+        presetTutorial.DrawControls();
 
         EditorGUILayout.Space(8f);
         var preset = (DiNeLightingDesignerPreset)target;
@@ -961,18 +1072,21 @@ public sealed class DiNeLightingDesignerPresetEditor : Editor
             EditorGUILayout.LabelField(
                 DiNeLightingLocalization.T("프리셋 버전", "Preset Version", "プリセットバージョン"),
                 preset.FormatVersion.ToString());
+            presetTutorial.Draw("version", GUILayoutUtility.GetLastRect());
             EditorGUILayout.LabelField(
                 DiNeLightingLocalization.T("활성 제어 항목", "Enabled Controls", "有効な制御項目"),
                 DiNeLightingLocalization.T(
                     preset.EnabledControlCount + "개",
                     preset.EnabledControlCount.ToString(),
                     preset.EnabledControlCount + "個"));
+            presetTutorial.Draw("controls", GUILayoutUtility.GetLastRect());
             EditorGUILayout.LabelField(
                 DiNeLightingLocalization.T("VRChat 메뉴 프리셋", "VRChat Menu Presets", "VRChatメニュープリセット"),
                 DiNeLightingLocalization.T(
                     preset.MenuPresetCount + "개",
                     preset.MenuPresetCount.ToString(),
                     preset.MenuPresetCount + "個"));
+            presetTutorial.Draw("menu-presets", GUILayoutUtility.GetLastRect());
         }
         EditorGUILayout.HelpBox(
             DiNeLightingLocalization.T(
@@ -980,6 +1094,7 @@ public sealed class DiNeLightingDesignerPresetEditor : Editor
                 "Load this from the Lighting Designer component's Settings Preset field, or overwrite it with the current settings.",
                 "Lighting Designerコンポーネントの「設定プリセット」欄から読み込むか、現在の設定で上書きできます。"),
             MessageType.Info);
+        presetTutorial.Draw("load", GUILayoutUtility.GetLastRect());
     }
 }
 #endif

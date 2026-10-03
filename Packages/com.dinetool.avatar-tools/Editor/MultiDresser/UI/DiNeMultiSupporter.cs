@@ -4,7 +4,7 @@ using UnityEngine;
 using System.Collections.Generic;
 
 [CustomEditor(typeof(DiNeMultiDresser))]
-public class DiNeMultiSupporter : Editor
+public partial class DiNeMultiSupporter : Editor
 {
     private Texture2D windowIcon;
     private Texture2D dresserPresetIcon;
@@ -306,6 +306,8 @@ public class DiNeMultiSupporter : Editor
 
     private void OnDisable()
     {
+        if (selectedContentTab == 0) SuspendTutorial();
+        independentTutorial?.Suspend();
         DiNeTogglePreview.ClearForOwner(this);
         toggleMenuChoices?.Dispose();
         EditorApplication.hierarchyChanged -= InvalidateEditorCaches;
@@ -339,9 +341,27 @@ public class DiNeMultiSupporter : Editor
             UnregisterPreviewSessionOwner(ownerId);
             if (restoredPreview) ForcePreviewRepaint();
         }
+        RestoreTutorial();
+        if (selectedContentTab == 1) { SuspendTutorial(); tutorialActive = false; }
     }
 
     public override void OnInspectorGUI()
+    {
+        bool toggleCourse = selectedContentTab == 1;
+        if (toggleCourse) { ConfigureIndependentTutorial(); independentTutorial.BeginFrame(); }
+        else DiNeTutorialBubble.BeginFrame();
+        try
+        {
+            DrawInspectorContent();
+        }
+        finally
+        {
+            if (toggleCourse) independentTutorial.EndFrame();
+            else DiNeTutorialBubble.EndFrame();
+        }
+    }
+
+    private void DrawInspectorContent()
     {
         serializedObject.Update();
 
@@ -360,6 +380,8 @@ public class DiNeMultiSupporter : Editor
         var lang = text[currentLanguage]; 
 
         GUILayout.Space(15);
+        if (selectedContentTab == 1) independentTutorial.DrawControls();
+        else DrawTutorialControls();
 
         EditorGUILayout.BeginVertical("GroupBox");
         EditorGUILayout.LabelField(lang["globalSettings"], EditorStyles.boldLabel);
@@ -367,6 +389,7 @@ public class DiNeMultiSupporter : Editor
         EditorGUILayout.BeginHorizontal();
         Transform before = root.objectReferenceValue as Transform;
         Transform after = EditorGUILayout.ObjectField(lang["avatarRoot"], before, typeof(Transform), true) as Transform;
+        Rect avatarRootAnchor = GUILayoutUtility.GetLastRect();
 
         if (GUILayout.Button(new GUIContent("↺", lang["refreshTooltip"]), GUILayout.Width(30), GUILayout.Height(20)))
         {
@@ -377,6 +400,7 @@ public class DiNeMultiSupporter : Editor
             gen.ReassignFromAvatar();   // 루트/FX/메뉴/파라미터 전부 아바타 기준으로 재배정
             serializedObject.Update();
             GUI.FocusControl(null);
+            NotifyTutorialAction(TutorialStep.Avatar);
         }
         EditorGUILayout.EndHorizontal();
 
@@ -385,7 +409,10 @@ public class DiNeMultiSupporter : Editor
             if (serializedObject.ApplyModifiedProperties()) toggleMenuChoices?.Invalidate();
             gen.ReassignFromAvatar();
             serializedObject.Update();
+            NotifyTutorialAction(TutorialStep.Avatar);
         }
+        DrawTutorialBubble(TutorialStep.Avatar, avatarRootAnchor);
+        if (selectedContentTab == 1) independentTutorial.Draw("avatar", avatarRootAnchor);
 
         // ── 할당된 FX/메뉴가 아바타 내부의 것과 일치하는지 수시 검증 ──
         if (!gen.ValidateAssignment(out string validationMessage))
@@ -401,6 +428,7 @@ public class DiNeMultiSupporter : Editor
                 gen.ReassignFromAvatar();
                 serializedObject.Update();
                 GUI.FocusControl(null);
+                NotifyTutorialAction(TutorialStep.Avatar);
             }
             GUI.backgroundColor = Color.white;
             EditorGUILayout.Space(2);
@@ -422,6 +450,7 @@ public class DiNeMultiSupporter : Editor
             Localized("Wardrobe", "옷장", "衣装"),
             Localized("Independent Toggles", "독립 토글", "独立トグル")
         }, 35);
+        DrawTutorialNavigation(GUILayoutUtility.GetLastRect());
         if (nextContentTab != selectedContentTab)
         {
             // Finish delayed text editing while the old page is still drawn this event.
@@ -436,6 +465,7 @@ public class DiNeMultiSupporter : Editor
         // [자동 적용 힌트]
         GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f);
         EditorGUILayout.HelpBox(lang["autoApplyHint"], MessageType.Info);
+        DrawTutorialBubble(TutorialStep.AutoApply, GUILayoutUtility.GetLastRect());
         GUI.backgroundColor = Color.white;
 
         GUILayout.Space(5);
@@ -466,6 +496,7 @@ public class DiNeMultiSupporter : Editor
         GUI.backgroundColor = Color.white;
 
         if (serializedObject.ApplyModifiedProperties()) toggleMenuChoices?.Invalidate();
+        ValidateTutorialProgress();
         if (nextContentTab != selectedContentTab)
         {
             // Delayed fields commit on focus loss after OnInspectorGUI returns.
@@ -481,12 +512,15 @@ public class DiNeMultiSupporter : Editor
     {
         tab = Mathf.Clamp(tab, 0, 1);
         if (tab == selectedContentTab) return;
+        if (selectedContentTab == 0) { SuspendTutorial(); tutorialActive = false; }
+        else independentTutorial?.Suspend();
         ClearPreview();
         DiNeTogglePreview.ClearForOwner(this);
         draggedItemIndex = -1;
         dragTargetIndex = -1;
         itemRects.Clear();
         selectedContentTab = tab;
+        if (tab == 0) RestoreTutorial();
         SessionState.SetInt(ContentTabSessionKey, tab);
         Repaint();
     }
@@ -510,6 +544,7 @@ public class DiNeMultiSupporter : Editor
                 RefreshPreview(gen, gen.layers[previewLayerIndex]);
         }
         EditorGUILayout.EndVertical();
+        DrawTutorialBubble(TutorialStep.ShapeKeys, tutorialShapeTargetAnchor);
 
         EditorGUILayout.Space(8);
         EditorGUILayout.LabelField(lang["layerCategory"], EditorStyles.boldLabel);
@@ -534,6 +569,7 @@ public class DiNeMultiSupporter : Editor
         EditorGUILayout.BeginHorizontal();
         if (selectedLayerIndex >= layers.arraySize) selectedLayerIndex = layers.arraySize - 1;
         selectedLayerIndex = DrawCustomToolbar(selectedLayerIndex, tabNames.ToArray(), 35);
+        Rect categoryTabsAnchor = GUILayoutUtility.GetLastRect();
 
         GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
         if (GUILayout.Button("+", GUILayout.Width(40), GUILayout.Height(35)))
@@ -559,8 +595,11 @@ public class DiNeMultiSupporter : Editor
             selectedLayerIndex = layers.arraySize - 1;
             GUI.FocusControl(null);
         }
+        Rect addCategoryAnchor = GUILayoutUtility.GetLastRect();
         GUI.backgroundColor = Color.white;
         EditorGUILayout.EndHorizontal();
+        DrawTutorialBubble(TutorialStep.Categories, addCategoryAnchor);
+        DrawTutorialBubble(TutorialStep.CategorySwitch, categoryTabsAnchor);
 
         DrawSelectedLayerUI(gen, layers, selectedLayerIndex, lang);
     }
@@ -603,6 +642,12 @@ public class DiNeMultiSupporter : Editor
         GUILayout.Space(5);
         EditorGUILayout.LabelField(lang["catName"], EditorStyles.boldLabel);
         layerName.stringValue = EditorGUILayout.TextField(layerName.stringValue, GUILayout.Height(25)); 
+        Rect categoryNameAnchor = GUILayoutUtility.GetLastRect();
+        Rect categoryConfirmAnchor = DrawTutorialCategoryAction(gen);
+        if (categoryConfirmAnchor.width > 0f)
+            categoryNameAnchor = Rect.MinMaxRect(Mathf.Min(categoryNameAnchor.xMin, categoryConfirmAnchor.xMin),
+                Mathf.Min(categoryNameAnchor.yMin, categoryConfirmAnchor.yMin), Mathf.Max(categoryNameAnchor.xMax, categoryConfirmAnchor.xMax),
+                Mathf.Max(categoryNameAnchor.yMax, categoryConfirmAnchor.yMax));
 
         GUILayout.Space(5);
         EditorGUILayout.BeginHorizontal();
@@ -626,6 +671,7 @@ public class DiNeMultiSupporter : Editor
         EditorGUILayout.EndHorizontal();
         GUILayout.Space(5);
         EditorGUILayout.EndVertical(); 
+        DrawTutorialBubble(TutorialStep.Category, categoryNameAnchor);
 
         EditorGUILayout.Space(8);
 
@@ -679,6 +725,7 @@ public class DiNeMultiSupporter : Editor
 
             string headerLabel = (i == 0) ? lang["defaultState"] : $"{lang["menuButton"]} {i}";
             EditorGUILayout.LabelField(headerLabel, EditorStyles.boldLabel);
+            Rect stateLabelAnchor = GUILayoutUtility.GetLastRect();
 
             // ── 미리보기 토글 ──
             bool isPreviewing = (previewLayerIndex == index && previewButtonIndex == i);
@@ -687,10 +734,21 @@ public class DiNeMultiSupporter : Editor
             string previewLabel = currentLanguage == Language.Korean
                 ? "미리보기"
                 : currentLanguage == Language.Japanese ? "プレビュー" : "Preview";
-            if (GUILayout.Button(previewLabel, previewStyle, GUILayout.Width(76), GUILayout.Height(24)))
+            bool previewClicked = GUILayout.Button(previewLabel, previewStyle, GUILayout.Width(76), GUILayout.Height(24));
+            Rect previewAnchor = GUILayoutUtility.GetLastRect();
+            if (previewClicked)
             {
-                if (isPreviewing) ClearPreview();
-                else ApplyPreview(gen, currentLayerData, i, index);
+                if (isPreviewing)
+                {
+                    bool tutorialPreview = IsTutorialPreview(index, i);
+                    ClearPreview();
+                    if (tutorialPreview) NotifyTutorialAction(TutorialStep.RestorePreview);
+                }
+                else
+                {
+                    ApplyPreview(gen, currentLayerData, i, index);
+                    NotifyTutorialAction(TutorialStep.Preview);
+                }
             }
             GUI.backgroundColor = Color.white;
 
@@ -709,6 +767,8 @@ public class DiNeMultiSupporter : Editor
                 GUIUtility.ExitGUI();
             }
             EditorGUILayout.EndHorizontal();
+            if (i == 0) DrawTutorialBubble(TutorialStep.DefaultState, stateLabelAnchor);
+            DrawTutorialPreviewBubble(gen, index, i, previewAnchor);
 
             // One change-check scope for the entire item, ending before EndVertical below.
             // An extra EndChangeCheck makes idle repaints report a change and rebuild the
@@ -723,7 +783,13 @@ public class DiNeMultiSupporter : Editor
             GUILayout.Label(targetObjectLabel, EditorStyles.miniBoldLabel, GUILayout.Width(96), GUILayout.Height(22));
             t.objectReferenceValue = EditorGUILayout.ObjectField(
                 GUIContent.none, t.objectReferenceValue, typeof(GameObject), true, GUILayout.Height(22));
+            Rect targetObjectAnchor = GUILayoutUtility.GetLastRect();
             EditorGUILayout.EndHorizontal();
+            if (i == 0)
+            {
+                DrawTutorialBubble(TutorialStep.DefaultOutfit, targetObjectAnchor);
+                DrawTutorialBubble(TutorialStep.DefaultEmpty, targetObjectAnchor);
+            }
             var currentTarget = t.objectReferenceValue as GameObject;
 
             if (previousTarget != currentTarget)
@@ -749,6 +815,7 @@ public class DiNeMultiSupporter : Editor
 
                 if (previewLayerIndex == index && previewButtonIndex == i)
                     RefreshPreview(gen, gen.layers[index]);
+                if (i > 0 && IsTutorialObject(gen, currentTarget)) NotifyTutorialAction(TutorialStep.Outfit);
             }
 
             if (i != 0)
@@ -775,6 +842,7 @@ public class DiNeMultiSupporter : Editor
                 EditorGUILayout.BeginVertical(GUILayout.MinHeight(76));
                 GUILayout.Label(lang["menuName"], EditorStyles.miniBoldLabel);
                 l.stringValue = EditorGUILayout.TextField(l.stringValue, GUILayout.Height(22));
+                Rect menuNameAnchor = GUILayoutUtility.GetLastRect();
                 GUILayout.FlexibleSpace();
 
                 string editIconLabel = currentLanguage == Language.Korean
@@ -807,6 +875,12 @@ public class DiNeMultiSupporter : Editor
                 }
                 EditorGUILayout.EndVertical();
                 EditorGUILayout.EndHorizontal();
+                if (i == FindTutorialOutfit(gen))
+                {
+                    DrawTutorialBubble(TutorialStep.Menu, menuNameAnchor);
+                    DrawTutorialBubble(TutorialStep.Icon, editIconRect);
+                    DrawTutorialBubble(TutorialStep.RegenerateIcon, regenerateIconRect);
+                }
                 GUILayout.Space(7);
 
                 Rect sectionLine = GUILayoutUtility.GetRect(0, 1, GUILayout.ExpandWidth(true));
@@ -862,6 +936,8 @@ public class DiNeMultiSupporter : Editor
                     if (previewLayerIndex == index && previewButtonIndex == capturedI)
                         RefreshPreview(gen, currentLayerData);
                 });
+                if (i == FindTutorialOutfit(gen))
+                    DrawTutorialBubble(TutorialStep.LinkedObjects, subDrop);
             }
 
             // 변경 감지 → 미리보기 즉시 갱신
@@ -905,9 +981,16 @@ public class DiNeMultiSupporter : Editor
         GUI.backgroundColor = new Color(0.6f, 0.9f, 1f);
         GUI.Box(dropArea, lang["mainDragHint"], dragHintStyle);
         GUI.backgroundColor = dropOrigColor;
+        // An empty category has no default-state card yet.
+        if (targets.arraySize == 0)
+        {
+            DrawTutorialBubble(TutorialStep.DefaultState, dropArea);
+            DrawTutorialBubble(TutorialStep.DefaultOutfit, dropArea);
+        }
 
         HandleDragDrop(dropArea, (objs) => {
             Undo.RecordObject(gen, "Add Multi Dresser Items");
+            bool addedTutorialOutfit = false;
             foreach (var go in objs) {
                 currentLayerData.targets.Add(go);
                 currentLayerData.labels.Add(go.name);
@@ -916,12 +999,17 @@ public class DiNeMultiSupporter : Editor
                 currentLayerData.perButtonShapeKeyStates.Add(new DiNeMultiDresser.ShapeKeyMeshList());
                 currentLayerData.perButtonMaterialSwaps.Add(new DiNeMultiDresser.MaterialSwapList());
                 DiNeMultiIconGenerator.EnsureIcon(currentLayerData, currentLayerData.targets.Count - 1);
+                addedTutorialOutfit |= currentLayerData.targets.Count > 1 && IsTutorialObject(gen, go);
             }
             SyncShapeKeyData(gen, currentLayerData);
             PrefabUtility.RecordPrefabInstancePropertyModifications(gen);
             EditorUtility.SetDirty(target);
             serializedObject.Update();
+            if (addedTutorialOutfit) NotifyTutorialAction(TutorialStep.Outfit);
         });
+        DrawTutorialOutfitActions(gen, currentLayerData);
+        DrawTutorialBubble(TutorialStep.Outfit, dropArea);
+        DrawTutorialItemFallback(gen, dropArea);
 
         EditorGUILayout.Space(4);
 
@@ -1684,6 +1772,7 @@ public class DiNeMultiSupporter : Editor
         }
 
         Rect dropArea = GUILayoutUtility.GetRect(0, 30, GUILayout.ExpandWidth(true));
+        tutorialShapeTargetAnchor = dropArea;
         Color originalColor = GUI.backgroundColor;
         GUI.backgroundColor = new Color(0.6f, 0.9f, 1f); 
         GUI.Box(dropArea, lang["skDragHint"], EditorStyles.helpBox);
@@ -1756,7 +1845,9 @@ public class DiNeMultiSupporter : Editor
                                     toggleTargetStatus = Localized("Add a valid avatar object before previewing.",
                                         "미리보기할 아바타 내부 오브젝트를 먼저 추가하세요.", "プレビューするアバター内の対象を先に追加してください。");
                             }
+                            if (i == 0) independentTutorial.NotifyAction(previewing ? "restore" : "preview");
                         }
+                        if (i == 0) { independentTutorial.Anchor("preview", GUILayoutUtility.GetLastRect()); independentTutorial.Anchor("restore", GUILayoutUtility.GetLastRect()); independentTutorial.Anchor("state", GUILayoutUtility.GetLastRect()); }
                         GUI.backgroundColor = previewColor;
                         if (GUILayout.Button(new GUIContent("×", Localized("Remove Toggle", "토글 삭제", "トグル削除")), GUILayout.Width(24), GUILayout.Height(24)))
                         {
@@ -1764,10 +1855,18 @@ public class DiNeMultiSupporter : Editor
                             groups.DeleteArrayElementAtIndex(i);
                             break;
                         }
+                        if (i == 0) independentTutorial.Anchor("delete", GUILayoutUtility.GetLastRect());
                     }
+                    if (i == 0) { independentTutorial.Draw("preview"); independentTutorial.Draw("restore"); independentTutorial.Draw("delete"); }
                     DiNeTogglePreview.DrawStateControls(this, i);
+                    if (i == 0)
+                    {
+                        if (DiNeTogglePreview.IsActive(this, i)) independentTutorial.Anchor("state", GUILayoutUtility.GetLastRect());
+                        independentTutorial.Draw("state");
+                    }
                     DrawToggleSettings(gen, group, i);
                     toggleMenuChoices.Draw(gen.GetAvatarDescriptor(), group.FindPropertyRelative("menuPath"), group.FindPropertyRelative("generatedMenuDestination"));
+                    if (i == 0) independentTutorial.Draw("menu", GUILayoutUtility.GetLastRect());
                     GUILayout.Space(5);
                     var targets = group.FindPropertyRelative("targets");
                     using (new EditorGUILayout.HorizontalScope())
@@ -1791,6 +1890,7 @@ public class DiNeMultiSupporter : Editor
                                 if (candidate == null || (!duplicate && DiNeIndependentToggleEditing.CanAdd(gen, gen.independentToggles[i], candidate)))
                                     item.objectReferenceValue = candidate;
                                 else SetToggleTargetStatus(0);
+                                if (i == 0) { serializedObject.ApplyModifiedProperties(); independentTutorial.NotifyAction("targets"); }
                             }
                             if (GUILayout.Button(new GUIContent("×", Localized("Remove Object", "대상 삭제", "対象を削除")), GUILayout.Width(24), GUILayout.Height(24)))
                             {
@@ -1818,6 +1918,7 @@ public class DiNeMultiSupporter : Editor
                     GUI.backgroundColor = dropColor;
                     int groupIndex = i;
                     HandleDragDrop(drop, objects => AddGroupedToggleTargets(gen, groupIndex, objects));
+                    if (i == 0) independentTutorial.Draw("targets", drop);
                 }
             }
             Color previous = GUI.backgroundColor;
@@ -1828,7 +1929,9 @@ public class DiNeMultiSupporter : Editor
                 DiNeIndependentToggleEditing.Create(gen);
                 serializedObject.Update();
                 toggleMenuChoices.Invalidate();
+                independentTutorial.NotifyAction("create");
             }
+            independentTutorial.Draw("create", GUILayoutUtility.GetLastRect());
             GUI.backgroundColor = previous;
             if (!string.IsNullOrEmpty(toggleTargetStatus)) EditorGUILayout.HelpBox(toggleTargetStatus, MessageType.Info);
         }
@@ -1845,6 +1948,7 @@ public class DiNeMultiSupporter : Editor
         var nextIcon = EditorGUI.ObjectField(iconRect, icon.objectReferenceValue, typeof(Texture2D), false);
         if (EditorGUI.EndChangeCheck()) icon.objectReferenceValue = nextIcon;
         EditorGUI.EndProperty();
+        if (index == 0) independentTutorial.Anchor("icon", iconRect);
 
         Rect row = new Rect(iconRect.xMax + 8, area.y, Mathf.Max(0, area.width - 84), 22);
         float labelWidth = EditorGUIUtility.labelWidth;
@@ -1854,6 +1958,7 @@ public class DiNeMultiSupporter : Editor
             EditorGUIUtility.labelWidth = 70;
             EditorGUIUtility.fieldWidth = 0;
             EditorGUI.PropertyField(row, group.FindPropertyRelative("displayName"), new GUIContent(Localized("Menu Name", "메뉴 이름", "メニュー名")));
+            if (index == 0) independentTutorial.Anchor("name", row);
             row.y += 27;
             var parameter = group.FindPropertyRelative("parameterName");
             var parameterLabel = new GUIContent("Bool", Localized("Bool Parameter — duplicate names receive a numeric suffix.",
@@ -1864,6 +1969,7 @@ public class DiNeMultiSupporter : Editor
             if (EditorGUI.EndChangeCheck())
                 parameter.stringValue = DiNeSmartToggleEditor.MakeUniqueParameterName(null, requested, null, gen, gen.independentToggles[index]);
             EditorGUI.EndProperty();
+            if (index == 0) independentTutorial.Anchor("parameter", row);
             row.y += 27;
             float half = (row.width - 4) / 2;
             DrawToggleCheckbox(new Rect(row.x, row.y, half, row.height), group.FindPropertyRelative("defaultOn"),
@@ -1871,11 +1977,17 @@ public class DiNeMultiSupporter : Editor
                     "업로드 시 기본 상태입니다. 미리보기는 이 값을 바꾸지 않습니다.", "アップロード時の初期状態です。プレビューはこの値を変更しません。")));
             DrawToggleCheckbox(new Rect(row.x + half + 4, row.y, half, row.height), group.FindPropertyRelative("saved"),
                 new GUIContent(Localized("Save", "값 저장", "値を保存"), Localized("Remember the toggle value between sessions", "다음 접속에도 토글 값 저장", "次回の接続でもトグルの値を保存")));
+            if (index == 0) independentTutorial.Anchor("defaults", row);
         }
         finally
         {
             EditorGUIUtility.labelWidth = labelWidth;
             EditorGUIUtility.fieldWidth = fieldWidth;
+        }
+        if (index == 0)
+        {
+            independentTutorial.Draw("icon"); independentTutorial.Draw("name");
+            independentTutorial.Draw("parameter"); independentTutorial.Draw("defaults");
         }
     }
 
@@ -1894,6 +2006,7 @@ public class DiNeMultiSupporter : Editor
         if (serializedObject.ApplyModifiedProperties()) toggleMenuChoices?.Invalidate();
         SetToggleTargetStatus(DiNeIndependentToggleEditing.AddTargets(gen, gen.independentToggles[index], objects));
         serializedObject.Update();
+        if (index == 0) independentTutorial?.NotifyAction("targets");
         Repaint();
     }
 
@@ -2011,6 +2124,7 @@ public class DiNeMultiSupporter : Editor
 
     private void DrawPerButtonMaterialSwapUI(DiNeMultiDresser.DresserLayer layerData, int buttonIdx, int layerIdx, Dictionary<string, string> lang)
     {
+        bool tutorialItem = buttonIdx == FindTutorialOutfit(target as DiNeMultiDresser);
         while (layerData.perButtonMaterialSwaps.Count <= buttonIdx)
             layerData.perButtonMaterialSwaps.Add(new DiNeMultiDresser.MaterialSwapList());
 
@@ -2021,6 +2135,7 @@ public class DiNeMultiSupporter : Editor
 
         EditorGUILayout.BeginHorizontal();
         foldout = EditorGUILayout.Foldout(foldout, lang["matSwap"], true);
+        Rect materialFoldoutAnchor = GUILayoutUtility.GetLastRect();
         Color previousColor = GUI.backgroundColor;
         GUI.backgroundColor = new Color(0.7f, 0.9f, 0.7f);
         if (GUILayout.Button(lang["addMatSwap"], GUILayout.Width(60), GUILayout.Height(20)))
@@ -2029,12 +2144,23 @@ public class DiNeMultiSupporter : Editor
             foldout = true;
             EditorUtility.SetDirty(target);
         }
+        Rect addMaterialAnchor = GUILayoutUtility.GetLastRect();
         GUI.backgroundColor = previousColor;
         EditorGUILayout.EndHorizontal();
+        if (tutorialItem) DrawTutorialBubble(TutorialStep.Materials, addMaterialAnchor);
 
         if (EditorPrefs.GetBool(foldoutKey, false) != foldout) EditorPrefs.SetBool(foldoutKey, foldout);
 
-        if (!foldout || swapList.entries.Count == 0) return;
+        if (!foldout || swapList.entries.Count == 0)
+        {
+            if (tutorialItem)
+            {
+                Rect setupAnchor = swapList.entries.Count > 0 ? materialFoldoutAnchor : addMaterialAnchor;
+                DrawTutorialBubble(TutorialStep.MaterialRenderer, setupAnchor);
+                DrawTutorialBubble(TutorialStep.MaterialSlots, setupAnchor);
+            }
+            return;
+        }
 
         EditorGUI.indentLevel++;
         for (int e = 0; e < swapList.entries.Count; e++)
@@ -2046,6 +2172,7 @@ public class DiNeMultiSupporter : Editor
             EditorGUILayout.BeginHorizontal();
             EditorGUI.BeginChangeCheck();
             entry.renderer = (Renderer)EditorGUILayout.ObjectField(entry.renderer, typeof(Renderer), true);
+            Rect rendererAnchor = GUILayoutUtility.GetLastRect();
             if (EditorGUI.EndChangeCheck() && entry.renderer != null)
             {
                 entry.materials.Clear();
@@ -2061,6 +2188,11 @@ public class DiNeMultiSupporter : Editor
                 break;
             }
             EditorGUILayout.EndHorizontal();
+            if (tutorialItem && e == 0)
+            {
+                DrawTutorialBubble(TutorialStep.MaterialRenderer, rendererAnchor);
+                if (entry.materials.Count == 0) DrawTutorialBubble(TutorialStep.MaterialSlots, rendererAnchor);
+            }
 
             // 마테리얼 슬롯
             for (int mi = 0; mi < entry.materials.Count; mi++)
@@ -2070,8 +2202,10 @@ public class DiNeMultiSupporter : Editor
                 GUILayout.Label($"[{mi}]", GUILayout.Width(24));
                 EditorGUI.BeginChangeCheck();
                 entry.materials[mi] = (Material)EditorGUILayout.ObjectField(entry.materials[mi], typeof(Material), false);
+                Rect materialSlotAnchor = GUILayoutUtility.GetLastRect();
                 if (EditorGUI.EndChangeCheck()) EditorUtility.SetDirty(target);
                 EditorGUILayout.EndHorizontal();
+                if (tutorialItem && e == 0 && mi == 0) DrawTutorialBubble(TutorialStep.MaterialSlots, materialSlotAnchor);
             }
 
             EditorGUILayout.EndVertical();
@@ -2081,11 +2215,22 @@ public class DiNeMultiSupporter : Editor
 
     private void DrawPerButtonShapeKeyUI(DiNeMultiDresser gen, DiNeMultiDresser.DresserLayer layerData, int buttonIdx, int layerIdx, Dictionary<string, string> lang)
     {
-        if (gen.shapeKeyTargets.Count == 0) return;
+        bool tutorialItem = buttonIdx == FindTutorialOutfit(gen);
+        if (gen.shapeKeyTargets.Count == 0)
+        {
+            if (tutorialItem)
+            {
+                DrawTutorialBubble(TutorialStep.ShapeKeySettings, tutorialShapeTargetAnchor);
+                DrawTutorialBubble(TutorialStep.ShapeKeyValues, tutorialShapeTargetAnchor);
+            }
+            return;
+        }
 
         string foldoutKey = $"DiNe_SK_{layerIdx}_{buttonIdx}";
         bool foldout = EditorPrefs.GetBool(foldoutKey, false);
         foldout = EditorGUILayout.Foldout(foldout, lang["skSettings"]);
+        Rect shapeSettingsAnchor = GUILayoutUtility.GetLastRect();
+        if (tutorialItem) DrawTutorialBubble(TutorialStep.ShapeKeySettings, shapeSettingsAnchor);
         if (EditorPrefs.GetBool(foldoutKey, false) != foldout) EditorPrefs.SetBool(foldoutKey, foldout);
 
         if (foldout)
@@ -2106,6 +2251,7 @@ public class DiNeMultiSupporter : Editor
                 {
                     var key = keys[k];
                     float newVal = EditorGUILayout.Slider(key.name, key.value, 0, 100);
+                    Rect shapeValueAnchor = GUILayoutUtility.GetLastRect();
                     if (newVal != key.value)
                     {
                         Undo.RecordObject(target, "Change Shape Key");
@@ -2114,9 +2260,11 @@ public class DiNeMultiSupporter : Editor
                         keys[k] = key;
                         EditorUtility.SetDirty(target);
                     }
+                    if (tutorialItem) DrawTutorialBubble(TutorialStep.ShapeKeyValues, shapeValueAnchor);
                 }
             }
         }
+        if (tutorialItem) DrawTutorialBubble(TutorialStep.ShapeKeyValues, shapeSettingsAnchor);
     }
 
     private void HandleDragDrop(Rect dropArea, System.Action<List<GameObject>> onDrop)

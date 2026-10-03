@@ -9,11 +9,26 @@ Run from the repository with Unity 2022.3.22f1 installed:
 The runner copies the actual Avi Editor scripts and shared helpers into the ignored
 `.codex_tmp/AviEditorRegression` project. It imports no assets into an avatar project.
 It copies the editor's `System.Collections.Immutable.dll` for the existing armature
-mapper. `SdkTypeStubs.cs` supplies only the unrelated Modular Avatar scale component's
-type and `Scale` property; these tests do not verify Modular Avatar behavior.
+mapper. `SdkTypeStubs.cs` supplies only the Modular Avatar scale component's type and
+`Scale` property. The suite verifies the tool's capture/apply and Undo behavior, not
+the real Modular Avatar build pipeline or runtime behavior. No VRChat descriptor or
+Multi Dresser component is created, and no actual avatar scene/reference is opened.
+The runner restores the preset picker preference keys after the suite finishes.
+Both the MA adapter and preview lifecycle probe are compiled outside the isolated
+project's `Editor` directory so Unity can attach them to fixture objects.
 
 The suite checks:
 
+- One armature preset captures live direct scale/rotation/position values alongside
+  MA scale and the child-position option, survives asset reimport, and drops obsolete
+  captured entries when overwritten. Stale editor caches cannot replace live values.
+- Full combined apply and repeated apply restore mapped absolute child positions
+  without double MA adjustment, while unmapped children retain requested adjustment.
+- Partial direct scale/rotation/position and MA loads preserve unrequested values.
+- One Undo/Redo operation restores direct transforms, newly added MA components and
+  the stored child-position option together; invalid/null/unknown/missing parts skip.
+- Original direct-only dictionaries and schema-1 MA presets remain selectable and
+  load through the unified picker without changing the other kind of scale data.
 - Persisted scale deformation via `SkinnedMeshRenderer.BakeMesh` at weights 0/50/100,
   with an unrelated active shape retained and the original mesh unchanged.
 - A generated 737-key mesh with `笑い` at index 688: 70% preview, persisted core Apply,
@@ -35,7 +50,7 @@ The suite checks:
   Explicit mix entries still accumulate, and preview never alters source weights.
 - Replacement preview matches the persisted replacement at weights 0/50/100 while
   other source shape keys remain active.
-- Expression and FX clip previews retaining unmentioned keys and source weights.
+- Expression and FX clip preview coverage has moved to `Tests/AnimationTool`.
 - Head framing using posed mesh geometry instead of enlarged culling bounds, named
   eye-bone focus, source weight preservation and scaled world-space bounds.
 
@@ -49,6 +64,15 @@ and `-ProjectName` can select a different source snapshot and isolated project.
 
 Reviewed against `Docs/DI_NE_UI_STANDARD.md` and the existing Avi Editor sections:
 
+- The unified armature preset controls share the existing preset card, picker helper,
+  localization helper and mint primary action in both edit modes. All added labels,
+  tooltips, legacy-data explanation and load status have English/Korean/Japanese
+  translations. The existing header, `DiNeLang` toolbar and component icons are
+  unchanged; this feature adds no runtime component. Structural review and actual
+  armature EditorWindow pixel inspection are complete.
+- The unified preset regressions and all existing cases passed together in Unity
+  2022.3.22f1: 16 tests, zero failures. Undo and partial-apply behavior are verified
+  on synthetic objects; actual Modular Avatar build integration is outside the suite.
 - The existing Di Ne header assets/font, shared `DiNeLang` selector, mint actions and
   existing cards/modes are retained; no new branding or component UI was introduced.
 - The new preview explanation has English, Korean and Japanese translations, uses
@@ -58,10 +82,16 @@ Reviewed against `Docs/DI_NE_UI_STANDARD.md` and the existing Avi Editor section
 - Both existing face previews reuse the same toolbar and now remain above their
   control scroll areas. Their size responds to window dimensions, up to 360 pixels.
 - Undo, prefab overrides and source dirty-state behavior are exercised above.
-- The camera output is rendered and checked on the GPU. The surrounding IMGUI window
-  layout was compared structurally; an actual EditorWindow screenshot remains
-  unverified in this hidden batch-mode harness. Unity 2022's GUIView exposes RenderDoc
-  capture methods but no direct render-to-texture window API used by this harness.
+- The camera output is rendered and checked on the GPU. A separate isolated UI probe
+  used Unity 2022.3's internal `GUIView.GrabPixels` render-texture capture in hidden
+  batch mode to inspect eight actual armature windows: both edit modes in English,
+  Korean and Japanese at 420 × 850, plus both Korean modes at 300 × 850. The unified
+  preset card fits and its descriptions wrap correctly. The existing narrow MA
+  child-position toggle can truncate its label outside the new preset card.
+  Screenshots and capture diagnostics are retained in
+  `.codex_tmp/AviEditorRegression/AviEditorUiCapture/`. The probe restored and verified
+  `DiNeLang` and both picker preference roots, and removed its synthetic avatar and
+  preset. The separate face-preview layout checks described above remain structural.
 
 ## Arkveld framing verification
 
@@ -80,3 +110,11 @@ colors, controls and layout remain unchanged; all UI-standard checklist items we
 reviewed, with new controls/translations/component icons inapplicable to this
 calculation-only change. No scene, source transform, mesh, or expression values were
 edited by the diagnostic probe.
+
+## Animation Tool split
+
+Animation and expression authoring now live in `DiNe/Animation Tool`. Avi Editor
+retains armature, mesh shape-key and PhysBone editing. Preview rendering and head
+framing are shared under `Editor/Core`; the runner copies these helpers and the
+existing guided tutorial implementation. Serialized editor mode IDs and preset
+asset types remain stable. New Animation Tool coverage lives in `Tests/AnimationTool`.

@@ -6,7 +6,7 @@ using UnityEngine;
 /// 압축 파일 하나에서 .unitypackage 가 여러 개 나왔을 때, 목록에 넣기 전에
 /// 무엇을 넣을지 고르게 하는 모달 창. 닫힐 때까지 호출 측을 막는다.
 /// </summary>
-internal class DiNePackageSelectWindow : EditorWindow
+internal partial class DiNePackageSelectWindow : EditorWindow
 {
     private static readonly Color ColMint = new Color(0.30f, 0.82f, 0.76f);
     private static readonly Color ColSub  = new Color(0.40f, 0.55f, 0.70f);
@@ -89,7 +89,7 @@ internal class DiNePackageSelectWindow : EditorWindow
         return value;
     }
 
-    void OnGUI()
+    void DrawToolGUI()
     {
         if (names == null) { Close(); return; }
 
@@ -103,6 +103,7 @@ internal class DiNePackageSelectWindow : EditorWindow
             GUILayout.Space(4);
         }
         EditorGUILayout.LabelField(header, new GUIStyle(EditorStyles.wordWrappedLabel) { fontSize = 12 });
+        guidedTutorial.DrawControls();
         GUILayout.Space(4);
 
         EditorGUILayout.BeginHorizontal();
@@ -111,9 +112,11 @@ internal class DiNePackageSelectWindow : EditorWindow
         if (GUILayout.Button(allText,  EditorStyles.miniButtonLeft,  GUILayout.Width(48))) for (int i = 0; i < selected.Length; i++) selected[i] = true;
         if (GUILayout.Button(noneText, EditorStyles.miniButtonRight, GUILayout.Width(48))) for (int i = 0; i < selected.Length; i++) selected[i] = false;
         EditorGUILayout.EndHorizontal();
+        guidedTutorial.Anchor("Bulk", GUILayoutUtility.GetLastRect());
 
         GUILayout.Space(2);
 
+        guidedTutorial.BeginScrollScope();
         scroll = EditorGUILayout.BeginScrollView(scroll);
         for (int i = 0; i < names.Length; i++)
         {
@@ -142,19 +145,25 @@ internal class DiNePackageSelectWindow : EditorWindow
             EditorGUILayout.EndVertical();
             EditorGUILayout.EndHorizontal();
             selected[i] = RowToggle(GUILayoutUtility.GetLastRect(), selected[i]);
+            if (i == 0) guidedTutorial.Anchor("Rows", GUILayoutUtility.GetLastRect());
             GUILayout.Space(1);
         }
         EditorGUILayout.EndScrollView();
+        guidedTutorial.EndScrollScope(GUILayoutUtility.GetLastRect());
+        if (names.Length == 0) guidedTutorial.Anchor("Rows", GUILayoutUtility.GetLastRect());
+        guidedTutorial.Draw("Rows");
+        guidedTutorial.Draw("Bulk");
 
         GUILayout.Space(4);
 
+        bool tutorialCloseSelection = false;
         EditorGUILayout.BeginHorizontal();
         if (GUILayout.Button(cancelText, GUILayout.Height(32), GUILayout.Width(110)))
         {
             s_confirmed = false;
-            Close();
-            GUIUtility.ExitGUI();
+            tutorialCloseSelection = true;
         }
+        guidedTutorial.Anchor("Cancel", GUILayoutUtility.GetLastRect());
 
         EditorGUI.BeginDisabledGroup(selCount == 0);
         var prev = GUI.backgroundColor;
@@ -165,12 +174,15 @@ internal class DiNePackageSelectWindow : EditorWindow
                 GUILayout.Height(32)))
         {
             s_confirmed = true;
-            Close();
-            GUIUtility.ExitGUI();
+            tutorialCloseSelection = true;
         }
+        guidedTutorial.Anchor("Add", GUILayoutUtility.GetLastRect());
         GUI.backgroundColor = prev;
         EditorGUI.EndDisabledGroup();
         EditorGUILayout.EndHorizontal();
+        guidedTutorial.Draw("Add");
+        guidedTutorial.Draw("Cancel");
         GUILayout.Space(6);
+        if (tutorialCloseSelection) { Close(); GUIUtility.ExitGUI(); }
     }
 }

@@ -89,6 +89,20 @@ public static class RestorationRegression
     public static void Run()
     {
         Flush();
+        Test("Failed dresser generation rejects build and restores original references", () => {
+            using (var f = new Fixture()) {
+                var dresser = f.root.AddComponent<DiNeMultiDresser>();
+                dresser.animatorController = f.fx; dresser.expressionsMenu = f.menu;
+                dresser.failGeneration = true;
+                bool accepted = (bool)Call("ApplyToBuildAvatar", f.root);
+                f.TempFolder = Path.GetDirectoryName(AssetDatabase.GetAssetPath(f.descriptor.expressionParameters)).Replace('\\', '/');
+                Require(!accepted, "Build accepted partially generated dresser data");
+                Flush(); f.AssertOriginal();
+                Require(dresser.animatorController == f.fx && dresser.expressionsMenu == f.menu,
+                    "Failed generation left dresser references pointing to temporary assets");
+                Require(Cache.Count == 0 && !SessionState.GetBool(BuildKey, false), "Failed build left a session or build guard");
+            }
+        });
         Test("Empty cache at assembly reload preserves originals", () => {
             using (var f = new Fixture()) { f.Apply(); string record = SessionState.GetString(Key, ""); Cache.Clear(); Call("OnBeforeAssemblyReload"); Require(SessionState.GetString(Key, "") == record, "Reload erased the original record"); Call("RestoreAllSessions", "test reload"); f.AssertOriginal(); }
         });

@@ -8,7 +8,7 @@ using System.IO.Compression;
 using System.Text;
 
 [InitializeOnLoad]
-public class DiNePackagePatcher : EditorWindow
+public partial class DiNePackagePatcher : EditorWindow
 {
     [System.Serializable]
     public class PackageItem
@@ -401,6 +401,8 @@ public class DiNePackagePatcher : EditorWindow
 
     void OnEnable()
     {
+        if (!EditorPrefs.HasKey("DiNeLang")) EditorPrefs.SetInt("DiNeLang", (int)language);
+        language = (LanguagePreset)Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", (int)language), 0, 2);
         s_window   = this;
         windowIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
         tabIcon    = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe_Icon.png");
@@ -411,6 +413,7 @@ public class DiNePackagePatcher : EditorWindow
 
     void OnDisable()
     {
+        guidedTutorial?.Suspend();
         // OnDisable 은 창을 닫을 때뿐 아니라 어셈블리 리로드 때도 호출된다.
         // 여기서 큐를 버리거나 임시 파일을 지우면 스크립트가 든 패키지를
         // 임포트할 때마다 배치가 중간에 끊긴다. 정리는 OnDestroy 에서만 한다.
@@ -433,8 +436,10 @@ public class DiNePackagePatcher : EditorWindow
         CleanTempFolder();
     }
 
-    void OnGUI()
+    void DrawToolGUI()
     {
+        var sharedLanguage = (LanguagePreset)Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", (int)language), 0, 2);
+        if (sharedLanguage != language) { language = sharedLanguage; SetLanguage(language); }
         bool isImporting = HasPendingBatch();
         var  st          = isImporting ? LoadState() : null;
         int  doneCount   = st?.done  ?? 0;
@@ -470,8 +475,9 @@ public class DiNePackagePatcher : EditorWindow
 
         // ── 언어 탭 ──
         int curLang = (int)language;
-        int newLang = DrawCustomToolbar(curLang, new[] { "English", "한국어", "日本語" }, 28);
-        if (newLang != curLang) { language = (LanguagePreset)newLang; SetLanguage(language); Repaint(); }
+        int newLang = DrawCustomToolbar(curLang, new[] { "English", "한국어", "日本語" }, 35);
+        if (newLang != curLang) { language = (LanguagePreset)newLang; EditorPrefs.SetInt("DiNeLang", newLang); SetLanguage(language); Repaint(); }
+        guidedTutorial.DrawControls();
 
         GUILayout.Space(5);
 
@@ -479,9 +485,13 @@ public class DiNePackagePatcher : EditorWindow
         EditorGUILayout.BeginVertical("box");
         EditorGUILayout.BeginHorizontal();
         EditorGUILayout.LabelField(UI_TEXT[1], GUILayout.Width(110));
+        var tutorialFolderBefore = targetFolderName;
         targetFolderName = EditorGUILayout.TextField(targetFolderName);
+        guidedTutorial.Anchor("Folder", GUILayoutUtility.GetLastRect());
+        if (tutorialFolderBefore != targetFolderName) guidedTutorial.NotifyAction("Folder");
         EditorGUILayout.EndHorizontal();
         EditorGUILayout.EndVertical();
+        guidedTutorial.Draw("Folder");
 
         GUILayout.Space(5);
 
@@ -495,6 +505,7 @@ public class DiNePackagePatcher : EditorWindow
             if (!string.IsNullOrEmpty(picked))
                 QueuePaths(new[] { picked });
         }
+        guidedTutorial.Anchor("BrowseFiles", GUILayoutUtility.GetLastRect());
         GUI.backgroundColor = new Color(0.28f, 0.38f, 0.28f);
         if (GUILayout.Button(UI_TEXT[21], GUILayout.Height(26)))
         {
@@ -502,8 +513,11 @@ public class DiNePackagePatcher : EditorWindow
             if (!string.IsNullOrEmpty(pickedDir))
                 QueuePaths(new[] { pickedDir });
         }
+        guidedTutorial.Anchor("BrowseFolder", GUILayoutUtility.GetLastRect());
         GUI.backgroundColor = prevBgBrowse;
         EditorGUILayout.EndHorizontal();
+        guidedTutorial.Draw("BrowseFiles");
+        guidedTutorial.Draw("BrowseFolder");
 
         GUILayout.Space(4);
 
@@ -525,6 +539,7 @@ public class DiNePackagePatcher : EditorWindow
             new GUIStyle(EditorStyles.miniLabel) { alignment = TextAnchor.MiddleCenter,
                 normal = { textColor = new Color(0.42f, 0.42f, 0.42f) } });
         HandleDragAndDrop(dropArea);
+        guidedTutorial.Draw("Queue", dropArea);
 
         GUILayout.Space(5);
 
@@ -540,6 +555,7 @@ public class DiNePackagePatcher : EditorWindow
             var prev = GUI.backgroundColor;
             if (GUILayout.Button(UI_TEXT[16], EditorStyles.miniButtonLeft,  GUILayout.Width(38))) { foundPackages.ForEach(p => p.IsSelected = true);  Repaint(); }
             if (GUILayout.Button(UI_TEXT[17], EditorStyles.miniButtonRight, GUILayout.Width(38))) { foundPackages.ForEach(p => p.IsSelected = false); Repaint(); }
+            guidedTutorial.Anchor("Bulk", GUILayoutUtility.GetLastRect());
             GUI.backgroundColor = new Color(0.6f, 0.2f, 0.2f);
             if (GUILayout.Button("Clear", EditorStyles.miniButton, GUILayout.Width(46))) { foundPackages.Clear(); statusMessage = ""; Repaint(); }
             GUI.backgroundColor = prev;
@@ -549,6 +565,7 @@ public class DiNePackagePatcher : EditorWindow
         GUILayout.Space(2);
 
         float listH = Mathf.Clamp(foundPackages.Count * 46f + 8f, 80f, 260f);
+        guidedTutorial.BeginScrollScope();
         packageScrollPos = EditorGUILayout.BeginScrollView(packageScrollPos, GUILayout.Height(listH));
         if (foundPackages.Count == 0)
         {
@@ -601,6 +618,7 @@ public class DiNePackagePatcher : EditorWindow
                 GUI.backgroundColor = new Color(0.45f, 0.18f, 0.18f);
                 if (GUILayout.Button("✕", EditorStyles.miniButton, GUILayout.Width(20), GUILayout.Height(18)))
                     removeIndex = i;
+                if (i == 0) guidedTutorial.Anchor("Remove", GUILayoutUtility.GetLastRect());
                 GUI.backgroundColor = prevBg;
 
                 EditorGUILayout.EndHorizontal();
@@ -613,12 +631,23 @@ public class DiNePackagePatcher : EditorWindow
                 EditorGUILayout.EndVertical();
                 EditorGUILayout.EndHorizontal();
                 item.IsSelected = DiNePackageSelectWindow.RowToggle(GUILayoutUtility.GetLastRect(), item.IsSelected);
+                if (i == 0) guidedTutorial.Anchor("Rows", GUILayoutUtility.GetLastRect());
                 GUILayout.Space(1);
             }
             if (removeIndex != -1 && !isImporting) { foundPackages.RemoveAt(removeIndex); Repaint(); }
         }
         EditorGUILayout.EndScrollView();
+        guidedTutorial.EndScrollScope(GUILayoutUtility.GetLastRect());
+        if (foundPackages.Count == 0)
+        {
+            guidedTutorial.Anchor("Rows", GUILayoutUtility.GetLastRect());
+            guidedTutorial.Anchor("Bulk", GUILayoutUtility.GetLastRect());
+            guidedTutorial.Anchor("Remove", GUILayoutUtility.GetLastRect());
+        }
         EditorGUILayout.EndVertical();
+        guidedTutorial.Draw("Rows");
+        guidedTutorial.Draw("Bulk");
+        guidedTutorial.Draw("Remove");
 
         GUILayout.Space(3);
 
@@ -638,6 +667,7 @@ public class DiNePackagePatcher : EditorWindow
 
         if (!string.IsNullOrEmpty(statusMessage))
             EditorGUILayout.HelpBox(statusMessage, MessageType.Info);
+        guidedTutorial.Anchor("Progress", GUILayoutUtility.GetLastRect());
 
         GUILayout.FlexibleSpace();
 
@@ -653,8 +683,12 @@ public class DiNePackagePatcher : EditorWindow
               normal = { textColor = Color.white }, hover = { textColor = Color.white } },
             GUILayout.Height(46)))
             StartImport();
+        guidedTutorial.Anchor("Import", GUILayoutUtility.GetLastRect());
         GUI.backgroundColor = prevBgBtn;
         EditorGUI.EndDisabledGroup();
+        guidedTutorial.Draw("Import");
+        if (string.IsNullOrEmpty(statusMessage)) guidedTutorial.Anchor("Progress", GUILayoutUtility.GetLastRect());
+        guidedTutorial.Draw("Progress");
 
         // 백그라운드 진행 중에는 창이 스스로 갱신되도록 한다.
         if (isImporting) Repaint();
@@ -811,6 +845,7 @@ public class DiNePackagePatcher : EditorWindow
         {
             processingPaths = false;
             EditorUtility.ClearProgressBar();
+            guidedTutorial?.NotifyAction("Queue");
             Repaint();
         }
     }

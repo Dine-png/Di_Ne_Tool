@@ -5,7 +5,7 @@ using UnityEngine;
 using VRC.SDK3.Avatars.Components;
 
 [CustomEditor(typeof(DiNeSmartToggle))]
-public sealed class DiNeSmartToggleEditor : Editor
+public sealed partial class DiNeSmartToggleEditor : Editor
 {
     private static readonly Color Mint = new Color(0.30f, 0.82f, 0.76f);
     private static readonly string[] Languages = { "English", "한국어", "日本語" };
@@ -88,11 +88,20 @@ public sealed class DiNeSmartToggleEditor : Editor
 
     private void OnDisable()
     {
+        tutorial?.Suspend();
         DiNeTogglePreview.ClearForOwner(this);
         menuChoices?.Dispose();
     }
 
     public override void OnInspectorGUI()
+    {
+        EnsureTutorial();
+        tutorial.BeginFrame();
+        try { DrawInspectorContent(); }
+        finally { tutorial.EndFrame(); }
+    }
+
+    private void DrawInspectorContent()
     {
         serializedObject.Update();
         var toggle = (DiNeSmartToggle)target;
@@ -103,6 +112,7 @@ public sealed class DiNeSmartToggleEditor : Editor
         int nextLanguage = DrawSegments(language, Languages, 35);
         if (nextLanguage != language) EditorPrefs.SetInt("DiNeLang", nextLanguage);
         GUILayout.Space(15);
+        tutorial.DrawControls();
 
         using (new EditorGUILayout.VerticalScope("GroupBox"))
         {
@@ -122,17 +132,26 @@ public sealed class DiNeSmartToggleEditor : Editor
                         serializedObject.ApplyModifiedProperties();
                         DiNeTogglePreview.Begin(this, 0, new[] { toggle.gameObject }, toggle.DefaultOn);
                     }
+                    tutorial.NotifyAction(previewing ? "preview-stop" : "preview-start");
                 }
+                tutorial.Anchor("preview-start", GUILayoutUtility.GetLastRect());
+                tutorial.Anchor("preview-stop", GUILayoutUtility.GetLastRect());
+                tutorial.Anchor("preview-state", GUILayoutUtility.GetLastRect());
                 GUI.backgroundColor = previous;
             }
+            tutorial.Draw("preview-start");
+            tutorial.Draw("preview-stop");
             DiNeTogglePreview.DrawStateControls(this, 0);
+            if (DiNeTogglePreview.IsActive(this, 0)) tutorial.Draw("preview-state", GUILayoutUtility.GetLastRect());
+            else tutorial.Draw("preview-state");
             EditorGUILayout.HelpBox(T("This object gets one On/Off button using a Bool parameter.",
                 "이 오브젝트를 켜고 끄는 Bool 파라미터와 단일 토글 버튼을 만듭니다.",
                 "このオブジェクトを切り替えるBoolパラメーターと単一のトグルボタンを作成します。"), MessageType.None);
-            EditorGUILayout.PropertyField(displayName, new GUIContent(T("Menu Name", "메뉴 이름", "メニュー名")));
-            DrawParameterName(parameterName, toggle, null);
-            EditorGUILayout.PropertyField(defaultOn, new GUIContent(T("Default On", "기본 ON", "初期ON")));
-            EditorGUILayout.PropertyField(saved, new GUIContent(T("Save Value", "값 저장", "値を保存")));
+            TutorialProperty(displayName, new GUIContent(T("Menu Name", "메뉴 이름", "メニュー名")), "name");
+            if (DrawParameterName(parameterName, toggle, null)) tutorial.NotifyAction("parameter");
+            tutorial.Draw("parameter", GUILayoutUtility.GetLastRect());
+            TutorialProperty(defaultOn, new GUIContent(T("Default On", "기본 ON", "初期ON")), "default");
+            TutorialProperty(saved, new GUIContent(T("Save Value", "값 저장", "値を保存")), "saved");
         }
         GUILayout.Space(8);
         using (new EditorGUILayout.VerticalScope("GroupBox"))
@@ -142,19 +161,22 @@ public sealed class DiNeSmartToggleEditor : Editor
                 serializedObject.FindProperty("menuPath"), serializedObject.FindProperty("generatedMenuDestination"),
                 (DiNeSmartToggle.MenuPlacement)menuPlacement.enumValueIndex, groupName.stringValue))
                 menuPlacement.enumValueIndex = (int)DiNeSmartToggle.MenuPlacement.ExistingMenu;
+            tutorial.Draw("menu", GUILayoutUtility.GetLastRect());
         }
         GUILayout.Space(8);
         using (new EditorGUILayout.VerticalScope("GroupBox"))
         {
             GUILayout.Label(T("Menu Icon", "메뉴 아이콘", "メニューアイコン"), EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(icon, new GUIContent(T("Icon", "아이콘", "アイコン")));
+            TutorialProperty(icon, new GUIContent(T("Icon", "아이콘", "アイコン")), "icon");
             Color previous = GUI.backgroundColor;
             GUI.backgroundColor = Mint;
             if (GUILayout.Button(T("Edit Icon", "아이콘 편집", "アイコン編集"), GUILayout.Height(30)))
             {
                 serializedObject.ApplyModifiedProperties();
                 DiNeScreenSaver.DiNeScreenSaver.OpenIconEditor(toggle);
+                tutorial.NotifyAction("icon-edit");
             }
+            tutorial.Draw("icon-edit", GUILayoutUtility.GetLastRect());
             GUI.backgroundColor = previous;
             using (new EditorGUILayout.HorizontalScope())
             {
@@ -163,14 +185,20 @@ public sealed class DiNeSmartToggleEditor : Editor
                     serializedObject.ApplyModifiedProperties();
                     DiNeSmartToggleGenerator.EnsureIcon(toggle);
                     serializedObject.Update();
+                    tutorial.NotifyAction("icon-generate");
                 }
+                tutorial.Anchor("icon-generate", GUILayoutUtility.GetLastRect());
                 if (GUILayout.Button(T("Regenerate", "재생성", "再生成"), GUILayout.Height(30)))
                 {
                     serializedObject.ApplyModifiedProperties();
                     DiNeSmartToggleGenerator.RegenerateIcon(toggle);
                     serializedObject.Update();
+                    tutorial.NotifyAction("icon-regenerate");
                 }
+                tutorial.Anchor("icon-regenerate", GUILayoutUtility.GetLastRect());
             }
+            tutorial.Draw("icon-generate");
+            tutorial.Draw("icon-regenerate");
         }
         if (serializedObject.ApplyModifiedProperties())
         {
@@ -188,6 +216,9 @@ public sealed class DiNeSmartToggleEditor : Editor
                 "별도 적용 없이 업로드와 Play Mode에서 자동 적용됩니다. 미리보기는 기본 ON 설정을 바꾸지 않습니다.",
                 "アップロードとPlay Modeで自動適用されます。プレビューは初期ON設定を変更しません。"),
             avatar == null ? MessageType.Warning : MessageType.Info);
+        Rect statusRect = GUILayoutUtility.GetLastRect();
+        tutorial.Draw("avatar", statusRect);
+        tutorial.Draw("automatic", statusRect);
     }
 
     public static bool DrawParameterName(SerializedProperty parameter, DiNeSmartToggle toggle, DiNeMultiDresser dresser)

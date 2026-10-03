@@ -2,7 +2,7 @@
 using UnityEngine;
 using UnityEditor;
 
-public class DiNeShapeKeyFreezer : EditorWindow
+public partial class DiNeShapeKeyFreezer : EditorWindow
 {
     private enum LanguagePreset { English, Korean, Japanese }
     private LanguagePreset language = LanguagePreset.Korean;
@@ -30,11 +30,35 @@ public class DiNeShapeKeyFreezer : EditorWindow
         tabIcon    = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe_Icon.png");
         titleFont  = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
         titleContent = new GUIContent("ShapeKey", tabIcon);
+        language = (LanguagePreset)Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", 0), 0, 2);
         SetLanguage(language);
     }
 
     void OnGUI()
     {
+        EnsureTutorial();
+        Color previousBackground = GUI.backgroundColor;
+        tutorial.BeginFrame();
+        try
+        {
+            tutorial.BeginScrollScope();
+            tutorialScroll = EditorGUILayout.BeginScrollView(tutorialScroll);
+            try { DrawWindowContent(); }
+            finally
+            {
+                EditorGUILayout.EndScrollView();
+                tutorial.EndScrollScope(GUILayoutUtility.GetLastRect());
+            }
+        }
+        finally { tutorial.EndFrame(); GUI.backgroundColor = previousBackground; }
+    }
+
+    private void OnDisable() => tutorial?.Suspend();
+
+    private void DrawWindowContent()
+    {
+        var sharedLanguage = (LanguagePreset)Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", 0), 0, 2);
+        if (language != sharedLanguage) { language = sharedLanguage; SetLanguage(language); }
         GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
 
         // ─── 타이틀 바 ───
@@ -75,20 +99,28 @@ public class DiNeShapeKeyFreezer : EditorWindow
         // ─── 언어 선택 ───
         int currentLangIndex = (int)language;
         string[] langButtons = { "English", "한국어", "日本語" };
-        int newLangIndex = DrawCustomToolbar(currentLangIndex, langButtons, 30);
+        int newLangIndex = DrawCustomToolbar(currentLangIndex, langButtons, 35);
         if (newLangIndex != currentLangIndex)
         {
             language = (LanguagePreset)newLangIndex;
+            EditorPrefs.SetInt("DiNeLang", newLangIndex);
             SetLanguage(language);
         }
-        GUILayout.Space(10);
+        GUILayout.Space(15);
+        tutorial.DrawControls();
 
         // ─── 오브젝트 / 클립 선택 ───
         EditorGUILayout.BeginVertical("box");
         EditorGUILayout.LabelField(UI_TEXT[0], EditorStyles.boldLabel);
         GUILayout.Space(3);
+        EditorGUI.BeginChangeCheck();
         targetObject  = (GameObject)EditorGUILayout.ObjectField(UI_TEXT[1], targetObject,  typeof(GameObject),  true);
+        if (EditorGUI.EndChangeCheck()) tutorial.NotifyAction("target");
+        tutorial.Draw("target", GUILayoutUtility.GetLastRect());
+        EditorGUI.BeginChangeCheck();
         animationClip = (AnimationClip)EditorGUILayout.ObjectField(UI_TEXT[2], animationClip, typeof(AnimationClip), false);
+        if (EditorGUI.EndChangeCheck()) tutorial.NotifyAction("clip");
+        tutorial.Draw("clip", GUILayoutUtility.GetLastRect());
         EditorGUILayout.EndVertical();
 
         GUILayout.Space(5);
@@ -117,7 +149,9 @@ public class DiNeShapeKeyFreezer : EditorWindow
         {
             // 슬라이더 이동 시 쉐이프키만 실시간 반영
             SampleBlendShapesOnly();
+            tutorial.NotifyAction("time");
         }
+        tutorial.Draw("time", GUILayoutUtility.GetLastRect());
 
         EditorGUILayout.EndVertical();
 
@@ -129,10 +163,15 @@ public class DiNeShapeKeyFreezer : EditorWindow
         {
             SampleBlendShapesOnly();
             Debug.Log($"[DiNe ShapeKey Freezer] {targetObject.name} — {UI_TEXT[5]}");
+            tutorial.NotifyAction("apply");
         }
+        tutorial.Anchor("apply", GUILayoutUtility.GetLastRect());
+        tutorial.Anchor("undo", GUILayoutUtility.GetLastRect());
         GUI.backgroundColor = prevBg;
 
         EditorGUI.EndDisabledGroup();
+        tutorial.Draw("apply");
+        tutorial.Draw("undo");
 
         GUILayout.Space(5);
 

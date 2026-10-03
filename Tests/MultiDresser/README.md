@@ -23,6 +23,9 @@ layer indices 1 and 2, checks that the selected clothing/body blendshape/materia
 stay correct, then changes outfits while those layers are disabled and after
 they are restored.
 
+A destroyed Unity object in the default target slot must still generate the
+Off state; a real PlayableGraph verifies repeated Off/clothing switching.
+
 The Schoolbag cases use independent clothing and accessory layers in both
 orders, an empty default (Off) accessory slot, and a linked strap object.
 They exercise all clothing/accessory combinations before and during the

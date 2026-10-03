@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -18,7 +18,7 @@ namespace DiNeTool.AssetCleaner
     /// 삭제는 하드 삭제가 아니라 MoveAssetToTrash(OS 휴지통, 복구 가능)로만 한다.
     /// "지금은 안 쓰지만 보존할" 파일은 (1) 종류 필터, (2) 보호 폴더로 후보에서 뺀다.
     /// </summary>
-    public class DiNeAssetCleanerWindow : EditorWindow
+    public partial class DiNeAssetCleanerWindow : EditorWindow
     {
         // ── DiNeTool 스타일 컬러 ─────────────────────────────────────────────────
         private static readonly Color ColAccent  = new Color(0.30f, 0.82f, 0.76f);
@@ -125,14 +125,16 @@ namespace DiNeTool.AssetCleaner
             titleContent = new GUIContent("Cleaner", _tabIcon);
             wantsMouseMove = true; // 호버 프리뷰 갱신용
             LoadPrefs();
+            if (!EditorPrefs.HasKey("DiNeLang")) EditorPrefs.SetInt("DiNeLang", L);
             RefreshSceneList();
         }
 
         // ══════════════════════════════════════════════════════════════════════════
         //  GUI
         // ══════════════════════════════════════════════════════════════════════════
-        private void OnGUI()
+        private void DrawToolGUI()
         {
+            _lang = (Lang)Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", L), 0, 2);
             if (Event.current.type == EventType.MouseMove) Repaint();
             _hoverNode = null;
 
@@ -141,19 +143,33 @@ namespace DiNeTool.AssetCleaner
             // 상단 컨트롤은 고정, 결과 트리만 남은 공간을 채우는 전용 스크롤로 둔다.
             DrawHeader();
             DrawLangBar();
+            guidedTutorial.DrawControls();
             HLine();
+            var tutorialScenesBefore = _scenes.Where(s => s.Selected).Select(s => s.Path).ToArray();
             DrawSceneSection();
+            if (!tutorialScenesBefore.SequenceEqual(_scenes.Where(s => s.Selected).Select(s => s.Path))) guidedTutorial.NotifyAction("Scenes");
+            guidedTutorial.Draw("Scenes");
             GUILayout.Space(2);
             DrawFilterSection();
             GUILayout.Space(4);
             DrawAnalyzeButton();
+            guidedTutorial.Draw("Analyze");
+            guidedTutorial.Draw("EmptyCleanup");
 
             if (_analyzed)
             {
                 HLine();
                 DrawResultToolbar();
+                guidedTutorial.Draw("RootFolders");
+                guidedTutorial.Draw("Selection");
+                guidedTutorial.Draw("Expand");
                 DrawTree();        // 남은 세로 공간을 채움 (자체 스크롤)
+                guidedTutorial.Anchor("Locate", GUILayoutUtility.GetLastRect());
+                guidedTutorial.Anchor("Preview", GUILayoutUtility.GetLastRect());
+                guidedTutorial.Draw("Locate");
+                guidedTutorial.Draw("Preview");
                 DrawDeleteBar();   // 하단 고정
+                guidedTutorial.Draw("Trash");
             }
             else
             {
@@ -162,6 +178,7 @@ namespace DiNeTool.AssetCleaner
 
             if (!string.IsNullOrEmpty(_status))
                 EditorGUILayout.HelpBox(_status, _statusWarn ? MessageType.Warning : MessageType.Info);
+            guidedTutorial.Draw("Status", GUILayoutUtility.GetLastRect());
 
             DrawHoverPreview();
         }
@@ -233,6 +250,7 @@ namespace DiNeTool.AssetCleaner
             if (_scenes.Count == 0)
             {
                 EditorGUILayout.HelpBox(T(NO_SCENES), MessageType.Info);
+                guidedTutorial.Anchor("Scenes", GUILayoutUtility.GetLastRect());
                 return;
             }
 
@@ -240,6 +258,7 @@ namespace DiNeTool.AssetCleaner
             // (제한을 넘으면 목록 자체가 스크롤되므로 아래 버튼들이 화면 밖으로 밀리지 않는다)
             float maxH = Mathf.Clamp(position.height * 0.22f, 72f, 220f);
             float h = Mathf.Clamp(_scenes.Count * 18f + 8f, 72f, maxH);
+            guidedTutorial.BeginScrollScope();
             _sceneScroll = EditorGUILayout.BeginScrollView(_sceneScroll, "box", GUILayout.Height(h));
             foreach (var s in _scenes)
             {
@@ -252,6 +271,8 @@ namespace DiNeTool.AssetCleaner
                 EditorGUILayout.EndHorizontal();
             }
             EditorGUILayout.EndScrollView();
+            guidedTutorial.EndScrollScope(GUILayoutUtility.GetLastRect());
+            guidedTutorial.Anchor("Scenes", GUILayoutUtility.GetLastRect());
 
             if (selCount > 0 && selCount < _scenes.Count)
                 EditorGUILayout.HelpBox(T(PARTIAL), MessageType.Warning);
@@ -261,6 +282,14 @@ namespace DiNeTool.AssetCleaner
         private void DrawFilterSection()
         {
             _filterFoldout = EditorGUILayout.Foldout(_filterFoldout, T(FILTER_TITLE), true);
+            guidedTutorial.Anchor("Filters", GUILayoutUtility.GetLastRect());
+            guidedTutorial.Draw("Filters");
+            if (!_filterFoldout)
+            {
+                guidedTutorial.Draw("Categories", GUILayoutUtility.GetLastRect());
+                guidedTutorial.Draw("EmptyFolders", GUILayoutUtility.GetLastRect());
+                guidedTutorial.Draw("ProtectedFolders", GUILayoutUtility.GetLastRect());
+            }
             if (!_filterFoldout) return;
 
             EditorGUILayout.BeginVertical("box");
@@ -274,8 +303,10 @@ namespace DiNeTool.AssetCleaner
             CatToggle(Cat.Audio, CAT_AUDIO); CatToggle(Cat.Anim, CAT_ANIM);
             CatToggle(Cat.Preset, CAT_PRESET); CatToggle(Cat.Other, CAT_OTHER);
             EditorGUILayout.EndHorizontal();
+            guidedTutorial.Anchor("Categories", GUILayoutUtility.GetLastRect());
             EditorGUILayout.BeginHorizontal();
             bool includeEmptyFolders = EditorGUILayout.ToggleLeft(EmptyFoldersLabel(), _includeEmptyFolders, GUILayout.Width(140));
+            guidedTutorial.Anchor("EmptyFolders", GUILayoutUtility.GetLastRect());
             if (includeEmptyFolders != _includeEmptyFolders)
             {
                 _includeEmptyFolders = includeEmptyFolders;
@@ -290,6 +321,7 @@ namespace DiNeTool.AssetCleaner
             GUILayout.Label(T(IGN_TITLE), _sectionStyle);
             GUILayout.FlexibleSpace();
             if (MiniButton(T(IGN_ADD), ColAccent, 110)) AddIgnoreFolder();
+            guidedTutorial.Anchor("ProtectedFolders", GUILayoutUtility.GetLastRect());
             EditorGUILayout.EndHorizontal();
 
             if (_ignoreFolders.Count == 0)
@@ -314,6 +346,9 @@ namespace DiNeTool.AssetCleaner
             GUILayout.Space(2);
             GUILayout.Label(T(PROTECT_NOTE), _metaStyle);
             EditorGUILayout.EndVertical();
+            guidedTutorial.Draw("Categories");
+            guidedTutorial.Draw("EmptyFolders");
+            guidedTutorial.Draw("ProtectedFolders");
         }
 
         private void CatToggle(Cat c, int strId)
@@ -377,7 +412,11 @@ namespace DiNeTool.AssetCleaner
                 var prev = GUI.backgroundColor;
                 GUI.backgroundColor = ColAccent;
                 if (GUILayout.Button(T(ANALYZE), _bigBtnStyle, GUILayout.Height(30)))
+                {
                     Analyze();
+                    guidedTutorial.NotifyAction("Analyze");
+                }
+                guidedTutorial.Anchor("Analyze", GUILayoutUtility.GetLastRect());
                 GUI.backgroundColor = prev;
             }
 
@@ -387,6 +426,7 @@ namespace DiNeTool.AssetCleaner
                 GUI.backgroundColor = ColWarn;
                 if (GUILayout.Button(T(EMPTY_CLEAN), _bigBtnStyle, GUILayout.Height(30), GUILayout.Width(150)))
                     CleanEmptyFolders();
+                guidedTutorial.Anchor("EmptyCleanup", GUILayoutUtility.GetLastRect());
                 GUI.backgroundColor = prev;
             }
             EditorGUILayout.EndHorizontal();
@@ -408,6 +448,7 @@ namespace DiNeTool.AssetCleaner
                 new GUIContent(T(ROOT_ONLY), T(ROOT_ONLY_TIP)),
                 _miniBtnStyle,
                 GUILayout.Height(24));
+            guidedTutorial.Anchor("RootFolders", GUILayoutUtility.GetLastRect());
             GUI.backgroundColor = prevBg;
             if (toggleRootFolderMode)
                 SetUnusedRootFoldersOnly(!_unusedRootFoldersOnly);
@@ -416,9 +457,11 @@ namespace DiNeTool.AssetCleaner
             EditorGUILayout.BeginHorizontal();
             if (MiniButton(T(PICK_ALL), ColAccent)) { _selected.Clear(); foreach (var f in AllFiles(_root)) _selected.Add(f.Path); _selVersion++; }
             if (MiniButton(T(PICK_NONE), ColDanger)) { _selected.Clear(); _selVersion++; }
+            guidedTutorial.Anchor("Selection", GUILayoutUtility.GetLastRect());
             GUILayout.FlexibleSpace();
             if (MiniButton(T(EXPAND), ColAccent)) ExpandAll(true);
             if (MiniButton(T(COLLAPSE), ColAccent)) ExpandAll(false);
+            guidedTutorial.Anchor("Expand", GUILayoutUtility.GetLastRect());
             EditorGUILayout.EndHorizontal();
         }
 
@@ -433,6 +476,7 @@ namespace DiNeTool.AssetCleaner
 
             // ExpandHeight: 툴바와 삭제바 사이의 남은 세로 공간을 트리 스크롤이 모두 차지
             // 창이 작을 때 삭제 버튼이 화면 아래로 밀리지 않도록 최소 높이는 낮게 둔다.
+            guidedTutorial.BeginScrollScope();
             _treeScroll = EditorGUILayout.BeginScrollView(_treeScroll, "box",
                 GUILayout.ExpandHeight(true), GUILayout.MinHeight(260));
             if (_unusedRootFoldersOnly)
@@ -446,6 +490,7 @@ namespace DiNeTool.AssetCleaner
                 foreach (var file in _root.Files) DrawFile(file, 0);
             }
             EditorGUILayout.EndScrollView();
+            guidedTutorial.EndScrollScope(GUILayoutUtility.GetLastRect());
         }
 
         /// <summary>
@@ -569,6 +614,7 @@ namespace DiNeTool.AssetCleaner
                 if (GUILayout.Button(Tf(DELETE_BTN, _selCountCache, FormatBytes(_selBytesCache)),
                     _bigBtnStyle, GUILayout.Height(32)))
                     DeleteSelected();
+                guidedTutorial.Anchor("Trash", GUILayoutUtility.GetLastRect());
                 GUI.backgroundColor = prev;
             }
             GUILayout.Label(T(TRASH_HINT), _metaStyle);
@@ -668,6 +714,7 @@ namespace DiNeTool.AssetCleaner
             }
 
             _analyzed = true;
+            tutorialAnalyzedScenes = scenes.OrderBy(p => p, StringComparer.Ordinal).ToArray();
             ExpandAll(false); // 기본 접힘 — 펼친 행 수를 줄여 렌더링 부하를 낮춘다
             SetStatus(Tf(DONE, _totalCount, FormatBytes(_totalBytes)), false);
         }

@@ -4,7 +4,7 @@ using UnityEditor.IMGUI.Controls;
 using UnityEngine;
 
 [CustomEditor(typeof(DiNeRemoveMeshInBox))]
-public class DiNeRemoveMeshInBoxEditor : Editor
+public partial class DiNeRemoveMeshInBoxEditor : Editor
 {
     private enum LanguagePreset { English, Korean, Japanese }
 
@@ -36,16 +36,34 @@ public class DiNeRemoveMeshInBoxEditor : Editor
         _titleFont = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
         _removeInBox = serializedObject.FindProperty("removeInBox");
         _boxes = serializedObject.FindProperty("boxes");
+        if (!EditorPrefs.HasKey("DiNeLang") && EditorPrefs.HasKey("DiNeOpticore_ComponentLang"))
+            EditorPrefs.SetInt("DiNeLang", Mathf.Clamp(EditorPrefs.GetInt("DiNeOpticore_ComponentLang"), 0, 2));
         if (EditorPrefs.HasKey("DiNeOpticore_ComponentLang"))
             _language = (LanguagePreset)EditorPrefs.GetInt("DiNeOpticore_ComponentLang");
     }
 
     public override void OnInspectorGUI()
     {
+        EnsureTutorial();
+        tutorial.BeginFrame();
+        try { DrawInspectorContent(); }
+        finally { tutorial.EndFrame(); }
+    }
+
+    private void OnDisable() => tutorial?.Suspend();
+
+    private void DrawInspectorContent()
+    {
+        _language = (LanguagePreset)Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", EditorPrefs.GetInt("DiNeOpticore_ComponentLang", 0)), 0, 2);
         serializedObject.Update();
 
         DrawHeaderBar();
+        tutorial.Anchor("renderer", GUILayoutUtility.GetLastRect());
+        GUILayout.Space(5f);
         DrawLanguageBar();
+        GUILayout.Space(15f);
+        tutorial.DrawControls();
+        tutorial.Draw("renderer");
         DrawHorizontalLine();
 
         if (((DiNeRemoveMeshInBox)target).GetComponent<Renderer>() == null)
@@ -59,11 +77,14 @@ public class DiNeRemoveMeshInBoxEditor : Editor
             return;
         }
 
+        EditorGUI.BeginChangeCheck();
         _removeInBox.boolValue = EditorGUILayout.ToggleLeft(
             _removeInBox.boolValue
                 ? L("Remove polygons inside the boxes", "박스 안의 폴리곤 제거", "ボックス内のポリゴンを削除")
                 : L("Remove polygons NOT inside any box", "박스 밖의 폴리곤 제거", "ボックス外のポリゴンを削除"),
             _removeInBox.boolValue);
+        if (EditorGUI.EndChangeCheck()) tutorial.NotifyAction("mode");
+        tutorial.Draw("mode", GUILayoutUtility.GetLastRect());
 
         GUILayout.Space(4f);
         GUILayout.Label(L("Boxes (renderer local space)", "박스 (렌더러 로컬 공간)", "ボックス (レンダラーローカル空間)"),
@@ -83,20 +104,35 @@ public class DiNeRemoveMeshInBoxEditor : Editor
             GUILayout.FlexibleSpace();
             if (GUILayout.Button("✕", GUILayout.Width(24f)))
                 removeIndex = i;
+            if (i == 0) tutorial.Anchor("delete", GUILayoutUtility.GetLastRect());
             EditorGUILayout.EndHorizontal();
+            if (i == 0) tutorial.Draw("delete");
 
+            EditorGUI.BeginChangeCheck();
             center.vector3Value = EditorGUILayout.Vector3Field(L("Center", "중심", "中心"), center.vector3Value);
+            if (EditorGUI.EndChangeCheck()) tutorial.NotifyAction("center");
+            if (i == 0) tutorial.Draw("center", GUILayoutUtility.GetLastRect());
+            EditorGUI.BeginChangeCheck();
             size.vector3Value = EditorGUILayout.Vector3Field(L("Size", "크기", "サイズ"), size.vector3Value);
+            if (EditorGUI.EndChangeCheck()) { tutorial.NotifyAction("size"); tutorial.NotifyAction("boxes"); }
+            if (i == 0) tutorial.Draw("size", GUILayoutUtility.GetLastRect());
             Vector3 euler = rotation.quaternionValue.eulerAngles;
             EditorGUI.BeginChangeCheck();
             euler = EditorGUILayout.Vector3Field(L("Rotation", "회전", "回転"), euler);
             if (EditorGUI.EndChangeCheck())
+            {
                 rotation.quaternionValue = Quaternion.Euler(euler);
+                tutorial.NotifyAction("rotation");
+            }
+            if (i == 0) tutorial.Draw("rotation", GUILayoutUtility.GetLastRect());
             EditorGUILayout.EndVertical();
         }
 
         if (removeIndex >= 0)
+        {
             _boxes.DeleteArrayElementAtIndex(removeIndex);
+            tutorial.NotifyAction("delete");
+        }
 
         GUILayout.Space(4f);
         if (GUILayout.Button(L("Add Box", "박스 추가", "ボックス追加")))
@@ -107,6 +143,18 @@ public class DiNeRemoveMeshInBoxEditor : Editor
             box.FindPropertyRelative("center").vector3Value = Vector3.zero;
             box.FindPropertyRelative("size").vector3Value = Vector3.one * 0.3f;
             box.FindPropertyRelative("rotation").quaternionValue = Quaternion.identity;
+            tutorial.NotifyAction("boxes");
+            tutorial.NotifyAction("add");
+        }
+        Rect addRect = GUILayoutUtility.GetLastRect();
+        tutorial.Draw("boxes", addRect);
+        tutorial.Draw("add", addRect);
+        if (_boxes.arraySize == 0)
+        {
+            tutorial.Draw("center", addRect);
+            tutorial.Draw("size", addRect);
+            tutorial.Draw("rotation", addRect);
+            tutorial.Draw("delete", addRect);
         }
 
         EditorGUILayout.HelpBox(
@@ -114,6 +162,9 @@ public class DiNeRemoveMeshInBoxEditor : Editor
               "Opticore 파이프라인이 빌드 시(그리고 플레이 시) 비파괴적으로 적용합니다. 씬 뷰에서 박스 핸들을 드래그하세요.",
               "Opticore パイプラインがビルド時（および再生時）に非破壊で適用します。シーンビューでボックスハンドルをドラッグしてください。"),
             MessageType.Info);
+        Rect infoRect = GUILayoutUtility.GetLastRect();
+        tutorial.Draw("scene", infoRect);
+        tutorial.Draw("automatic", infoRect);
 
         serializedObject.ApplyModifiedProperties();
     }
@@ -174,7 +225,12 @@ public class DiNeRemoveMeshInBoxEditor : Editor
             }
         }
 
-        serializedObject.ApplyModifiedProperties();
+        if (serializedObject.ApplyModifiedProperties())
+        {
+            tutorial?.NotifyAction("boxes");
+            tutorial?.NotifyAction("scene");
+            Repaint();
+        }
     }
 
     private void DrawHeaderBar()
@@ -183,19 +239,22 @@ public class DiNeRemoveMeshInBoxEditor : Editor
         EditorGUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
         if (_windowIcon != null)
-            GUILayout.Label(_windowIcon, GUILayout.Width(48f), GUILayout.Height(48f));
-        var titleStyle = new GUIStyle(EditorStyles.label)
+            GUILayout.Label(_windowIcon, GUILayout.Width(72f), GUILayout.Height(72f));
+        if (tutorialTitleStyle == null) tutorialTitleStyle = new GUIStyle(EditorStyles.label)
         {
             font = _titleFont,
-            fontSize = 22,
+            fontSize = 36,
             fontStyle = FontStyle.Bold,
             alignment = TextAnchor.MiddleCenter,
             normal = { textColor = Color.white }
         };
         GUILayout.Space(6f);
-        GUILayout.Label("Remove Mesh In Box", titleStyle, GUILayout.Height(48f));
+        GUILayout.Label("Remove Mesh In Box", tutorialTitleStyle, GUILayout.Height(72f));
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
+        if (tutorialDescriptionStyle == null) tutorialDescriptionStyle = new GUIStyle(EditorStyles.wordWrappedLabel)
+        { fontSize = 12, alignment = TextAnchor.MiddleCenter, normal = { textColor = new Color(.8f, .8f, .8f) } };
+        GUILayout.Label(L("Remove polygons within a chosen region.", "선택한 영역의 폴리곤을 제거합니다.", "選択した範囲のポリゴンを削除します。"), tutorialDescriptionStyle);
         EditorGUILayout.EndVertical();
     }
 
@@ -207,10 +266,10 @@ public class DiNeRemoveMeshInBoxEditor : Editor
         {
             Color prev = GUI.backgroundColor;
             GUI.backgroundColor = (int)_language == i ? ColAccent : new Color(0.5f, 0.5f, 0.5f);
-            if (GUILayout.Button(options[i], GUILayout.Height(22f)))
+            if (GUILayout.Button(options[i], GUILayout.Height(35f)))
             {
                 _language = (LanguagePreset)i;
-                EditorPrefs.SetInt("DiNeOpticore_ComponentLang", i);
+                EditorPrefs.SetInt("DiNeLang", i);
             }
             GUI.backgroundColor = prev;
         }

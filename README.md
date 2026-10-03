@@ -3,10 +3,19 @@
 VRChat 아바타의 편집, 메뉴 제작, 라이팅, 최적화, 아이콘·스크린샷 제작, VRM 변환 준비를 한곳에서 처리하는 **Unity Editor 도구 모음**입니다.
 
 ![Unity 2022.3](https://img.shields.io/badge/Unity-2022.3_LTS%2B-black?logo=unity&style=flat)
-![Version 1.7.5](https://img.shields.io/badge/Version-1.7.5-30D1C2?style=flat)
+![Version 1.8.0](https://img.shields.io/badge/Version-1.8.0-30D1C2?style=flat)
 ![Languages](https://img.shields.io/badge/UI-EN%20%2F%20KO%20%2F%20JP-4C9BD6?style=flat)
 
 > 대부분의 도구는 English / 한국어 / 日本語 UI를 지원합니다. 기능에 따라 lilToon, Poiyomi, NDMF, Modular Avatar, UniVRM을 함께 사용할 수 있습니다.
+
+### 1.8.0 변경 사항
+
+- Animation Tool을 추가하고 Avi Editor의 클립 미리보기·포즈·표정 제작 기능을 옮겼습니다. 애니메이션 연결 검사, 대응표와 복구본 저장도 지원합니다.
+- Expression Editor에서 VRChat 메뉴·파라미터를 직접 편집하고, 복사·이동·병합·진단할 수 있습니다.
+- 주요 도구에 영어·한국어·일본어 말풍선 튜토리얼과 조작 영역 강조를 추가했습니다.
+- Extra Modifier에 수정 FBX로 프리팹 기능을 이식하는 미리보기와 적용 기능을 추가했습니다.
+- Avi Editor의 통합 아마추어 프리셋과 공용 얼굴 미리보기를 개선했습니다.
+- Multi Dresser의 독립 토글 안내와 기존 패키지 가져오기 시 쉐이프키 설정 호환성을 보완했습니다.
 
 ### 1.7.5 변경 사항
 
@@ -54,9 +63,11 @@ VCC / VPM으로 설치하면 package dependency에 등록된 VRChat SDK, NDMF, M
 
 | 도구 | 여는 위치 | 용도 |
 |---|---|---|
-| Avi Editor | `DiNe → Avi Editor` | 뼈, 애니메이션, 표정, 쉐이프키, PhysBone 일괄 편집 |
+| Avi Editor | `DiNe → Avi Editor` | 본·메시 쉐이프키·PhysBone 편집 |
+| Animation Tool | `DiNe → Animation Tool` | 클립 미리보기·포즈 적용·표정 제작·애니메이션 연결 복구 |
 | Material Tool | `DiNe → Material Tool` | 프리셋, 미사용 텍스처 정리, VRAM 최적화 |
 | Screen Saver | `DiNe → Screen Saver` | 스크린샷 및 메뉴 아이콘 제작 |
+| Expression Editor | Expression Menu / Parameters 에셋 선택 → Inspector | 메뉴·파라미터 직접 편집, 복사·이동·병합·진단 ([사용법](Docs/DI_NE_EXPRESSION_EDITOR.md)) |
 | Multi Dresser | Hierarchy 우클릭 → `Di Ne → Multi Dresser` | 옷장·헤어·액세서리 메뉴 생성 |
 | Lighting Designer | Hierarchy 우클릭 → `Di Ne → Lighting Designer` | 인게임 라이팅 메뉴 생성 |
 | Smart Toggle | 대상 오브젝트 우클릭 → `Di Ne → Smart Toggle` | 오브젝트 하나를 빠르게 토글 메뉴로 등록 |
@@ -65,46 +76,31 @@ VCC / VPM으로 설치하면 package dependency에 등록된 VRChat SDK, NDMF, M
 | Remove Mesh In Box | Renderer 오브젝트에 `Add Component → DiNe → Remove Mesh In Box` | 박스 안/밖 폴리곤을 빌드 시 제거 |
 | Package Patcher | `DiNe → EX → Package Patcher` | 여러 Unity 패키지 일괄 설치·정리 |
 | Asset Cleaner | `DiNe → EX → Asset Cleaner` | 선택한 씬에서 쓰지 않는 에셋 찾기 |
-| Extra Modifier | `DiNe → EX → Extra Modifier` | VRChat 아바타를 VRM용으로 정리 |
+| Extra Modifier | `DiNe → EX → Extra Modifier` | 수정 FBX에 프리팹 기능 이식, VRM 준비 |
 
 ---
 
 ## 🧍 Avi Editor
 
-아바타 루트를 한 번 지정한 뒤 다섯 개의 탭에서 작업합니다. 탭을 바꾸거나 Undo/Redo를 사용해도 대상과 슬라이더 상태를 최대한 유지합니다.
+아바타 루트를 지정한 뒤 **아마추어 / 쉐이프키 / PhysBone** 세 탭에서 아바타의 형태와 설정을 편집합니다.
+클립 미리보기와 표정 제작은 `DiNe → Animation Tool`로 옮겼습니다. 기존 아마추어 프리셋은 계속 사용할 수 있습니다.
 
 ### 1. 아마추어
 
 - **직접 뼈 조정**: 바디 맵에서 부위를 고르고 균일/축별 Scale, Position, Rotation을 조절합니다.
 - 머리, 목, 상체, 척추, 골반, 어깨, 팔·다리뿐 아니라 가슴·엉덩이 보조 본도 다룰 수 있습니다.
-- Scale / Rotation / Position을 함께 또는 따로 프리셋으로 저장하고 불러올 수 있습니다.
-- **MA 비율 조정**: Modular Avatar Scale Adjuster 방식으로 비율을 만들고 전용 프리셋을 저장·설치합니다.
+- **통합 아마추어 프리셋**: 기본 뼈의 Scale / Rotation / Position과 MA Scale Adjuster 값·자식 위치 조정 옵션을 하나의 에셋에 함께 저장합니다. 두 조정 탭에서 같은 프리셋 목록을 사용하며, 전체 또는 기본 크기·회전·위치·MA 값만 골라 불러올 수 있습니다. 기존 기본 뼈·MA 전용 프리셋도 불러올 수 있습니다.
+- **MA 비율 조정**: Modular Avatar Scale Adjuster 방식으로 비율을 만듭니다. 프리셋을 불러올 때 필요한 Adjuster는 자동으로 추가되며, 저장되지 않은 Adjuster는 유지합니다.
 - 대상 구조가 바뀌었다면 아바타 입력칸 옆의 `↺` 버튼으로 본 매핑을 다시 읽습니다.
 
-### 2. 애니메이션
-
-1. 아바타 루트와 Animation Clip을 지정합니다.
-2. 시간 슬라이더를 움직여 포즈와 쉐이프키를 실시간 미리보기 합니다.
-3. **쉐이프키만 적용**, **포즈만 적용**, **전체 적용** 중 원하는 버튼을 누릅니다.
-4. 되돌리려면 **원본으로 초기화 (T-Pose/0)** 를 누릅니다.
-
-슬라이더 이동은 미리보기이며, 적용 버튼을 눌러야 씬 오브젝트에 기록됩니다.
-
-### 3. 표정
-
-- 얼굴 프리뷰를 보면서 Body의 쉐이프키 값을 조절합니다.
-- 기존 표정 Animation Clip을 불러와 수정하거나 새 클립으로 저장할 수 있습니다.
-- **Gesture ShapeKey를 0으로 포함**하면 다른 제스처 클립에서 쓰는 쉐이프키가 섞여 표정이 깨지는 문제를 줄일 수 있습니다.
-- FX Animator Controller의 레이어와 State를 확인하고 표정 클립을 바로 교체할 수 있습니다.
-
-### 4. 쉐이프키
+### 2. 쉐이프키
 
 - 여러 쉐이프키를 0~200% 비율로 섞어 **새 쉐이프키**를 만듭니다.
 - 기존 쉐이프키의 최대 변형량을 0~200%로 다시 조절합니다.
 - 기존 쉐이프키의 내용을 다른 쉐이프키 조합으로 교체합니다.
 - 검색, 얼굴 미리보기, 원본 복원을 지원합니다.
 
-### 5. 엑스트라
+### 3. PhysBone
 
 아바타 아래의 비활성 오브젝트까지 포함해 모든 PhysBone을 찾고 상호작용 설정을 한 번에 바꿉니다.
 
@@ -115,6 +111,37 @@ VCC / VPM으로 설치하면 package dependency에 등록된 VRChat SDK, NDMF, M
 - **모두 켜기 / 모두 끄기**와 Undo 지원
 
 플레이어 콜라이더 반응을 꺼도 각 PhysBone의 **Colliders** 목록에 직접 넣은 콜라이더는 제거하거나 비활성화하지 않습니다.
+
+---
+
+## 🎞️ Animation Tool
+
+`DiNe → Animation Tool`에서 아바타를 지정하고 **미리보기·포즈 / 표정·제스처 / 연결 복구** 탭을 사용합니다.
+아바타의 메시 쉐이프키 자체를 생성·수정하려면 Avi Editor를 사용하세요.
+
+### 미리보기·포즈
+
+- 클립과 시간을 지정해 애니메이션을 확인하고 재생합니다.
+- 미리보기는 별도 Preview Scene의 그래픽·본·머티리얼 복사본에서 실행합니다.
+- **쉐이프키 / 포즈 / 모두 적용**을 눌렀을 때만 씬 아바타에 기록하며 Undo를 지원합니다.
+- **기록한 포즈·쉐이프키로 복원**으로 대상 지정 시 기록한 상태를 다시 적용할 수 있습니다.
+
+### 표정·제스처
+
+- 얼굴 미리보기를 보며 쉐이프키 값을 조절하고 기존 표정 클립을 불러오거나 새 클립으로 저장합니다.
+- 다른 제스처가 사용하는 쉐이프키의 0 값도 포함해 표정이 섞이는 문제를 줄일 수 있습니다.
+- FX의 표정 클립을 확인·미리보기 하고, 명시적으로 선택한 슬롯의 클립을 교체합니다.
+
+### 연결 복구
+
+1. 현재 아바타를 지정하고 검사할 클립 또는 Controller를 추가합니다.
+2. **연결 검사**로 사라진 오브젝트 경로·컴포넌트·쉐이프키·머티리얼 슬롯을 확인합니다.
+3. 문제별로 새 대상과 속성을 선택합니다. 같은 연결을 사용하는 여러 클립에는 대응표를 함께 적용합니다.
+4. 복구본을 미리보기 한 뒤 별도 `.anim` 파일로 저장합니다. 저장 폴더에는 대응표와 미해결 연결 보고서도 함께 들어갑니다. 대응표는 저장·불러올 수 있습니다.
+
+복구는 원본 클립과 Controller를 덮어쓰지 않고, FX·메뉴·파라미터 및 Multi Dresser 참조를 자동 교체하지 않습니다.
+대상을 확정할 수 없는 연결은 유지하고, 여러 커브가 같은 대상으로 겹치거나 커브와 속성의 종류가 다른 매핑은 차단합니다.
+이름·경로가 바뀐 연결을 복구하는 기능이며, 삭제된 쉐이프키의 변형 데이터나 본 리그를 새로 만들지는 않습니다.
 
 ---
 
@@ -190,6 +217,8 @@ Multi Dresser와 Smart Toggle의 **아이콘 편집** 버튼도 같은 편집기
 ## 👗 Multi Dresser
 
 옷, 헤어, 액세서리를 카테고리별 메뉴로 묶고 각 버튼 상태를 미리 확인하는 도구입니다.
+
+인스펙터에서 **말풍선 튜토리얼 시작**을 누르고 강조된 곳을 조작하세요. 이미 완료한 설정과 선택 단계는 말풍선을 눌러 넘어갈 수 있습니다. 아직 완료하지 않은 필수 단계는 안내된 동작을 수행하세요. 말풍선 주변은 어둡게 표시되며, 짧은 안내를 조작별로 나누어 제공합니다. 영어·한국어·일본어를 지원합니다.
 
 1. 아바타 루트를 우클릭하고 `Di Ne → Multi Dresser`를 선택합니다.
 2. 생성된 **Multi Dresser** 오브젝트에서 아바타 루트를 지정합니다.
@@ -328,9 +357,26 @@ Hierarchy에서 하나 이상의 오브젝트를 선택한 뒤 다음 메뉴를 
 
 ---
 
-## 🧩 Extra Modifier — VRM 준비
+## 🧩 Extra Modifier — 기능 이식과 VRM 준비
 
-현재 Extra Modifier는 VRChat 아바타를 UniVRM으로 넘기기 전에 정리하는 작업 흐름을 제공합니다.
+### 필살 복사붙여넣기술
+
+Blender에서 수정한 FBX에 기존 프리팹의 기능을 다시 이식합니다.
+
+1. 수정한 FBX를 씬에 넣습니다. **필살 복사붙여넣기술** 탭의 첫 번째 입력에는 **기존 프리팹**, 두 번째 입력에는 **Hierarchy에 있는 수정 FBX의 루트**를 지정합니다. 기존 프리팹은 씬 오브젝트나 Project 창의 에셋을 사용할 수 있습니다.
+2. FBX에 이미 있는 오브젝트의 위치·회전·크기는 유지합니다. 없는 오브젝트를 새로 추가할 때만 기존 프리팹의 로컬 위치·회전·크기를 대응하는 부모 아래에 복사합니다.
+3. **이식 사전 점검**으로 대응 오브젝트와 제외되는 항목을 확인합니다.
+4. **두 번째 오브젝트에 필살 이식**을 누르면 지정한 두 번째 오브젝트에 직접 이식합니다. 기존 프리팹은 변경하지 않고, 대상의 이름과 부모를 유지합니다. Undo로 대상의 이식 전 상태를 복원할 수 있습니다.
+
+Modular Avatar, PhysBone, Collider, Constraint 등 직렬화된 컴포넌트와 메시가 없는 추가 오브젝트를 이식하고, 내부 오브젝트·컴포넌트 참조를 두 번째 오브젝트에 다시 연결합니다. 기존 Renderer와 MeshFilter는 복사하지 않으며, 수정 FBX에서 사라진 메시 오브젝트도 다시 만들지 않습니다. 수정 FBX의 메시·머티리얼·렌더러와 Animator의 Avatar를 유지합니다.
+
+계층 경로로 먼저 대응하고, 계층이 달라졌다면 양쪽에서 유일한 이름만으로 대응합니다. 기존 루트와 본, 메시 오브젝트의 배치와 부모는 바꾸지 않습니다. 새로 추가한 오브젝트는 대상 부모의 기존 배치를 유지한 채 원본의 로컬 트랜스폼을 적용합니다.
+
+대응할 수 없는 내부 참조와 컴포넌트는 결과에 표시됩니다. Missing Script는 복사할 수 없으며, 컨트롤러 에셋의 애니메이션 경로·쉐이프키 이름은 자동 수정하지 않으므로 합치거나 삭제한 메시의 연결은 직접 확인해야 합니다.
+
+### VRM 준비
+
+VRChat 아바타를 UniVRM으로 넘기기 전에 정리하는 작업 흐름을 제공합니다.
 
 ### 가장 안전한 흐름
 
