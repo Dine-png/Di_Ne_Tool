@@ -7,6 +7,7 @@ using UnityEngine;
 public partial class DiNeAnimationTool : EditorWindow
 {
     private static readonly Color Mint = new Color(.30f, .82f, .76f, 1f);
+    private static readonly Color UnselectedTab = new Color(.50f, .50f, .50f, 1f);
     [SerializeField] private GameObject targetAvatarRoot;
     [SerializeField] private AnimationClip animationClip;
     [SerializeField] private float clipTime;
@@ -18,7 +19,7 @@ public partial class DiNeAnimationTool : EditorWindow
     [SerializeField] private bool playPreview;
     private double previousUpdate;
     private GameObject previousAvatar;
-    private Texture2D windowIcon, tabIcon, selectedTexture, unselectedTexture;
+    private Texture2D windowIcon, tabIcon;
     private Font titleFont;
     private GUIStyle titleStyle, descriptionStyle, selectedStyle, unselectedStyle;
     private RenderTexture previewTexture;
@@ -59,8 +60,6 @@ public partial class DiNeAnimationTool : EditorWindow
         tabIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe_Icon.png");
         titleFont = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
         titleContent = new GUIContent("Animation Tool", tabIcon);
-        selectedTexture = MakeTexture(Mint);
-        unselectedTexture = MakeTexture(new Color(.5f, .5f, .5f, 1f));
         minSize = new Vector2(420f, 520f);
         playPreview = false;
         previousUpdate = EditorApplication.timeSinceStartup;
@@ -81,9 +80,6 @@ public partial class DiNeAnimationTool : EditorWindow
         Undo.undoRedoPerformed -= OnUndoRedo;
         AssemblyReloadEvents.beforeAssemblyReload -= ReleaseSessionPreview;
         ReleaseSessionPreview();
-        if (selectedTexture != null) DestroyImmediate(selectedTexture);
-        if (unselectedTexture != null) DestroyImmediate(unselectedTexture);
-        selectedTexture = unselectedTexture = null;
         titleStyle = descriptionStyle = selectedStyle = unselectedStyle = null;
     }
 
@@ -107,27 +103,18 @@ public partial class DiNeAnimationTool : EditorWindow
         Repaint();
     }
 
-    private static Texture2D MakeTexture(Color color)
-    {
-        Texture2D texture = new Texture2D(1, 1) { hideFlags = HideFlags.HideAndDontSave };
-        texture.SetPixel(0, 0, color);
-        texture.Apply();
-        return texture;
-    }
-
     private void EnsureStyles()
     {
         if (titleStyle != null) return;
         titleStyle = new GUIStyle(EditorStyles.label) { font = titleFont, fontSize = 36,
             fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+        titleStyle.normal.textColor = Color.white;
         descriptionStyle = new GUIStyle(EditorStyles.label) { fontSize = 12,
             alignment = TextAnchor.MiddleCenter, wordWrap = true };
         descriptionStyle.normal.textColor = new Color(.8f, .8f, .8f, 1f);
-        selectedStyle = new GUIStyle(GUI.skin.button) { fontStyle = FontStyle.Bold };
-        selectedStyle.normal.background = selectedTexture;
+        selectedStyle = new GUIStyle(GUI.skin.button) { fontStyle = FontStyle.Bold, fontSize = 12 };
         selectedStyle.normal.textColor = Color.white;
-        unselectedStyle = new GUIStyle(GUI.skin.button);
-        unselectedStyle.normal.background = unselectedTexture;
+        unselectedStyle = new GUIStyle(GUI.skin.button) { fontSize = 12 };
         unselectedStyle.normal.textColor = new Color(.8f, .8f, .8f, 1f);
     }
 
@@ -173,29 +160,44 @@ public partial class DiNeAnimationTool : EditorWindow
     private void DrawHeader()
     {
         Color old = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(.90f, .90f, .90f, 1f);
-        EditorGUILayout.BeginVertical("box");
-        GUI.backgroundColor = old;
-        EditorGUILayout.BeginHorizontal();
-        GUILayout.FlexibleSpace();
-        if (windowIcon != null) GUILayout.Label(windowIcon, GUILayout.Width(72f), GUILayout.Height(72f));
-        GUILayout.Space(6f);
-        GUILayout.Label("Animation Tool", titleStyle, GUILayout.Height(72f));
-        GUILayout.FlexibleSpace();
-        EditorGUILayout.EndHorizontal();
-        GUILayout.Label(Tr("Preview poses, create expressions and repair animation links.",
-            "포즈를 미리 보고 표정을 만들며 애니메이션 연결을 복구합니다.",
-            "ポーズのプレビュー、表情の作成、アニメーション接続の修復。"), descriptionStyle);
-        EditorGUILayout.EndVertical();
+        try
+        {
+            GUI.backgroundColor = new Color(.90f, .90f, .90f, 1f);
+            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+            if (windowIcon != null) GUILayout.Label(windowIcon, GUILayout.Width(72f), GUILayout.Height(72f));
+            GUILayout.Space(6f);
+            GUILayout.Label("Animation Tool", titleStyle, GUILayout.Height(72f));
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.EndHorizontal();
+            GUILayout.Space(4f);
+            GUILayout.Label(Tr("Preview poses, create expressions and repair animation links.",
+                "포즈를 미리 보고 표정을 만들며 애니메이션 연결을 복구합니다.",
+                "ポーズのプレビュー、表情の作成、アニメーション接続の修復。"), descriptionStyle);
+            GUILayout.Space(5f);
+            EditorGUILayout.EndVertical();
+        }
+        finally { GUI.backgroundColor = old; }
     }
 
     private int DrawToolbar(int selected, string[] labels, int height)
     {
         EditorGUILayout.BeginHorizontal();
+        int nextSelected = selected;
         for (int i = 0; i < labels.Length; i++)
-            if (GUILayout.Button(labels[i], i == selected ? selectedStyle : unselectedStyle, GUILayout.Height(height))) selected = i;
+        {
+            Color old = GUI.backgroundColor;
+            try
+            {
+                // Tint the native button skin, as in the other Di Ne toolbars.
+                GUI.backgroundColor = i == selected ? Mint : UnselectedTab;
+                if (GUILayout.Button(labels[i], i == selected ? selectedStyle : unselectedStyle, GUILayout.Height(height))) nextSelected = i;
+            }
+            finally { GUI.backgroundColor = old; }
+        }
         EditorGUILayout.EndHorizontal();
-        return selected;
+        return nextSelected;
     }
 
     private void BeginCard(string title)
@@ -527,25 +529,25 @@ public partial class DiNeAnimationTool : EditorWindow
         if (_tutorial == null) _tutorial = new DiNeGuidedTutorial(this, "animation-tool");
         if (tutorialCourses == null)
         {
-            DiNeTutorialStep avatar = DiNeTutorialStep.Required("avatar", "Assign the avatar root used by the animation paths.", "애니메이션 경로의 기준이 되는 아바타 루트를 지정하세요.", "アニメーションパスの基準になるアバタールートを指定してください。", () => targetAvatarRoot != null);
+            DiNeTutorialStep avatar = DiNeTutorialStep.Required("avatar", "The avatar root is the starting point for finding the bones and meshes named in a clip. Assign the avatar you want to preview, edit expressions for, or repair clips for.", "아바타 루트는 클립에 기록된 본과 메시를 찾는 기준입니다. 포즈를 미리 보거나 표정을 만들거나 클립 연결을 복구할 아바타를 지정하세요.", "アバタールートを基準に、クリップに記録されたボーンやメッシュを探します。ポーズの確認、表情の作成、クリップの接続修復を行うアバターを指定してください。", () => targetAvatarRoot != null);
             DiNeTutorialStep view = DiNeTutorialStep.Optional("preview-view", "Drag to orbit, scroll to zoom, and Alt-drag to pan. The preview uses a separate copy.", "드래그로 회전하고 휠로 확대하며 Alt+드래그로 이동하세요. 미리보기는 별도 복사본에서 동작합니다.", "ドラッグで回転、ホイールでズーム、Alt+ドラッグで移動します。プレビューは独立したコピーで動作します。");
             tutorialCourses = new Dictionary<string, DiNeTutorialStep[]>
             {
                 ["preview"] = new[] { avatar,
-                    DiNeTutorialStep.Required("animation-clip", "Assign an animation clip.", "애니메이션 클립을 지정하세요.", "アニメーションクリップを指定してください。", () => animationClip != null),
+                    DiNeTutorialStep.Required("animation-clip", "A clip supplies the pose and shape weights to sample on the avatar copy. Assign a .anim file to check how its motion or expression looks on this avatar.", "클립에 담긴 포즈와 쉐이프키 값을 아바타 복사본에 재생합니다. 이 아바타에서 동작이나 표정이 어떻게 보이는지 확인할 .anim 파일을 지정하세요.", "クリップのポーズとシェイプキー値をアバターのコピーに再生します。このアバターで動きや表情を確認したい.animファイルを指定してください。", () => animationClip != null),
                     DiNeTutorialStep.Optional("animation-time", "Choose a time or play the clip. Scrubbing never edits the scene avatar.", "시간을 선택하거나 클립을 재생하세요. 시간을 조절해도 씬 아바타는 바뀌지 않습니다.", "時間を選ぶかクリップを再生します。時間を動かしてもシーンのアバターは変わりません。"),
                     view,
                     DiNeTutorialStep.Optional("animation-apply", "Apply shape weights, pose transforms, or both. Only this explicit action edits the scene and supports Undo.", "쉐이프키, 포즈 또는 둘 다 적용하세요. 이 적용 동작만 씬을 편집하며 실행 취소를 지원합니다.", "シェイプキー、ポーズ、または両方を適用します。この操作だけがシーンを編集し、元に戻す操作に対応します。"),
                     DiNeTutorialStep.Optional("animation-restore", "Restore the state captured when the avatar was assigned or refreshed.", "아바타 지정 또는 새로고침 시 기록한 상태로 복원할 수 있습니다.", "アバター指定・更新時に記録した状態へ復元できます。") },
                 ["expression"] = new[] { avatar,
-                    DiNeTutorialStep.Required("expression-mesh", "Choose the mesh whose expression you want to edit.", "표정을 편집할 메시를 선택하세요.", "表情を編集するメッシュを選択してください。", () => _bodySmr != null && _bodySmr.sharedMesh != null && _bodySmr.sharedMesh.blendShapeCount > 0),
+                    DiNeTutorialStep.Required("expression-mesh", "Expressions are built by combining a mesh's shape keys, such as eye and mouth shapes. Choose the face mesh whose expression you want to edit.", "눈과 입 모양 같은 메시의 쉐이프키를 조합해 표정을 만듭니다. 표정을 편집할 얼굴 메시를 선택하세요.", "目や口の形など、メッシュのシェイプキーを組み合わせて表情を作ります。表情を編集する顔のメッシュを選択してください。", () => _bodySmr != null && _bodySmr.sharedMesh != null && _bodySmr.sharedMesh.blendShapeCount > 0),
                     view,
                     DiNeTutorialStep.Optional("expression-clip", "Load an existing clip's shape weights, or create a new expression.", "기존 클립의 쉐이프키 값을 불러오거나 새 표정을 만드세요.", "既存クリップのキー値を読み込むか、新しい表情を作成します。"),
                     DiNeTutorialStep.Optional("expression-fx", "Preview gesture clips, then return to your working expression. Replace writes a new expression clip into the chosen FX slot.", "제스처 클립을 미리 보고 작업 중인 표정으로 돌아올 수 있습니다. 교체는 새 표정 클립을 선택한 FX 슬롯에 연결합니다.", "ジェスチャーをプレビューして編集中の表情へ戻れます。差し替えは新規表情クリップを選択したFXスロットへ接続します。"),
-                    DiNeTutorialStep.Optional("expression-shapes", "Adjust shape weights while checking the detached face preview.", "별도 얼굴 미리보기를 보며 쉐이프키 값을 조절하세요.", "独立した顔プレビューを見ながらシェイプキー値を調整してください。"),
+                    DiNeTutorialStep.Optional("expression-shapes", "Combine eye, mouth and other shape weights to make an expression, such as a smile. Adjust the sliders while checking the detached face preview; save when the expression is ready.", "눈·입 등의 쉐이프키 값을 조합해 웃는 얼굴 같은 표정을 만듭니다. 별도 얼굴 미리보기를 보며 슬라이더를 조절하고 원하는 표정이 되면 저장하세요.", "目や口などのシェイプキー値を組み合わせて、笑顔などの表情を作ります。独立した顔プレビューを見ながらスライダーを調整し、表情ができたら保存してください。"),
                     DiNeTutorialStep.Optional("expression-save", "Save a new .anim, or overwrite an editable clip. Zero gesture keys prevent overlapping expressions.", "새 .anim으로 저장하거나 편집 가능한 클립을 덮어쓰세요. 제스처의 0값 키는 표정 겹침을 방지합니다.", "新しい.animとして保存するか編集可能なクリップを上書きします。ジェスチャーの0値キーは表情の重なりを防ぎます。") },
                 ["repair"] = new[] { avatar,
-                    DiNeTutorialStep.Optional("repair-input", "Add clips, a controller, or the avatar's FX clips to inspect.", "검사할 클립이나 컨트롤러 또는 아바타 FX 클립을 추가하세요.", "検査するクリップ、コントローラー、またはアバターのFXクリップを追加します。"),
+                    DiNeTutorialStep.Optional("repair-input", "Use this when a clip stops working after moving an object or using it on another avatar. Add individual clips, a controller, or the avatar's FX clips to inspect their recorded connections together.", "오브젝트를 옮기거나 다른 아바타의 클립을 가져온 뒤 애니메이션이 작동하지 않을 때 사용합니다. 개별 클립·컨트롤러·아바타 FX 클립을 추가해 기록된 연결을 함께 검사하세요.", "オブジェクトの移動や別のアバターのクリップの利用で、アニメーションが動かなくなったときに使います。個別のクリップ、コントローラー、アバターのFXクリップを追加し、記録された接続をまとめて調べてください。"),
                     DiNeTutorialStep.Optional("repair-inspect", "Inspect connections to find missing paths, components, shape keys and material slots.", "연결을 검사해 없는 경로·컴포넌트·쉐이프키·머티리얼 슬롯을 찾으세요.", "接続を検査して欠けたパス、コンポーネント、キー、マテリアルスロットを見つけます。"),
                     DiNeTutorialStep.Optional("repair-mapping", "Choose replacement objects and properties. Reused connections are repaired together, and conflicting destinations must be resolved.", "새 오브젝트와 속성을 지정하세요. 여러 클립의 같은 연결은 함께 복구하며 대상 충돌은 해결해야 합니다.", "新しいオブジェクトとプロパティを指定します。同じ接続はまとめて修復し、対象の競合は解決する必要があります。"),
                     DiNeTutorialStep.Optional("repair-save", "Save repaired copies and the reusable mapping table, then preview the saved result.", "복구본과 재사용할 대응표를 저장한 뒤 저장된 결과를 미리 보세요.", "修復したコピーと再利用できる対応表を保存し、保存結果をプレビューします。") }
@@ -555,7 +557,20 @@ public partial class DiNeAnimationTool : EditorWindow
         string[] names = selectedTab == 0 ? new[] { "Preview / Pose", "미리보기·포즈", "プレビュー・ポーズ" }
             : selectedTab == 1 ? new[] { "Expressions / FX", "표정·제스처", "表情・ジェスチャー" }
             : new[] { "Repair", "연결 복구", "接続修復" };
-        _tutorial.Configure(course, names[0], names[1], names[2], tutorialCourses[course], onStop: () => { playPreview = false; });
+        string[] overview = selectedTab == 0 ? new[] {
+            "Animation Tool lets you check a clip's motion or expression on an avatar copy and take a pose from a chosen frame. Use it to check a downloaded animation or set up a pose for a picture. You can apply the sampled pose, shape weights, or both to the scene avatar and restore its captured state.",
+            "Animation Tool은 아바타 복사본에서 클립의 동작·표정을 미리 보고 원하는 프레임의 포즈를 가져오는 툴입니다. 받은 애니메이션을 확인하거나 촬영용 포즈를 잡을 때 사용합니다. 선택한 포즈·쉐이프키 또는 둘 다 씬 아바타에 적용하고, 기록해 둔 상태로 복원할 수 있습니다.",
+            "Animation Toolは、アバターのコピーでクリップの動きや表情を確認し、好きなフレームのポーズを取り出すツールです。入手したアニメーションの確認や撮影用のポーズ作りに使えます。選択したポーズ、シェイプキー、または両方をシーンのアバターに適用し、記録した状態へ復元できます。" }
+            : selectedTab == 1 ? new[] {
+                "Create avatar expressions by combining face shape keys while checking a separate preview. You can start from an existing expression, compare FX gesture clips, and save the result as a .anim file. Use Replace to connect a new expression clip to a chosen FX gesture slot.",
+                "얼굴 쉐이프키를 조합하고 별도 미리보기를 보면서 아바타 표정을 만드는 기능입니다. 기존 표정을 불러와 수정하거나 FX 제스처 표정과 비교하고, 완성한 표정을 .anim 파일로 저장할 수 있습니다. 교체 기능을 쓰면 새 표정 클립을 선택한 FX 제스처 슬롯에 연결합니다.",
+                "顔のシェイプキーを組み合わせ、独立したプレビューを見ながらアバターの表情を作る機能です。既存の表情を読み込んで編集したり、FXジェスチャーの表情と比較したりして、完成した表情を.animファイルに保存できます。差し替えでは、新しい表情クリップを選択したFXジェスチャースロットへ接続します。" }
+            : new[] {
+                "Repair animation connections that no longer match the avatar after an object was moved or renamed. Inspect multiple clips for missing objects, components, shape keys and material slots, then map them to valid replacements. Save repaired clip copies and a reusable mapping table to check and reuse the result.",
+                "오브젝트를 옮기거나 이름을 바꾼 뒤 아바타와 맞지 않게 된 애니메이션 연결을 복구하는 기능입니다. 여러 클립에서 찾을 수 없는 오브젝트·컴포넌트·쉐이프키·마테리얼 슬롯을 검사하고 올바른 대상으로 연결할 수 있습니다. 복구한 클립 복사본과 재사용할 대응표를 저장해 결과를 확인하고 다시 활용합니다.",
+                "オブジェクトの移動や名前変更で、アバターと合わなくなったアニメーションの接続を修復する機能です。複数のクリップから見つからないオブジェクト、コンポーネント、シェイプキー、マテリアルスロットを調べ、有効な対象へ対応付けます。修復したクリップのコピーと再利用できる対応表を保存し、結果の確認や再利用ができます。" };
+        _tutorial.Configure(course, names[0], names[1], names[2], tutorialCourses[course], onStop: () => { playPreview = false; },
+            overviewEn: overview[0], overviewKo: overview[1], overviewJa: overview[2]);
         _tutorial.BeginFrame();
     }
 }

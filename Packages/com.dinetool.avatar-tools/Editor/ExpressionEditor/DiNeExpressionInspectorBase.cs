@@ -11,40 +11,28 @@ using VRC.SDK3.Avatars.ScriptableObjects;
 
 namespace DiNeTool.ExpressionEditor
 {
-    // Authored for Di Ne Tool against the public Unity and VRChat SDK APIs.
-    // No VRCSDK+ implementation or assets are included.
     public abstract class DiNeExpressionInspectorBase : Editor
     {
         protected VRCAvatarDescriptor Avatar;
         protected List<AnimatorControllerParameter> AnimatorParameters = new List<AnimatorControllerParameter>();
         protected string Status;
-        protected static readonly Color Mint = new Color(0.30f, 0.82f, 0.76f, 1f);
-        private Texture2D brandIcon;
-        private Font titleFont;
-        private GUIStyle titleStyle, descriptionStyle, selectedButton, ordinaryButton;
         private Editor sdkEditor;
         private VisualElement inspectorRoot;
-        private bool lastMode;
-        private bool lastEditable;
+        private bool lastMode, lastEditable;
         private int lastLanguage = -1;
-
         protected abstract string SdkEditorName { get; }
-        protected abstract string InspectorTitle { get; }
-        protected abstract string InspectorDescription { get; }
         protected abstract void DrawContents();
 
         protected virtual void OnEnable()
         {
-            brandIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
-            titleFont = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
-            Undo.undoRedoPerformed += Repaint;
+            Undo.undoRedoPerformed += OnUndoRedo;
             EditorApplication.playModeStateChanged += OnPlayModeChanged;
             DiNeExpressionInspectorSettings.WarnIfCompetingInspectorPackage();
         }
 
         protected virtual void OnDisable()
         {
-            Undo.undoRedoPerformed -= Repaint;
+            Undo.undoRedoPerformed -= OnUndoRedo;
             EditorApplication.playModeStateChanged -= OnPlayModeChanged;
             if (sdkEditor != null) DestroyImmediate(sdkEditor);
         }
@@ -55,8 +43,13 @@ namespace DiNeTool.ExpressionEditor
             BuildInspectorRoot();
             inspectorRoot.schedule.Execute(() =>
             {
-                if (lastMode != DiNeExpressionInspectorSettings.UseDiNeInspector) BuildInspectorRoot();
-                else if (target != null && lastEditable != DiNeExpressionUtility.CanEditAsset(target)) BuildInspectorRoot();
+                if (target == null) return;
+                if (lastMode != DiNeExpressionInspectorSettings.UseDiNeInspector ||
+                    lastEditable != DiNeExpressionUtility.CanEditAsset(target) || lastLanguage != Language)
+                {
+                    if (lastLanguage != Language) Status = null;
+                    BuildInspectorRoot();
+                }
             }).Every(250);
             return inspectorRoot;
         }
@@ -68,45 +61,129 @@ namespace DiNeTool.ExpressionEditor
             sdkEditor = null;
             lastMode = DiNeExpressionInspectorSettings.UseDiNeInspector;
             lastEditable = DiNeExpressionUtility.CanEditAsset(target);
+            lastLanguage = Language;
             if (lastMode)
             {
-                inspectorRoot.Add(new IMGUIContainer(OnInspectorGUI));
+                var contents = new IMGUIContainer(OnInspectorGUI) { name = "DiNeExpressionInspectorIMGUI" };
+                contents.AddManipulator(new ContextualMenuManipulator(AppendLanguageMenu));
+                inspectorRoot.Add(contents);
                 return;
             }
-            if (!lastEditable)
-            {
-                // SDK OnEnable can initialize defaults. Do not instantiate it for a locked asset.
-                inspectorRoot.Add(new IMGUIContainer(() =>
-                {
-                    using (new EditorGUI.DisabledScope(true)) DrawDefaultInspector();
-                    EditorGUILayout.HelpBox(T("Editing is disabled during Play Mode and for read-only assets.",
-                        "플레이 모드와 읽기 전용 에셋에서는 편집할 수 없습니다.", "プレイモードと読み取り専用アセットでは編集できません。"), MessageType.Info);
-                }));
-                return;
-            }
+            if (!lastEditable || !HasConsistentSdkData()) { AddSerializedFallback(); return; }
             string shortName = SdkEditorName.Substring(SdkEditorName.LastIndexOf('.') + 1);
             Type sdkType = TypeCache.GetTypesDerivedFrom<Editor>().FirstOrDefault(t =>
                 t.Assembly.GetName().Name == "VRC.SDK3A.Editor" && (t.FullName == SdkEditorName || t.Name == shortName));
-            if (sdkType != null)
+            if (sdkType == null) { AddSerializedFallback(); return; }
+            VisualElement sdkRoot = CreateSdkRoot(sdkType);
+            if (sdkRoot == null) sdkRoot = new IMGUIContainer(() => sdkEditor.OnInspectorGUI());
+            inspectorRoot.Add(sdkRoot);
+            sdkRoot.Bind(sdkEditor.serializedObject);
+        }
+
+        private void AppendLanguageMenu(ContextualMenuPopulateEvent evt)
+        {
+            foreach (int language in new[] { 0, 1, 2 })
             {
-                sdkEditor = CreateEditor(targets, sdkType);
-                VisualElement sdkRoot = sdkEditor.CreateInspectorGUI();
-                if (sdkRoot != null)
+                int selected = language;
+                string name = new[] { "English", "한국어", "日本語" }[language];
+                evt.menu.AppendAction("Di Ne/" + T("Language", "언어", "言語") + "/" + name,
+                    _ => { EditorPrefs.SetInt("DiNeLang", selected); Status = null; BuildInspectorRoot(); },
+                    _ => Language == selected ? DropdownMenuAction.Status.Checked : DropdownMenuAction.Status.Normal);
+            }
+        }
+
+        private VisualElement CreateSdkRoot(Type sdkType)
+        {
+            string before = EditorJsonUtility.ToJson(target);
+            bool wasDirty = EditorUtility.IsDirty(target);
+            var parameters = target as VRCExpressionParameters;
+            bool emptyFlag = parameters != null && parameters.isEmpty;
+            var menu = target as VRCExpressionsMenu;
+            var menuParameters = DiNeExpressionUtility.GetMenuParameters(menu);
+            VRCExpressionParameters lookupGuard = null;
+            try
+            {
+                // Prevent SDK initialization from filling empty assets or assigning avatar lookups.
+                if (parameters != null && parameters.parameters.Length == 0) parameters.isEmpty = true;
+                if (menu != null && menuParameters == null)
                 {
-                    sdkRoot.Bind(sdkEditor.serializedObject);
-                    inspectorRoot.Add(sdkRoot);
-                    return;
+                    lookupGuard = CreateInstance<VRCExpressionParameters>();
+                    lookupGuard.hideFlags = HideFlags.HideAndDontSave;
+                    DiNeExpressionUtility.SetMenuParameters(menu, lookupGuard);
                 }
-                inspectorRoot.Add(new IMGUIContainer(() => sdkEditor.OnInspectorGUI()));
+                try { sdkEditor = CreateEditor(targets, sdkType); }
+                finally
+                {
+                    if (parameters != null) parameters.isEmpty = emptyFlag;
+                    if (lookupGuard != null) DiNeExpressionUtility.SetMenuParameters(menu, menuParameters);
+                }
+                sdkEditor.serializedObject.Update();
+                return sdkEditor.CreateInspectorGUI();
+            }
+            finally
+            {
+                if (lookupGuard != null) DestroyImmediate(lookupGuard);
+                if (EditorJsonUtility.ToJson(target) != before) EditorJsonUtility.FromJsonOverwrite(before, target);
+                if (!wasDirty) EditorUtility.ClearDirty(target);
+                if (sdkEditor != null) sdkEditor.serializedObject.Update();
+            }
+        }
+
+        private bool HasConsistentSdkData()
+        {
+            if (target is VRCExpressionParameters parameters)
+                return parameters.parameters != null && parameters.parameters.All(p => p != null);
+            if (!(target is VRCExpressionsMenu menu)) return true;
+            if (menu.controls == null || menu.controls.Count > DiNeExpressionUtility.MenuLimit) return false;
+            foreach (var control in menu.controls)
+            {
+                if (control == null || control.parameter == null) return false;
+                int axes = control.type == VRCExpressionsMenu.Control.ControlType.TwoAxisPuppet ? 2 :
+                    control.type == VRCExpressionsMenu.Control.ControlType.FourAxisPuppet ? 4 :
+                    control.type == VRCExpressionsMenu.Control.ControlType.RadialPuppet ? 1 : 0;
+                if (axes == 0) continue;
+                int labels = axes == 1 ? 0 : 4;
+                if (control.subParameters == null || control.subParameters.Length != axes || control.subParameters.Any(p => p == null) ||
+                    (labels > 0 && (control.labels == null || control.labels.Length != labels)) ||
+                    (labels == 0 && control.labels != null && control.labels.Length != 0)) return false;
+            }
+            return true;
+        }
+
+        private void AddSerializedFallback() { inspectorRoot.Add(new IMGUIContainer(OnInspectorGUI)); }
+
+        public override void OnInspectorGUI()
+        {
+            if (target == null) return;
+            bool editable = DiNeExpressionUtility.CanEditAsset(target);
+            if (DiNeExpressionInspectorSettings.UseDiNeInspector)
+            {
+                serializedObject.Update();
+                using (new EditorGUI.DisabledScope(!editable)) DrawContents();
+                serializedObject.ApplyModifiedProperties();
+                if (DiNeExpressionInspectorSettings.HasCompetingInspectorPackage)
+                    EditorGUILayout.HelpBox(DiNeExpressionInspectorSettings.CompetingInspectorWarning, MessageType.Warning);
+                if (!editable)
+                    EditorGUILayout.HelpBox(T("Editing is disabled during Play Mode and for read-only assets.",
+                        "플레이 모드와 읽기 전용 에셋에서는 편집할 수 없습니다.", "プレイモードと読み取り専用アセットでは編集できません。"), MessageType.Info);
+                if (!string.IsNullOrEmpty(Status)) EditorGUILayout.HelpBox(Status, MessageType.Info);
                 return;
             }
-            // A future SDK may rename its editors. The serialized fallback stays usable.
-            inspectorRoot.Add(new IMGUIContainer(() =>
-            {
-                EditorGUILayout.HelpBox(T("The SDK inspector is unavailable. Showing serialized fields.",
-                    "SDK Inspector를 찾지 못해 직렬화 필드를 표시합니다.", "SDK Inspectorが見つからないため、シリアライズされたフィールドを表示します。"), MessageType.Warning);
-                DrawDefaultInspector();
-            }));
+            using (new EditorGUI.DisabledScope(!editable)) DrawDefaultInspector();
+            EditorGUILayout.HelpBox(!editable
+                ? T("Editing is disabled during Play Mode and for read-only assets.",
+                    "플레이 모드와 읽기 전용 에셋에서는 편집할 수 없습니다.", "プレイモードと読み取り専用アセットでは編集できません。")
+                : T("The SDK inspector cannot display these fields safely. Showing serialized fields.",
+                    "SDK Inspector로 안전하게 표시할 수 없어 직렬화 필드를 표시합니다.", "SDK Inspectorで安全に表示できないため、シリアライズされたフィールドを表示します。"), MessageType.Info);
+        }
+
+
+        private void OnUndoRedo()
+        {
+            // Let the SDK's own Undo listeners finish before replacing their editor.
+            if (inspectorRoot != null && target != null)
+                inspectorRoot.schedule.Execute(() => { if (this != null && target != null) BuildInspectorRoot(); });
+            Repaint();
         }
 
         private void OnPlayModeChanged(PlayModeStateChange state)
@@ -114,131 +191,143 @@ namespace DiNeTool.ExpressionEditor
             if (inspectorRoot != null && target != null) BuildInspectorRoot();
         }
 
-        public override void OnInspectorGUI()
+        protected void ApplyAction(Action action)
         {
-            if (target == null) return;
-            int language = Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", 0), 0, 2);
-            if (lastLanguage != language) { Status = null; lastLanguage = language; }
-            EnsureStyles();
-            DrawHeader();
-            if (DiNeExpressionInspectorSettings.HasCompetingInspectorPackage)
-                EditorGUILayout.HelpBox(DiNeExpressionInspectorSettings.CompetingInspectorWarning, MessageType.Warning);
-            serializedObject.Update();
-            bool editable = DiNeExpressionUtility.CanEditAsset(target);
-            using (new EditorGUI.DisabledScope(!editable)) DrawContents();
+            if (!DiNeExpressionUtility.CanEditAsset(target)) return;
             serializedObject.ApplyModifiedProperties();
-            if (!editable)
-                EditorGUILayout.HelpBox(T("Editing is disabled during Play Mode and for read-only assets. Copy a package asset into Assets to edit it.",
-                    "플레이 모드와 읽기 전용 에셋에서는 편집할 수 없습니다. 패키지 에셋은 Assets에 복사해 편집하세요.",
-                    "プレイモードと読み取り専用アセットでは編集できません。パッケージのアセットはAssetsにコピーして編集してください。"), MessageType.Info);
-            if (!string.IsNullOrEmpty(Status)) EditorGUILayout.HelpBox(Status, MessageType.Info);
+            if (sdkEditor != null) sdkEditor.serializedObject.ApplyModifiedProperties();
+            serializedObject.Update();
+            action();
+            serializedObject.Update();
+            if (inspectorRoot != null) BuildInspectorRoot();
+            Repaint();
         }
 
+        protected void RunGuiAction(Action action)
+        {
+            if (!DiNeExpressionUtility.CanEditAsset(target)) return;
+            serializedObject.ApplyModifiedProperties();
+            action();
+            serializedObject.Update();
+            Repaint();
+            if (Event.current != null) GUIUtility.ExitGUI();
+        }
+
+        private static int Language => Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", 0), 0, 2);
         protected static string T(string english, string korean, string japanese)
         {
-            int language = Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", 0), 0, 2);
-            return language == 1 ? korean : language == 2 ? japanese : english;
+            return Language == 1 ? korean : Language == 2 ? japanese : english;
         }
 
         protected static GUIContent C(string english, string korean, string japanese,
             string englishTip = null, string koreanTip = null, string japaneseTip = null)
         {
-            string text = T(english, korean, japanese);
-            return new GUIContent(text, englishTip == null ? text : T(englishTip, koreanTip, japaneseTip));
-        }
-
-        private void EnsureStyles()
-        {
-            if (titleStyle != null) return;
-            titleStyle = new GUIStyle(EditorStyles.label)
-            {
-                font = titleFont, fontSize = 36, fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter, wordWrap = true
-            };
-            descriptionStyle = new GUIStyle(EditorStyles.wordWrappedLabel)
-            {
-                fontSize = 12, alignment = TextAnchor.MiddleCenter,
-                normal = { textColor = new Color(0.80f, 0.80f, 0.80f, 1f) }
-            };
-            selectedButton = new GUIStyle(GUI.skin.button)
-            {
-                fontStyle = FontStyle.Bold, normal = { textColor = Color.white }
-            };
-            ordinaryButton = new GUIStyle(GUI.skin.button)
-            {
-                normal = { textColor = new Color(0.80f, 0.80f, 0.80f, 1f) }
-            };
-        }
-
-        private void DrawHeader()
-        {
-            Color background = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0.90f, 0.90f, 0.90f, 1f);
-            using (new EditorGUILayout.VerticalScope("box"))
-            {
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    GUILayout.Label(brandIcon, GUILayout.Width(72), GUILayout.Height(72));
-                    GUILayout.Space(6);
-                    GUILayout.Label(InspectorTitle, titleStyle, GUILayout.MinHeight(72), GUILayout.ExpandWidth(true));
-                }
-                GUILayout.Label(InspectorDescription, descriptionStyle);
-            }
-            GUI.backgroundColor = background;
-            GUILayout.Space(5);
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                int current = Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", 0), 0, 2);
-                string[] languages = { "English", "한국어", "日本語" };
-                for (int i = 0; i < languages.Length; i++)
-                {
-                    GUI.backgroundColor = i == current ? Mint : new Color(0.50f, 0.50f, 0.50f, 1f);
-                    if (GUILayout.Button(new GUIContent(languages[i], languages[i]),
-                        i == current ? selectedButton : ordinaryButton, GUILayout.Height(35)))
-                    {
-                        EditorPrefs.SetInt("DiNeLang", i);
-                        Status = null;
-                        Repaint();
-                    }
-                }
-            }
-            GUI.backgroundColor = background;
-            GUILayout.Space(15);
-        }
-
-        protected static bool ActionButton(GUIContent content, bool primary = false, bool destructive = false)
-        {
-            Color previous = GUI.backgroundColor;
-            if (primary) GUI.backgroundColor = Mint;
-            if (destructive) GUI.backgroundColor = new Color(0.85f, 0.40f, 0.40f, 1f);
-            bool pressed = GUILayout.Button(content, GUILayout.Height(24));
-            GUI.backgroundColor = previous;
-            return pressed;
-        }
-
-        protected void RunAction(Action action)
-        {
-            serializedObject.ApplyModifiedProperties();
-            action();
-            serializedObject.Update();
-            Repaint();
-            GUIUtility.ExitGUI();
-        }
-
-        protected void DrawAvatarContext()
-        {
-            EditorGUI.BeginChangeCheck();
-            Avatar = (VRCAvatarDescriptor)EditorGUILayout.ObjectField(C("Avatar (lookup)", "아바타 (조회)", "アバター（参照）",
-                "Reads Animator parameters without changing avatar references.", "아바타 참조를 변경하지 않고 Animator 파라미터를 조회합니다.",
-                "アバターの参照を変更せずAnimatorパラメータを参照します。"), Avatar, typeof(VRCAvatarDescriptor), true);
-            if (EditorGUI.EndChangeCheck()) RefreshAnimatorParameters();
-            if (ActionButton(C("Refresh Animator list", "Animator 목록 새로고침", "Animatorリストを更新"))) RefreshAnimatorParameters();
+            return new GUIContent(T(english, korean, japanese), englishTip == null
+                ? T(english, korean, japanese) : T(englishTip, koreanTip, japaneseTip));
         }
 
         protected void RefreshAnimatorParameters()
         {
-            AnimatorParameters = DiNeExpressionUtility.GetAnimatorParameters(Avatar);
+            AnimatorParameters = GetInspectorAnimatorParameters(Avatar);
             Repaint();
+        }
+
+        internal static List<AnimatorControllerParameter> GetInspectorAnimatorParameters(VRCAvatarDescriptor avatar)
+        {
+            var result = new List<AnimatorControllerParameter>();
+            if (avatar == null) return result;
+            var controllers = (avatar.baseAnimationLayers ?? Array.Empty<VRCAvatarDescriptor.CustomAnimLayer>())
+                .Concat(avatar.specialAnimationLayers ?? Array.Empty<VRCAvatarDescriptor.CustomAnimLayer>())
+                .Select(layer => layer.animatorController)
+                .Concat(avatar.GetComponentsInChildren<Animator>(true).Select(animator => animator.runtimeAnimatorController));
+            var visited = new HashSet<RuntimeAnimatorController>();
+            foreach (var runtime in controllers)
+            {
+                RuntimeAnimatorController current = runtime;
+                while (current is AnimatorOverrideController wrapper && visited.Add(current)) current = wrapper.runtimeAnimatorController;
+                if (!(current is AnimatorController controller) || !visited.Add(current)) continue;
+                foreach (var parameter in controller.parameters)
+                {
+                    if (parameter == null || string.IsNullOrWhiteSpace(parameter.name) ||
+                        result.Any(existing => existing.name == parameter.name && existing.type == parameter.type)) continue;
+                    result.Add(parameter);
+                }
+            }
+            // Keep conflicting types and Trigger names visible, as in SDK+; lookup is advisory.
+            return result.OrderBy(parameter => parameter.name, StringComparer.Ordinal).ThenBy(parameter => parameter.type).ToList();
+        }
+
+        protected void DrawAvatarSelector(Action changed = null)
+        {
+            var avatars = UnityEngine.Object.FindObjectsByType<VRCAvatarDescriptor>(FindObjectsInactive.Include, FindObjectsSortMode.None)
+                .Where(a => a.gameObject.scene.IsValid()).ToArray();
+            using (new EditorGUILayout.HorizontalScope(EditorStyles.helpBox))
+            {
+                var label = C("Active Avatar", "활성 아바타", "アクティブアバター",
+                    "Parameter suggestions and warnings use this avatar. Its references are preserved.",
+                    "이 아바타의 파라미터로 선택과 경고를 표시합니다. 아바타 참조는 유지됩니다.",
+                    "このアバターのパラメータで候補と警告を表示します。参照は維持されます。");
+                if (avatars.Length == 0)
+                {
+                    Avatar = null;
+                    AnimatorParameters.Clear();
+                    EditorGUILayout.LabelField(label, C("No Avatar Descriptors found", "아바타가 없습니다", "アバターがありません"));
+                    return;
+                }
+                int current = Array.IndexOf(avatars, Avatar);
+                if (current < 0) { Avatar = avatars[0]; RefreshAnimatorParameters(); current = 0; changed?.Invoke(); }
+                EditorGUI.BeginChangeCheck();
+                int selected = EditorGUILayout.Popup(label, current, avatars.Select(a => a.gameObject.name).ToArray());
+                if (EditorGUI.EndChangeCheck() && selected >= 0)
+                {
+                    Avatar = avatars[selected];
+                    RefreshAnimatorParameters();
+                    changed?.Invoke();
+                }
+            }
+        }
+
+        protected void ShowAddPlayableParameterMenu(string name, VRCExpressionParameters.ValueType type,
+            float defaultValue, Rect position, Action changed = null)
+        {
+            var menu = new GenericMenu();
+            if (Avatar != null)
+                foreach (var layer in (Avatar.baseAnimationLayers ?? Array.Empty<VRCAvatarDescriptor.CustomAnimLayer>())
+                    .Concat(Avatar.specialAnimationLayers ?? Array.Empty<VRCAvatarDescriptor.CustomAnimLayer>()))
+                {
+                    RuntimeAnimatorController runtime = layer.animatorController;
+                    var visited = new HashSet<RuntimeAnimatorController>();
+                    while (runtime is AnimatorOverrideController wrapper && visited.Add(runtime)) runtime = wrapper.runtimeAnimatorController;
+                    var controller = runtime as AnimatorController;
+                    if (controller == null) continue;
+                    string label = layer.type.ToString();
+                    bool allowed = DiNeExpressionUtility.CanEditAsset(controller) && !controller.parameters.Any(p => p.name == name);
+                    if (!allowed) { menu.AddDisabledItem(new GUIContent(label)); continue; }
+                    menu.AddItem(new GUIContent(label), false, () => ApplyAction(() =>
+                    {
+                        if (AddPlayableParameter(controller, name, type, defaultValue)) changed?.Invoke();
+                    }));
+                }
+            if (menu.GetItemCount() == 0) menu.AddDisabledItem(C("No editable playable controllers", "편집할 컨트롤러가 없습니다", "編集可能なコントローラーがありません"));
+            menu.DropDown(position);
+        }
+
+        internal bool AddPlayableParameter(AnimatorController controller, string name,
+            VRCExpressionParameters.ValueType type, float defaultValue)
+        {
+            if (controller == null || string.IsNullOrWhiteSpace(name) || !DiNeExpressionUtility.CanEditAsset(controller) ||
+                controller.parameters.Any(p => p.name == name)) return false;
+            Undo.RecordObject(controller, T("Add Animator Parameter", "Animator 파라미터 추가", "Animatorパラメータを追加"));
+            controller.AddParameter(new AnimatorControllerParameter
+            {
+                name = name,
+                type = type == VRCExpressionParameters.ValueType.Int ? AnimatorControllerParameterType.Int :
+                    type == VRCExpressionParameters.ValueType.Float ? AnimatorControllerParameterType.Float : AnimatorControllerParameterType.Bool,
+                defaultFloat = defaultValue, defaultInt = Mathf.RoundToInt(defaultValue), defaultBool = defaultValue != 0
+            });
+            EditorUtility.SetDirty(controller);
+            RefreshAnimatorParameters();
+            return true;
         }
 
         protected void FindAvatar(Func<VRCAvatarDescriptor, bool> predicate)
@@ -249,76 +338,10 @@ namespace DiNeTool.ExpressionEditor
             RefreshAnimatorParameters();
         }
 
-        protected void DrawParameterName(SerializedProperty name, VRCExpressionParameters expressionParameters, bool floatsOnly = false)
-        {
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                EditorGUILayout.PropertyField(name, C("Parameter", "파라미터", "パラメータ"));
-                if (GUILayout.Button(C("Select", "선택", "選択", "Select from expression or Animator parameters.",
-                    "Expression 또는 Animator 파라미터에서 선택합니다.", "ExpressionまたはAnimatorパラメータから選択します。"), GUILayout.Width(54), GUILayout.Height(20)))
-                {
-                    string propertyPath = name.propertyPath;
-                    var choices = new SortedSet<string>(StringComparer.Ordinal);
-                    if (expressionParameters != null && expressionParameters.parameters != null)
-                        foreach (var parameter in expressionParameters.parameters)
-                            if (parameter != null && !string.IsNullOrWhiteSpace(parameter.name) &&
-                                (!floatsOnly || parameter.valueType == VRCExpressionParameters.ValueType.Float)) choices.Add(parameter.name);
-                    foreach (var parameter in AnimatorParameters)
-                        if (!floatsOnly || parameter.type == AnimatorControllerParameterType.Float) choices.Add(parameter.name);
-                    var menu = new GenericMenu();
-                    menu.AddItem(C("None", "없음", "なし"), string.IsNullOrEmpty(name.stringValue), () => SetParameterName(propertyPath, ""));
-                    foreach (string choice in choices)
-                    {
-                        string captured = choice;
-                        menu.AddItem(new GUIContent(captured), name.stringValue == captured, () => SetParameterName(propertyPath, captured));
-                    }
-                    menu.ShowAsContext();
-                }
-            }
-        }
-
-        private void SetParameterName(string propertyPath, string value)
-        {
-            if (!DiNeExpressionUtility.CanEditAsset(target)) return;
-            serializedObject.Update();
-            SerializedProperty property = serializedObject.FindProperty(propertyPath);
-            if (property == null) return;
-            property.stringValue = value;
-            serializedObject.ApplyModifiedProperties();
-            Repaint();
-        }
-
         protected static VRCExpressionParameters.ValueType ToExpressionType(AnimatorControllerParameterType type)
         {
             return type == AnimatorControllerParameterType.Float ? VRCExpressionParameters.ValueType.Float :
                 type == AnimatorControllerParameterType.Int ? VRCExpressionParameters.ValueType.Int : VRCExpressionParameters.ValueType.Bool;
-        }
-
-        protected void DrawMissingParameter(string name, VRCExpressionParameters parameters, bool floatRequired)
-        {
-            if (string.IsNullOrWhiteSpace(name)) return;
-            var existing = parameters?.parameters?.FirstOrDefault(p => p != null && p.name == name);
-            if (existing != null)
-            {
-                if (floatRequired && existing.valueType != VRCExpressionParameters.ValueType.Float)
-                    EditorGUILayout.HelpBox(T("Puppet axes require Float parameters: ", "Puppet 축에는 Float 파라미터가 필요합니다: ",
-                        "Puppetの軸にはFloatパラメータが必要です: ") + name, MessageType.Error);
-                return;
-            }
-            EditorGUILayout.HelpBox(T("Missing from the selected expression parameters: ", "선택한 Expression Parameters에 없는 이름: ",
-                "選択したExpression Parametersに存在しない名前: ") + name, MessageType.Warning);
-            using (new EditorGUI.DisabledScope(parameters == null || !DiNeExpressionUtility.CanEditAsset(parameters)))
-            {
-                if (ActionButton(C("Add missing parameter", "누락된 파라미터 추가", "不足パラメータを追加")))
-                    RunAction(() =>
-                    {
-                        var animator = AnimatorParameters.FirstOrDefault(p => p.name == name);
-                        var type = floatRequired ? VRCExpressionParameters.ValueType.Float : animator != null ? ToExpressionType(animator.type) : VRCExpressionParameters.ValueType.Bool;
-                        Status = DiNeExpressionUtility.AddParameter(parameters, name, type, T("Add Expression Parameter", "Expression 파라미터 추가", "Expressionパラメータを追加"))
-                            ? T("Parameter added. Avatar references were preserved.", "파라미터를 추가했습니다. 아바타 참조는 보존됩니다.", "パラメータを追加しました。アバターの参照は維持されます。")
-                            : T("Could not add the parameter. Check duplicates, access and memory budget.", "파라미터를 추가하지 못했습니다. 중복, 편집 권한과 메모리 한도를 확인하세요.", "追加できませんでした。重複、編集権限とメモリ上限を確認してください。 ");
-                    });
-            }
         }
     }
 }

@@ -113,6 +113,16 @@ When extending an existing tool:
 6. Extend diagnostics/status output when the feature has prerequisites or can fail silently.
 7. Preserve serialized-property, Undo, Prefab override, and dirty-state behavior.
 
+## Tutorial explanations
+
+- Show the tool or current mode's purpose in its existing tutorial card before the user starts, and repeat it in the welcome bubble.
+- Describe the concrete tasks the user can perform, one representative use case, and the resulting change or output. A tool name and instructions to follow highlighted controls are not a sufficient introduction.
+- Each step should explain what the feature does or why the setting matters before telling the user where to click. Keep the explanation concise, usually two sentences, without dropping the meaning to shorten it.
+- Distinguish preview, scene edits, asset edits, saved copies, and Play Mode/upload application where that distinction affects the user's choice. Describe unavailable features as unavailable.
+- Supply the same meaning in English, Korean and Japanese through `DiNeLang`, with word wrapping and the existing card/bubble styles.
+- Preserve step IDs, required-action checks, preview restoration, session ownership and Undo behavior when revising explanations.
+- Keep tutorial guidance collapsible through a localized foldout in the existing card. Remember visibility per tool, hide bubbles and spotlights while collapsed, and retain the current step without ending previews.
+
 ## Unity editor behavior
 
 - Custom inspectors must use `serializedObject.Update()` and `ApplyModifiedProperties()` correctly.
@@ -134,6 +144,7 @@ Before completing any new-tool or UI-feature task, verify all applicable items:
 - [ ] No redundant menu-name/icon block or unrelated style was introduced.
 - [ ] Common settings are visible without an unnecessary extra settings button.
 - [ ] Tooltips, warnings, empty states, and status messages match the same language and style.
+- [ ] Tutorials explain the purpose, capabilities, use case and effects of their steps in all three languages.
 - [ ] Serialized properties, Undo, Prefab overrides, and dirty state remain correct.
 - [ ] Existing nearby UI was compared visually and structurally before handoff.
 

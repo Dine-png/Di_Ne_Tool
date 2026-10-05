@@ -3,10 +3,18 @@
 VRChat 아바타의 편집, 메뉴 제작, 라이팅, 최적화, 아이콘·스크린샷 제작, VRM 변환 준비를 한곳에서 처리하는 **Unity Editor 도구 모음**입니다.
 
 ![Unity 2022.3](https://img.shields.io/badge/Unity-2022.3_LTS%2B-black?logo=unity&style=flat)
-![Version 1.8.0](https://img.shields.io/badge/Version-1.8.0-30D1C2?style=flat)
+![Version 1.8.1](https://img.shields.io/badge/Version-1.8.1-30D1C2?style=flat)
 ![Languages](https://img.shields.io/badge/UI-EN%20%2F%20KO%20%2F%20JP-4C9BD6?style=flat)
 
 > 대부분의 도구는 English / 한국어 / 日本語 UI를 지원합니다. 기능에 따라 lilToon, Poiyomi, NDMF, Modular Avatar, UniVRM을 함께 사용할 수 있습니다.
+
+### 1.8.1 변경 사항
+
+- Expression Menu·Parameters를 VRCSDK+ 방식의 목록과 바로 접근하는 추가·삭제 버튼으로 편집하도록 개선했습니다. 복사·붙여넣기·복제·이동, 메뉴 방문 이력과 파라미터 병합·컨트롤러 추가를 지원합니다.
+- Avatar Descriptor에 View Position·Eye Look·Blink·Lip Sync를 설정하는 **[Di Ne] Quick Setup**을 추가했습니다.
+- Avi Editor의 본 선택도, 프리셋과 Modular Avatar 설정을 좁거나 낮은 창에서도 사용할 수 있도록 스크롤·줄바꿈·버튼 표시를 개선했습니다.
+- 튜토리얼에 도구의 목적·활용 예·설정 효과를 세 언어로 보강했습니다. 안내를 접어도 진행 상태를 유지하며 도구별 접기 설정을 기억합니다.
+- Animation Tool의 헤더·탭·카드 간격을 공통 UI 기준에 맞췄습니다.
 
 ### 1.8.0 변경 사항
 

@@ -3,6 +3,7 @@ param(
     [string]$PackageSource,
     [string]$ProjectName = 'AviEditorRegression',
     [switch]$PrepareOnly,
+    [switch]$UILayout,
     [int]$TimeoutSeconds = 600
 )
 
@@ -24,6 +25,15 @@ foreach ($relative in @('Editor/Core/DiNePresetAssetSelector.cs', 'Editor/Core/D
     Copy-Item -LiteralPath (Join-Path $PackageSource $relative) -Destination $scripts -Force
 }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'AviEditorRegression.cs') -Destination $scripts -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'AviEditorUiRegression.cs') -Destination $scripts -Force
+# Use the real brand assets so the UI regression measures the production header.
+$brand = Join-Path $project 'Assets/AviEditorRegressionBrand'
+New-Item -ItemType Directory -Force -Path $brand | Out-Null
+foreach ($relative in @('Assets/DiNe.png', 'DungGeunMo.ttf')) {
+    foreach ($suffix in @('', '.meta')) {
+        Copy-Item -LiteralPath (Join-Path $PackageSource ($relative + $suffix)) -Destination $brand -Force
+    }
+}
 # Unity cannot attach MonoBehaviours compiled into the Editor assembly. Keep the
 # adapters outside Editor and give the MA adapter its component class filename.
 $isolatedRoot = [IO.Path]::GetFullPath($project) + [IO.Path]::DirectorySeparatorChar
@@ -52,10 +62,11 @@ if ($UnityEditorPath) {
 Write-Output "Prepared isolated project: $project"
 if ($PrepareOnly) { return }
 if (!$UnityEditorPath -or !(Test-Path -LiteralPath $UnityEditorPath)) { throw 'Pass -UnityEditorPath pointing to Unity 2022.3.22f1 Editor/Unity.exe.' }
-$logPath = Join-Path $project 'AviEditorRegression.log'
-$report = Join-Path $project 'AviEditorRegression-results.txt'
+$suite = if ($UILayout) { 'AviEditorUiRegression' } else { 'AviEditorRegression' }
+$logPath = Join-Path $project ($suite + '.log')
+$report = Join-Path $project ($suite + '-results.txt')
 if (Test-Path -LiteralPath $report) { Remove-Item -LiteralPath $report }
-$arguments = @('-batchmode', '-projectPath', ('"{0}"' -f $project), '-executeMethod', 'AviEditorRegression.Run', '-logFile', ('"{0}"' -f $logPath))
+$arguments = @('-batchmode', '-projectPath', ('"{0}"' -f $project), '-executeMethod', ($suite + '.Run'), '-logFile', ('"{0}"' -f $logPath))
 $process = Start-Process -FilePath $UnityEditorPath -ArgumentList $arguments -WindowStyle Hidden -PassThru
 Write-Output "Unity PID: $($process.Id); log: $logPath"
 if (!$process.WaitForExit($TimeoutSeconds * 1000)) {
@@ -63,6 +74,8 @@ if (!$process.WaitForExit($TimeoutSeconds * 1000)) {
     throw "Regression editor timed out. Inspect $logPath"
 }
 $process.Refresh()
-if (Test-Path -LiteralPath $report) { Get-Content -LiteralPath $report }
+if (Test-Path -LiteralPath $report) {
+    Get-Content -LiteralPath $report | Where-Object { $_ -match '^(PASS |FAIL |Failures:)' }
+}
 if ($process.ExitCode -ne 0) { throw "Unity regression run failed with exit code $($process.ExitCode). Inspect $logPath" }
 if (!(Test-Path -LiteralPath $report)) { throw "Unity exited without the regression report. Inspect $logPath" }

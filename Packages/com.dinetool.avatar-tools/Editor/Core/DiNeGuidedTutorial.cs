@@ -42,34 +42,61 @@ public sealed class DiNeGuidedTutorial
     private readonly Dictionary<string, DiNeTutorialBubble.Anchor> anchors = new Dictionary<string, DiNeTutorialBubble.Anchor>();
     private DiNeTutorialStep[] steps = new DiNeTutorialStep[0];
     private string courseId, sessionKey, enName, koName, jaName;
+    private string enOverview, koOverview, jaOverview;
     private Action onStop;
     private int index = -1, schema, pending = int.MinValue;
     private int controlGeneration;
     private bool active, wasComplete, focusPending, drawn, frameOpen, suspended, aborted;
+    private bool lastExpanded;
     private DiNeTutorialBubble.Anchor controlsAnchor;
 
     public bool IsActive => active && OwnsSession;
+    public bool IsExpanded
+    {
+        get => EditorPrefs.GetBool("DiNe.Tutorial." + toolId + ".Expanded", true);
+        set
+        {
+            if (IsExpanded == value) return;
+            EditorPrefs.SetBool("DiNe.Tutorial." + toolId + ".Expanded", value);
+            ApplyVisibility(value);
+            Repaint();
+        }
+    }
     public string CurrentStepId => index >= 0 && index < steps.Length ? steps[index].Id : index < 0 ? "welcome" : "complete";
     public int CurrentStepIndex => index;
     public int StepCount => steps.Length;
-    public bool CanClickCurrent => IsActive && (index < 0 || index >= steps.Length ||
+    public bool CanClickCurrent => IsActive && IsExpanded && (index < 0 || index >= steps.Length ||
         !steps[index].IsRequired || (wasComplete && Complete(steps[index])));
     private bool OwnsSession => owner != null && sessionKey != null &&
         SessionState.GetInt(sessionKey + ".Owner", 0) == owner.GetInstanceID();
     private int Language => Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", 0), 0, 2);
     private string CourseName => L(enName, koName, jaName);
+    private string CourseOverview => L(enOverview, koOverview, jaOverview);
 
     public DiNeGuidedTutorial(UnityEngine.Object owner, string toolId)
     {
         this.owner = owner != null ? owner : throw new ArgumentNullException(nameof(owner));
         this.toolId = !string.IsNullOrEmpty(toolId) ? toolId : throw new ArgumentException("A tutorial needs a tool ID.", nameof(toolId));
+        lastExpanded = IsExpanded;
     }
 
-    /// <summary>Select the visible feature's course. Reconfiguring the same course preserves its progress.</summary>
+    private void ApplyVisibility(bool expanded)
+    {
+        lastExpanded = expanded;
+        CancelPending(); DiNeTutorialBubble.ClearFrame();
+        if (expanded && IsActive)
+        {
+            if (index >= 0 && index < steps.Length) steps[index].OnEnter?.Invoke();
+            CaptureEntry(); focusPending = true;
+        }
+    }
+
+    /// <summary>Select the visible feature's course and localized purpose. Reconfiguring the same course preserves its progress.</summary>
     public void Configure(string courseId, string enName, string koName, string jaName, DiNeTutorialStep[] steps,
-        int version = 1, Action onStop = null)
+        int version = 1, Action onStop = null, string overviewEn = null, string overviewKo = null, string overviewJa = null)
     {
         if (steps == null) throw new ArgumentNullException(nameof(steps));
+        enOverview = overviewEn; koOverview = overviewKo; jaOverview = overviewJa;
         int nextSchema = SchemaVersion;
         var ids = new HashSet<string>(StringComparer.Ordinal);
         unchecked
@@ -101,7 +128,7 @@ public sealed class DiNeGuidedTutorial
         if (active)
         {
             SessionState.SetInt(sessionKey + ".Owner", owner.GetInstanceID());
-            if (index >= 0 && index < steps.Length) steps[index].OnEnter?.Invoke();
+            if (IsExpanded && index >= 0 && index < steps.Length) steps[index].OnEnter?.Invoke();
             CaptureEntry(); focusPending = true;
         }
         else index = -1;
@@ -109,6 +136,7 @@ public sealed class DiNeGuidedTutorial
 
     public void BeginFrame()
     {
+        if (lastExpanded != IsExpanded) ApplyVisibility(IsExpanded);
         anchors.Clear(); drawn = false; controlsAnchor = default(DiNeTutorialBubble.Anchor);
         frameOpen = true;
         aborted = false;
@@ -123,7 +151,7 @@ public sealed class DiNeGuidedTutorial
             if (aborted) return;
             Validate();
             // Hidden or unavailable optional controls remain escapable without changing user data.
-            if (IsActive && !drawn && pending == int.MinValue && index >= 0 && index < steps.Length)
+            if (IsActive && IsExpanded && !drawn && pending == int.MinValue && index >= 0 && index < steps.Length)
                 Draw(CurrentStepId, controlsAnchor);
         }
         finally
@@ -153,8 +181,21 @@ public sealed class DiNeGuidedTutorial
         {
             GUI.enabled = true;
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            EditorGUILayout.LabelField(L("Tutorial", "튜토리얼", "チュートリアル"), EditorStyles.boldLabel);
+            IsExpanded = EditorGUILayout.Foldout(IsExpanded, new GUIContent(L("Tutorial", "튜토리얼", "チュートリアル"),
+                L("Collapse or expand the instructions. Collapsing pauses guidance and keeps your current step.",
+                    "튜토리얼 안내를 접거나 펼칩니다. 접어 두면 현재 단계를 유지한 채 안내를 잠시 숨깁니다.",
+                    "案内を折りたたむ・開く操作です。折りたたむと現在のステップを保ったまま案内を一時的に隠します。")), true, EditorStyles.foldoutHeader);
+            if (!IsExpanded)
+            {
+                EditorGUILayout.EndVertical();
+                return;
+            }
             if (IsActive) EditorGUILayout.LabelField($"{index + 2} / {steps.Length + 2} · {CourseName}", EditorStyles.miniLabel);
+            else if (!string.IsNullOrWhiteSpace(CourseOverview))
+            {
+                EditorGUILayout.LabelField(CourseOverview, EditorStyles.wordWrappedLabel);
+                GUILayout.Space(5);
+            }
             EditorGUILayout.BeginHorizontal();
             if (!IsActive)
             {
@@ -184,7 +225,7 @@ public sealed class DiNeGuidedTutorial
 
     private void Draw(string id, DiNeTutorialBubble.Anchor anchor)
     {
-        if (!IsActive || drawn || CurrentStepId != id || index < 0 || index >= steps.Length || pending != int.MinValue) return;
+        if (!IsActive || !IsExpanded || drawn || CurrentStepId != id || index < 0 || index >= steps.Length || pending != int.MinValue) return;
         drawn = true;
         var step = steps[index];
         string hint = step.IsRequired
@@ -203,13 +244,15 @@ public sealed class DiNeGuidedTutorial
 
     private void DrawBuiltin()
     {
-        if (drawn) return;
+        if (drawn || !IsExpanded) return;
         drawn = true;
         bool welcome = index < 0;
+        string startHint = L("Follow the highlighted controls. Click to begin.", "강조된 조작을 따라 하세요. 말풍선을 누르면 시작합니다.", "強調された操作を進めます。クリックして開始します。");
+        bool hasOverview = !string.IsNullOrWhiteSpace(CourseOverview);
         string body = welcome
-            ? L("Follow the highlighted controls. Click to begin.", "강조된 조작을 따라 하세요. 말풍선을 누르면 시작합니다.", "強調された操作を進めます。クリックして開始します。")
+            ? (hasOverview ? CourseOverview : startHint)
             : L("Click to finish the tutorial.", "말풍선을 눌러 튜토리얼을 마치세요.", "クリックしてチュートリアルを終了してください。");
-        if (DiNeTutorialBubble.Draw(controlsAnchor, $"{index + 2} / {steps.Length + 2} · {CourseName}", body, "", true)) Advance();
+        if (DiNeTutorialBubble.Draw(controlsAnchor, $"{index + 2} / {steps.Length + 2} · {CourseName}", body, welcome && hasOverview ? startHint : "", true)) Advance();
         Focus(controlsAnchor);
     }
 
@@ -225,7 +268,7 @@ public sealed class DiNeGuidedTutorial
 
     public void NotifyAction(string id)
     {
-        if (!IsActive || index < 0 || index >= steps.Length || CurrentStepId != id || !steps[index].IsRequired) return;
+        if (!IsActive || !IsExpanded || index < 0 || index >= steps.Length || CurrentStepId != id || !steps[index].IsRequired) return;
         // Serialized fields may not be applied until the end of this GUI event.
         // Flush checks the final state before accepting the transition.
         Queue(index + 1);
@@ -233,7 +276,7 @@ public sealed class DiNeGuidedTutorial
 
     public void Validate()
     {
-        if (!IsActive || pending != int.MinValue) return;
+        if (!IsActive || !IsExpanded || pending != int.MinValue) return;
         for (int i = 0; i < Mathf.Min(index, steps.Length); i++)
             if (steps[i].IsRequired && steps[i].IsPrerequisite && !Complete(steps[i])) { Queue(i); return; }
         // Assignments in another inspector and Play mode also complete real actions.
@@ -280,7 +323,7 @@ public sealed class DiNeGuidedTutorial
 
     private void Queue(int next)
     {
-        if (!IsActive || pending != int.MinValue) return;
+        if (!IsActive || !IsExpanded || pending != int.MinValue) return;
         pending = next; DiNeTutorialBubble.ClearFrame();
         EditorApplication.delayCall -= Flush;
         EditorApplication.delayCall += Flush;
@@ -291,7 +334,7 @@ public sealed class DiNeGuidedTutorial
     {
         int next = pending; pending = int.MinValue;
         EditorApplication.delayCall -= Flush;
-        if (!IsActive || next < -1 || next > steps.Length) return;
+        if (!IsActive || !IsExpanded || next < -1 || next > steps.Length) return;
         if (next == index + 1 && index >= 0 && index < steps.Length && steps[index].IsRequired && !Complete(steps[index])) return;
         DiNeTutorialBubble.ClearFrame(); index = next;
         if (index >= 0 && index < steps.Length) steps[index].OnEnter?.Invoke();

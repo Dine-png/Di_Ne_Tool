@@ -36,7 +36,9 @@ public static class TutorialRegression
             Tuple.Create("Shared tutorial required/optional actions and prerequisite changes", (Action)GuidedTutorialRegression.Progression),
             Tuple.Create("Shared tutorial courses, schemas and locked inspector ownership", (Action)GuidedTutorialRegression.CoursesAndOwnership),
             Tuple.Create("Shared tutorial real bubble mouse input", (Action)GuidedTutorialRegression.BubbleMouseInput),
-            Tuple.Create("Shared tutorial scroll coordinates and input passthrough", (Action)GuidedTutorialRegression.NestedScrollSpotlight)
+            Tuple.Create("Shared tutorial scroll coordinates and input passthrough", (Action)GuidedTutorialRegression.NestedScrollSpotlight),
+            Tuple.Create("Multi Dresser folded guidance retains preview and resumes the same step", (Action)CollapsedDresserGuidance),
+            Tuple.Create("Folded guidance preserves progress, pauses transitions and persists across courses", (Action)GuidedTutorialRegression.CollapsedGuidance)
         })
         {
             EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
@@ -545,6 +547,49 @@ public static class TutorialRegression
             }
             finally { window.Inspector = null; window.Close(); }
         }
+    }
+
+    public static void CollapsedDresserGuidance()
+    {
+        const string preference = "DiNe.Tutorial.MultiDresser.Expanded";
+        bool hadPreference = EditorPrefs.HasKey(preference), expanded = EditorPrefs.GetBool(preference, true);
+        var property = typeof(DiNeMultiSupporter).GetProperty("TutorialExpanded", PrivateInstance);
+        Require(property != null, "Multi Dresser tutorial foldout is missing.");
+        try
+        {
+            EditorPrefs.SetBool(preference, true);
+            using (var f = new Fixture())
+            {
+                f.Start(); AdvanceTo(f.inspector, "Preview"); f.Apply(); Notify(f.inspector, "Preview");
+                var window = ScriptableObject.CreateInstance<TutorialProbeWindow>();
+                try
+                {
+                    window.Inspector = f.inspector; window.position = new Rect(50, 50, 360, 900); window.Show();
+                    window.RenderFrame(); window.RenderFrame();
+                    string dresserBefore = EditorJsonUtility.ToJson(f.dresser), avatarBefore = EditorJsonUtility.ToJson(f.avatar);
+                    float shapeBefore = f.renderer.GetBlendShapeWeight(0);
+                    bool baselineBefore = f.baseline.activeSelf, outfitBefore = f.outfit.activeSelf;
+                    Material materialBefore = f.renderer.sharedMaterial;
+                    property.SetValue(f.inspector, false, null); window.RenderFrame(); window.RenderFrame();
+                    Expect(f.inspector, "RestorePreview");
+                    Require(!DiNeTutorialBubble.HasOverlay, "Folded dresser retained its spotlight.");
+                    Require(!new DiNeGuidedTutorial(f.inspector, "MultiDresser").IsExpanded, "Independent toggles did not share the folded state.");
+                    Require(dresserBefore == EditorJsonUtility.ToJson(f.dresser) && avatarBefore == EditorJsonUtility.ToJson(f.avatar),
+                        "Folding changed avatar configuration.");
+                    Require(f.baseline.activeSelf == baselineBefore && f.outfit.activeSelf == outfitBefore &&
+                        Mathf.Approximately(shapeBefore, f.renderer.GetBlendShapeWeight(0)) && f.renderer.sharedMaterial == materialBefore,
+                        "Folding stopped or changed the active preview.");
+                    property.SetValue(f.inspector, true, null); window.RenderFrame(); window.RenderFrame();
+                    Expect(f.inspector, "RestorePreview");
+                    Require(DiNeTutorialBubble.HasOverlay, "Expanded dresser did not resume its bubble.");
+                    Invoke(f.inspector, "ClearPreview"); Notify(f.inspector, "RestorePreview"); Expect(f.inspector, "ShapeKeys");
+                    Invoke(f.inspector, "StopTutorial"); f.RequireOriginalPreviewState();
+                    Require(window.Error == null, "Folded dresser GUI failed: " + window.Error);
+                }
+                finally { window.Inspector = null; window.Close(); }
+            }
+        }
+        finally { if (hadPreference) EditorPrefs.SetBool(preference, expanded); else EditorPrefs.DeleteKey(preference); }
     }
 
     public static void IdleInspectors()

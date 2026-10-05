@@ -101,7 +101,6 @@ public partial class DiNeAnimationTool
         EndCard();
         TutorialAnchor("repair-input");
         TutorialDraw("repair-input");
-        GUILayout.Space(8);
 
         BeginCard(Tr("Reusable mappings", "대응표 저장·불러오기", "対応表の保存・読み込み"));
         using (new EditorGUILayout.HorizontalScope())
@@ -119,7 +118,6 @@ public partial class DiNeAnimationTool
                 }
         }
         EndCard();
-        GUILayout.Space(8);
 
         if (repairGroups != null) DrawRepairMappings();
         if (repairSavedClips.Any(c => c)) DrawRepairOutputs();
@@ -214,7 +212,6 @@ public partial class DiNeAnimationTool
         EndCard();
         TutorialAnchor("repair-mapping");
         TutorialDraw("repair-mapping");
-        GUILayout.Space(8);
         DrawRepairPlan();
     }
 
@@ -336,7 +333,6 @@ public partial class DiNeAnimationTool
         TutorialAnchor("repair-save");
         TutorialDraw("repair-save");
         EndCard();
-        GUILayout.Space(8);
     }
 
     private void SaveRepairedClips()
@@ -435,7 +431,6 @@ public partial class DiNeAnimationTool
             if (folder) EditorGUIUtility.PingObject(folder);
         }
         EndCard();
-        GUILayout.Space(8);
     }
 
     private void SaveRepairProfile()

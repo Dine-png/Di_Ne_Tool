@@ -14,7 +14,7 @@ Use `-InspectorSource <path>` and its matching `DiNeMultiSupporter.Tutorial.cs`
 to compare an alternative inspector against the same tests. `-TutorialSource
 <path>` overrides the companion partial source. `-ProjectName <name>` chooses
 an isolated project under `.codex_tmp`.
-`-TutorialOnly` runs the eight tutorial cases without the other preview/toggle
+`-TutorialOnly` runs the tutorial cases without the other preview/toggle
 regressions or their newer inspector dependencies. Optional phases are read from
 the production tutorial enum, so an older inspector without Independent Toggles
 receives the complete tutorial coverage appropriate to its own workflow.
@@ -87,6 +87,11 @@ control still works. Drawing preserves GUI colors, enabled/changed state, matrix
 indentation and label width; inactive and cleared frames retain no stale overlay.
 These tests do not read desktop pixels or generate screenshots.
 
+The shared tutorial foldout regression clicks the actual header to collapse and
+expand guidance. It checks hidden bubbles/spotlights, retained progress, paused
+required actions, cancellation of queued transitions, and the per-tool visibility
+preference across courses and guide recreation. Collapsing does not stop previews.
+
 ## UI-standard review
 
 The earlier preview fix changes preview work and shape-list synchronization only. Existing
@@ -109,3 +114,10 @@ dirty marking and prefab modification recording. The runner includes the limited
 package brand/font assets for comparison with nearby inspector UI. Structural
 review supplements all-language Layout/Repaint and spotlight geometry checks;
 automated geometry checks do not claim a rendered-pixel visual review.
+
+Tutorial explanations now state the purpose, capabilities and a use case before
+starting, and describe feature effects alongside the actions. The same overview
+appears in the welcome bubble in all three languages. The native foldout stays
+inside the existing help-box card, uses `EditorStyles.foldoutHeader`, and stores
+visibility in EditorPrefs without changing avatar settings. Headers, component
+icons, primary colors, serialized editing, Undo and prefab behavior are retained.

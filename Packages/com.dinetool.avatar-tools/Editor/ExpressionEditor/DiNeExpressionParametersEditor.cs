@@ -1,220 +1,553 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using UnityEditor;
+using UnityEditor.IMGUI.Controls;
+using UnityEditorInternal;
 using UnityEngine;
 using VRC.SDK3.Avatars.ScriptableObjects;
+using AnimatorControllerParameter = UnityEngine.AnimatorControllerParameter;
 
 namespace DiNeTool.ExpressionEditor
 {
     [CustomEditor(typeof(VRCExpressionParameters))]
     public sealed class DiNeExpressionParametersEditor : DiNeExpressionInspectorBase
     {
+        private const float TableMinimumWidth = 620;
+        private SerializedProperty parameterProperty;
+        private ReorderableList parameterList;
+        private Vector2 tableScroll;
         private string search = "";
-        private string newName = "NewParameter";
-        private VRCExpressionParameters.ValueType newType = VRCExpressionParameters.ValueType.Bool;
-        private VRCExpressionParameters mergeSource;
+        private bool searchVisible;
+        private bool focusSearch;
+        private GUIStyle centered, typeHint, listButton;
+        private int drawnParameterCount = -1;
+        private bool restoreListFocus;
+        private ParameterDropdown parameterDropdown;
+        internal readonly Dictionary<string, Rect> Geometry = new Dictionary<string, Rect>();
         private VRCExpressionParameters Parameters => (VRCExpressionParameters)target;
         protected override string SdkEditorName => "VRC.SDK3.Editor.VRCExpressionParametersEditor";
-        protected override string InspectorTitle => T("Parameters", "파라미터", "パラメータ");
-        protected override string InspectorDescription => T("Edit parameters, check memory and merge missing names.",
-            "파라미터를 편집하고 사용량을 확인하며 누락된 이름을 병합합니다.", "パラメータを編集し、使用量を確認して不足している名前を統合します。");
 
         protected override void OnEnable()
         {
             base.OnEnable();
-            if (Parameters != null) FindAvatar(a => a.expressionParameters == Parameters);
+            if (Parameters != null) FindAvatar(avatar => avatar.expressionParameters == Parameters);
+            BuildParameterList();
+            Undo.undoRedoPerformed += RefreshAfterUndo;
+        }
+
+        protected override void OnDisable()
+        {
+            Undo.undoRedoPerformed -= RefreshAfterUndo;
+            base.OnDisable();
+        }
+
+        private void RefreshAfterUndo()
+        {
+            if (target == null) return;
+            serializedObject.Update();
+            BuildParameterList();
+            RefreshAnimatorParameters();
         }
 
         protected override void DrawContents()
         {
-            SerializedProperty parameters = serializedObject.FindProperty("parameters");
-            if (parameters == null)
+            Geometry.Clear();
+            EnsureStyles();
+            DrawAvatarSelector();
+            if (parameterList == null || parameterProperty == null || parameterProperty.arraySize != drawnParameterCount)
+                BuildParameterList();
+            if (parameterProperty == null) return;
+            parameterList.draggable = DiNeExpressionUtility.CanEditAsset(target);
+            if (restoreListFocus && Event.current != null)
             {
-                EditorGUILayout.HelpBox(T("This SDK parameter format is unsupported.", "이 SDK 파라미터 형식은 지원하지 않습니다.",
-                    "このSDKパラメータ形式はサポートされていません。"), MessageType.Error);
+                parameterList.GrabKeyboardFocus();
+                restoreListFocus = false;
+            }
+            HandleKeyboard();
+            // The requested compact SDK+ arrangement intentionally omits the large tool identity block.
+            // Horizontal scrolling preserves its single-row controls in narrow Inspector panels.
+            if (EditorGUIUtility.currentViewWidth < TableMinimumWidth + 32)
+            {
+                tableScroll = EditorGUILayout.BeginScrollView(tableScroll, true, false,
+                    GUILayout.Height(parameterList.GetHeight() + 18));
+                EditorGUILayout.BeginVertical(GUILayout.MinWidth(TableMinimumWidth));
+                parameterList.DoLayoutList();
+                EditorGUILayout.EndVertical();
+                EditorGUILayout.EndScrollView();
+            }
+            else parameterList.DoLayoutList();
+
+            if (HasCleanupCandidates())
+                using (new EditorGUILayout.HorizontalScope(EditorStyles.helpBox))
+                {
+                    GUILayout.Label(C("Cleanup invalid, blank and duplicate parameters",
+                        "유효하지 않은 항목, 빈 이름과 중복 파라미터 정리", "無効・空の名前・重複パラメータを整理"), GUILayout.ExpandWidth(true));
+                    if (GUILayout.Button(C("Cleanup", "정리", "整理"), GUILayout.ExpandWidth(true)))
+                        RunGuiAction(CleanupParameters);
+                }
+
+            using (new EditorGUILayout.HorizontalScope(EditorStyles.helpBox))
+            {
+                EditorGUI.BeginChangeCheck();
+                var source = (VRCExpressionParameters)EditorGUILayout.ObjectField(C("Merge Parameters", "파라미터 병합", "パラメータを統合",
+                    "Selecting an asset appends copies of all its parameters, including duplicate names.",
+                    "에셋을 선택하면 중복 이름을 포함한 모든 파라미터의 복사본을 목록 끝에 추가합니다.",
+                    "アセットを選択すると、重複した名前を含む全パラメータのコピーを一覧の末尾に追加します。"),
+                    null, typeof(VRCExpressionParameters), false);
+                Geometry["MergeField"] = GUILayoutUtility.GetLastRect();
+                if (EditorGUI.EndChangeCheck() && source != null)
+                    RunGuiAction(() => MergeParameters(source));
+            }
+            DrawMemory();
+        }
+
+        private void EnsureStyles()
+        {
+            if (centered != null) return;
+            centered = new GUIStyle(EditorStyles.label) { alignment = TextAnchor.MiddleCenter };
+            typeHint = new GUIStyle(EditorStyles.centeredGreyMiniLabel) { alignment = TextAnchor.MiddleRight };
+            listButton = GUI.skin.FindStyle("RL FooterButton") ?? EditorStyles.miniButton;
+        }
+
+        private void BuildParameterList()
+        {
+            if (target == null) return;
+            parameterProperty = serializedObject.FindProperty("parameters");
+            if (parameterProperty == null) return;
+            int selected = parameterList?.index ?? -1;
+            restoreListFocus |= parameterList != null && parameterList.HasKeyboardControl();
+            drawnParameterCount = parameterProperty.arraySize;
+            parameterList = new ReorderableList(serializedObject, parameterProperty, true, true, true, false)
+            {
+                drawHeaderCallback = DrawTableHeader,
+                drawElementCallback = DrawParameterRow,
+                drawFooterCallback = DrawTableFooter,
+                drawNoneElementCallback = rect => EditorGUI.LabelField(rect,
+                    T("List is empty", "목록이 비어 있습니다", "一覧は空です")),
+                onAddCallback = _ => RunGuiAction(AddParameter),
+                onReorderCallback = _ =>
+                {
+                    if (!DiNeExpressionUtility.CanEditAsset(target)) { serializedObject.Update(); return; }
+                    UpdateEmptyFlag();
+                    serializedObject.ApplyModifiedProperties();
+                }
+            };
+            parameterList.index = Math.Min(selected, parameterProperty.arraySize - 1);
+        }
+
+        private void DrawTableHeader(Rect rect)
+        {
+            rect.y += 1;
+            rect.height = 18;
+            Geometry["ParameterHeader"] = rect;
+            var columns = GetHeaderColumns(rect);
+            EditorGUI.LabelField(columns.Name, C("Name", "이름", "名前",
+                "Must match the playable controller parameter name. Case sensitive.",
+                "Playable Controller의 파라미터 이름과 일치해야 합니다. 대소문자를 구분합니다.",
+                "Playable Controllerのパラメータ名と一致させてください。大文字と小文字を区別します。"), centered);
+            if (searchVisible || !string.IsNullOrEmpty(search))
+            {
+                var field = columns.Name;
+                field.width -= 20;
+                GUI.SetNextControlName("DiNeParameterSearch");
+                search = EditorGUI.TextField(field, search, EditorStyles.toolbarSearchField);
+                if (focusSearch)
+                {
+                    EditorGUI.FocusTextInControl("DiNeParameterSearch");
+                    focusSearch = false;
+                }
+                var clear = new Rect(field.xMax + 1, field.y, 19, field.height);
+                if (GUI.Button(clear, C("×", "×", "×", "Clear search", "검색 지우기", "検索を消去"), EditorStyles.miniButton))
+                {
+                    search = "";
+                    searchVisible = false;
+                    GUI.FocusControl(null);
+                }
+            }
+            else
+            {
+                var find = new Rect(columns.Name.center.x - 41, columns.Name.y, 18, 18);
+                var icon = new GUIContent(EditorGUIUtility.IconContent("Search Icon"))
+                {
+                    tooltip = T("Search parameters (Ctrl+F)", "파라미터 검색 (Ctrl+F)", "パラメータを検索 (Ctrl+F)")
+                };
+                if (GUI.Button(find, icon, GUIStyle.none))
+                {
+                    searchVisible = true;
+                    focusSearch = true;
+                    Repaint();
+                }
+            }
+            EditorGUI.LabelField(columns.Type, C("Type", "유형", "種類"), centered);
+            EditorGUI.LabelField(columns.Default, C("Default", "기본값", "初期値"), centered);
+            EditorGUI.LabelField(columns.Saved, C("Saved", "저장", "保存",
+                "Keep the value when loading the avatar or changing worlds.",
+                "아바타를 불러오거나 월드를 바꿀 때 값을 유지합니다.", "アバターの読み込みやワールドの変更時に値を維持します。"), centered);
+            EditorGUI.LabelField(columns.Synced, C("Synced", "동기화", "同期",
+                "Send the value to remote users. Synced parameters use memory.",
+                "다른 사용자에게 값을 전송합니다. 동기화 파라미터는 메모리를 사용합니다.", "他のユーザーに値を送信します。同期パラメータはメモリを使用します。"), centered);
+        }
+
+        private void DrawTableFooter(Rect rect)
+        {
+            // Unity's native footer places the single plus button inside its right-side tab.
+            Geometry["ParameterAdd"] = new Rect(rect.xMax - 39, rect.y, 25, 16);
+            ReorderableList.defaultBehaviours.DrawFooter(rect, parameterList);
+        }
+
+        private void DrawParameterRow(Rect rect, int index, bool active, bool focused)
+        {
+            if (index < 0 || index >= parameterProperty.arraySize) return;
+            var row = parameterProperty.GetArrayElementAtIndex(index);
+            var name = row.FindPropertyRelative("name");
+            rect.y += 1;
+            rect.height = 18;
+            Geometry["ParameterRow" + index] = rect;
+            var type = row.FindPropertyRelative("valueType");
+            var defaultValue = row.FindPropertyRelative("defaultValue");
+            if (name == null || type == null || defaultValue == null || IsNullEntry(index))
+            {
+                EditorGUI.LabelField(rect, T("Invalid parameter", "유효하지 않은 파라미터", "無効なパラメータ"));
+                var remove = GetColumns(rect, false).Delete;
+                Geometry["ParameterDelete" + index] = remove;
+                if (GUI.Button(remove, C("−", "−", "−", "Delete parameter", "파라미터 삭제", "パラメータを削除"), GUIStyle.none))
+                    RunGuiAction(() => DeleteParameter(index));
                 return;
             }
-            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            string parameterName = name.stringValue;
+            bool blank = string.IsNullOrWhiteSpace(parameterName);
+            var matched = AnimatorParameters.FirstOrDefault(parameter => parameter.name == parameterName);
+            bool missing = Avatar != null && matched == null && !blank;
+            bool duplicate = !blank && ContainsName(parameterName, index);
+            rect.height = 18;
+            var columns = GetColumns(rect, missing);
+            Geometry["ParameterDelete" + index] = columns.Delete;
+            if (missing) Geometry["ParameterControllerAdd" + index] = columns.Add;
+            using (new EditorGUI.DisabledScope(!MatchesSearch(parameterName)))
             {
-                GUILayout.Label(T("Animator lookup", "Animator 조회", "Animator参照"), EditorStyles.boldLabel);
-                DrawAvatarContext();
-            }
-            GUILayout.Space(8);
-            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
-            {
-                GUILayout.Label(T("Add parameter", "파라미터 추가", "パラメータを追加"), EditorStyles.boldLabel);
-                newName = EditorGUILayout.TextField(C("Name", "이름", "名前"), newName);
-                newType = (VRCExpressionParameters.ValueType)EditorGUILayout.EnumPopup(C("Type", "유형", "種類"), newType);
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(newName)))
-                        if (ActionButton(C("Add", "추가", "追加"), true))
-                            RunAction(() => Status = DiNeExpressionUtility.AddParameter(Parameters, newName, newType,
-                                T("Add Expression Parameter", "Expression 파라미터 추가", "Expressionパラメータを追加"))
-                                ? T("Parameter added.", "파라미터를 추가했습니다.", "パラメータを追加しました。")
-                                : T("Could not add the parameter. Check duplicate names and memory budget.", "추가하지 못했습니다. 이름 중복과 메모리 한도를 확인하세요.", "追加できませんでした。名前の重複とメモリ上限を確認してください。"));
-                    using (new EditorGUI.DisabledScope(AnimatorParameters.Count == 0))
-                        if (ActionButton(C("Choose from Animator", "Animator에서 선택", "Animatorから選択")))
-                        {
-                            var choices = new GenericMenu();
-                            foreach (var parameter in AnimatorParameters)
-                            {
-                                var captured = parameter;
-                                choices.AddItem(new GUIContent(parameter.name + " (" + parameter.type + ")"), false, () =>
-                                {
-                                    newName = captured.name;
-                                    newType = ToExpressionType(captured.type);
-                                    Repaint();
-                                });
-                            }
-                            choices.ShowAsContext();
-                        }
-                }
-            }
-            GUILayout.Space(8);
-            search = EditorGUILayout.TextField(C("Search", "검색", "検索"), search);
-            GUILayout.Space(4);
-            bool visible = false;
-            for (int i = 0; i < parameters.arraySize; i++)
-            {
-                SerializedProperty parameter = parameters.GetArrayElementAtIndex(i);
-                string name = parameter.FindPropertyRelative("name").stringValue;
-                if (!string.IsNullOrEmpty(search) && name.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0) continue;
-                visible = true;
-                DrawParameter(parameter, i, parameters.arraySize);
-                GUILayout.Space(4);
-            }
-            if (!visible)
-                EditorGUILayout.HelpBox(parameters.arraySize == 0
-                    ? T("No parameters. Add a name above; this inspector keeps an empty asset empty.", "파라미터가 없습니다. 위에서 이름을 추가하세요. 빈 에셋에 기본 항목을 자동으로 넣지 않습니다.",
-                        "パラメータがありません。上で名前を追加してください。空のアセットに既定の項目を自動追加しません。")
-                    : T("No matching parameters.", "검색 결과가 없습니다.", "一致するパラメータがありません。"), MessageType.Info);
-            GUILayout.Space(8);
-            DrawMerge();
-            GUILayout.Space(8);
-            DrawDiagnostics();
-        }
+                EditorGUI.PropertyField(columns.Name, name, GUIContent.none);
+                GUI.Label(columns.Name, matched == null ? "(?)" : "(" + matched.type + ")", typeHint);
+                var suggestions = AnimatorParameters.Where(parameter => !ContainsName(parameter.name)).ToArray();
+                using (new EditorGUI.DisabledScope(suggestions.Length == 0))
+                    if (GUI.Button(columns.Dropdown, GUIContent.none, EditorStyles.popup))
+                    {
+                        int chosenIndex = index;
+                        parameterDropdown = new ParameterDropdown(suggestions,
+                            T("Parameters", "파라미터", "パラメータ"), selected => ApplyAction(() => SetParameterName(chosenIndex, selected)));
+                        parameterDropdown.Show(columns.Name);
+                    }
 
-        private void DrawParameter(SerializedProperty parameter, int index, int count)
-        {
-            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
-            {
-                GUILayout.Label(T("Parameter ", "파라미터 ", "パラメータ ") + (index + 1), EditorStyles.boldLabel);
-                DrawParameterName(parameter.FindPropertyRelative("name"), Parameters);
-                SerializedProperty type = parameter.FindPropertyRelative("valueType");
-                EditorGUILayout.PropertyField(type, C("Type", "유형", "種類"));
-                SerializedProperty value = parameter.FindPropertyRelative("defaultValue");
-                var valueType = (VRCExpressionParameters.ValueType)type.intValue;
+                if (missing && GUI.Button(columns.Add, C("Add", "추가", "追加",
+                    "Add this parameter to a playable controller.", "이 파라미터를 Playable Controller에 추가합니다.",
+                    "このパラメータをPlayable Controllerに追加します。"), EditorStyles.popup))
+                    ShowAddPlayableParameterMenu(parameterName, (VRCExpressionParameters.ValueType)type.intValue,
+                        defaultValue.floatValue, columns.Add, RefreshAnimatorParameters);
+                if (blank || duplicate || missing)
+                {
+                    string message = blank ? T("Blank parameter", "빈 파라미터 이름", "空のパラメータ名")
+                        : duplicate ? T("Duplicate parameter name. This may cause issues.", "중복된 파라미터 이름입니다. 문제가 발생할 수 있습니다.", "パラメータ名が重複しています。問題が発生する可能性があります。")
+                        : T("Not found in a playable controller of the active avatar.", "활성 아바타의 Playable Controller에서 찾지 못한 파라미터입니다.",
+                            "選択中のアバターのPlayable Controllerにないパラメータです。");
+                    GUI.Label(columns.Warning, new GUIContent(EditorGUIUtility.IconContent("console.warnicon.sml")) { tooltip = message });
+                }
+                EditorGUI.PropertyField(columns.Type, type, GUIContent.none);
                 EditorGUI.BeginChangeCheck();
-                if (valueType == VRCExpressionParameters.ValueType.Bool)
+                float value;
+                switch ((VRCExpressionParameters.ValueType)type.intValue)
                 {
-                    bool state = EditorGUILayout.Toggle(C("Default", "기본값", "初期値"), value.floatValue != 0);
-                    if (EditorGUI.EndChangeCheck()) value.floatValue = state ? 1 : 0;
+                    case VRCExpressionParameters.ValueType.Bool:
+                        value = EditorGUI.Popup(columns.Default, defaultValue.floatValue == 0 ? 0 : 1,
+                            new[] { T("False", "False", "False"), T("True", "True", "True") });
+                        break;
+                    default:
+                        value = EditorGUI.FloatField(columns.Default, defaultValue.floatValue);
+                        break;
                 }
-                else if (valueType == VRCExpressionParameters.ValueType.Int)
+                if (EditorGUI.EndChangeCheck()) defaultValue.floatValue = value;
+                DrawCenteredToggle(columns.Saved, row.FindPropertyRelative("saved"));
+                DrawCenteredToggle(columns.Synced, row.FindPropertyRelative("networkSynced"));
+                var remove = new GUIContent(EditorGUIUtility.IconContent("Toolbar Minus"))
                 {
-                    int state = EditorGUILayout.IntField(C("Default", "기본값", "初期値"), Mathf.RoundToInt(value.floatValue));
-                    if (EditorGUI.EndChangeCheck()) value.floatValue = Mathf.Clamp(state, 0, 255);
-                }
-                else
-                {
-                    float state = EditorGUILayout.FloatField(C("Default", "기본값", "初期値"), value.floatValue);
-                    if (EditorGUI.EndChangeCheck()) value.floatValue = Mathf.Clamp(state, -1, 1);
-                }
-                EditorGUILayout.PropertyField(parameter.FindPropertyRelative("saved"), C("Saved", "저장", "保存",
-                    "Keep this value when changing avatars or worlds.", "아바타나 월드를 바꿔도 값을 유지합니다.", "アバターやワールドを変更しても値を維持します。"));
-                SerializedProperty synced = parameter.FindPropertyRelative("networkSynced");
-                if (synced != null) EditorGUILayout.PropertyField(synced, C("Synced", "동기화", "同期",
-                    "Send this parameter to other players; synced parameters consume memory budget.", "다른 플레이어에게 값을 전송합니다. 동기화 파라미터는 메모리 한도를 사용합니다.",
-                    "他のプレイヤーに値を送信します。同期するパラメータはメモリ上限を使用します。"));
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    using (new EditorGUI.DisabledScope(index == 0))
-                        if (ActionButton(C("Up", "위로", "上へ"))) RunAction(() => MoveParameter(index, index - 1));
-                    using (new EditorGUI.DisabledScope(index == count - 1))
-                        if (ActionButton(C("Down", "아래로", "下へ"))) RunAction(() => MoveParameter(index, index + 1));
-                    if (ActionButton(C("Delete", "삭제", "削除"), destructive: true)) RunAction(() => RemoveParameter(index));
-                }
+                    tooltip = T("Delete parameter", "파라미터 삭제", "パラメータを削除")
+                };
+                if (GUI.Button(columns.Delete, remove, listButton)) RunGuiAction(() => DeleteParameter(index));
+            }
+            var handle = new Rect(rect.x - 20, rect.y, 20, rect.height);
+            if (GUI.enabled && MatchesSearch(parameterName) && Event.current.type == EventType.ContextClick && handle.Contains(Event.current.mousePosition))
+            {
+                Event.current.Use();
+                int chosenIndex = index;
+                var menu = new GenericMenu();
+                menu.AddItem(C("Duplicate", "복제", "複製"), false, () => ApplyAction(() => DuplicateParameter(chosenIndex)));
+                menu.AddSeparator("");
+                menu.AddItem(C("Delete", "삭제", "削除"), false, () => ApplyAction(() => DeleteParameter(chosenIndex)));
+                menu.ShowAsContext();
             }
         }
 
-        private void MoveParameter(int from, int to)
+        private void DrawMemory()
         {
-            serializedObject.Update();
-            serializedObject.FindProperty("parameters").MoveArrayElement(from, to);
-            serializedObject.ApplyModifiedProperties();
-        }
-
-        private void RemoveParameter(int index)
-        {
-            serializedObject.Update();
-            var parameters = serializedObject.FindProperty("parameters");
-            parameters.DeleteArrayElementAtIndex(index);
-            var empty = serializedObject.FindProperty("isEmpty");
-            if (empty != null) empty.boolValue = parameters.arraySize == 0;
-            serializedObject.ApplyModifiedProperties();
-        }
-
-        private void DrawMerge()
-        {
+            int cost = 0;
+            for (int index = 0; index < parameterProperty.arraySize; index++)
+            {
+                if (IsNullEntry(index)) { cost += 8; continue; }
+                var parameter = parameterProperty.GetArrayElementAtIndex(index);
+                var synced = parameter.FindPropertyRelative("networkSynced");
+                var type = parameter.FindPropertyRelative("valueType");
+                if (synced != null && !synced.boolValue) continue;
+                cost += type != null && type.intValue == (int)VRCExpressionParameters.ValueType.Bool ? 1 : 8;
+            }
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
             {
-                GUILayout.Label(T("Merge and cleanup", "병합과 정리", "統合と整理"), EditorStyles.boldLabel);
-                EditorGUILayout.LabelField(T("Merge adds missing names. Existing names and conflicting duplicates are preserved.",
-                    "병합은 누락된 이름만 추가합니다. 기존 이름과 설정이 다른 중복은 보존합니다.", "統合は不足している名前だけを追加します。既存の名前と設定が異なる重複は維持します。"), EditorStyles.wordWrappedMiniLabel);
-                mergeSource = (VRCExpressionParameters)EditorGUILayout.ObjectField(C("Source", "가져올 에셋", "統合元"), mergeSource, typeof(VRCExpressionParameters), false);
+                GUILayout.Label(T("Total Memory", "전체 메모리", "合計メモリ"), centered);
                 using (new EditorGUILayout.HorizontalScope())
                 {
-                    using (new EditorGUI.DisabledScope(mergeSource == null || mergeSource == Parameters))
-                        if (ActionButton(C("Merge missing", "누락 항목 병합", "不足項目を統合"), true))
-                            RunAction(() =>
-                            {
-                                int count = DiNeExpressionUtility.MergeParameters(Parameters, mergeSource, T("Merge Expression Parameters", "Expression 파라미터 병합", "Expressionパラメータを統合"));
-                                Status = count < 0 ? T("Merge cancelled: memory budget exceeded. Neither asset was changed.", "메모리 한도 초과로 병합하지 않았습니다. 두 에셋 모두 보존됩니다.",
-                                    "メモリ上限を超えたため統合を中止しました。両方のアセットは維持されます。")
-                                    : string.Format(T("Added {0} parameters. Existing values were kept.", "{0}개 파라미터를 추가했습니다. 기존 값은 유지됩니다.", "{0}個のパラメータを追加しました。既存の値は維持されます。"), count);
-                            });
-                    if (ActionButton(C("Clean duplicates", "중복 정리", "重複を整理")))
-                        RunAction(() =>
+                    GUILayout.FlexibleSpace();
+                    GUILayout.Label(cost + " / " + VRCExpressionParameters.MAX_PARAMETER_COST);
+                    if (cost > VRCExpressionParameters.MAX_PARAMETER_COST)
+                        GUILayout.Label(new GUIContent(EditorGUIUtility.IconContent("console.erroricon.sml"))
                         {
-                            int count = DiNeExpressionUtility.CleanupParameters(Parameters, T("Clean Expression Parameters", "Expression 파라미터 정리", "Expressionパラメータを整理"));
-                            Status = string.Format(T("Removed {0} empty or identical duplicate entries. Conflicting settings were kept.",
-                                "빈 이름 또는 설정이 같은 중복 {0}개를 정리했습니다. 충돌하는 설정은 보존됩니다.", "空の名前または同一設定の重複を{0}個削除しました。競合する設定は維持されます。"), count);
-                        });
+                            tooltip = T("Synced memory exceeds the SDK limit.", "동기화 메모리가 SDK 한도를 초과했습니다.", "同期メモリがSDK上限を超えています。")
+                        }, GUILayout.Width(18));
+                    GUILayout.FlexibleSpace();
                 }
+                Geometry["Memory"] = GUILayoutUtility.GetLastRect();
             }
         }
 
-        private void DrawDiagnostics()
+        private void HandleKeyboard()
         {
-            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            var current = Event.current;
+            if (current == null || !DiNeExpressionUtility.CanEditAsset(target)) return;
+            if (current.type == EventType.KeyDown && (current.control || current.command) && current.keyCode == KeyCode.F)
             {
-                GUILayout.Label(T("Diagnostics", "진단", "診断"), EditorStyles.boldLabel);
-                int cost = Parameters.parameters == null ? 0 : Parameters.CalcTotalCost();
-                int limit = VRCExpressionParameters.MAX_PARAMETER_COST;
-                Rect bar = GUILayoutUtility.GetRect(1, 22, GUILayout.ExpandWidth(true));
-                EditorGUI.ProgressBar(bar, Mathf.Clamp01((float)cost / limit), T("Synced memory", "동기화 사용량", "同期使用量") + $": {cost}/{limit} bit");
-                if (cost > limit) EditorGUILayout.HelpBox(T("Synced parameter memory exceeds the SDK limit.", "동기화 파라미터 사용량이 SDK 한도를 초과했습니다.", "同期パラメータの使用量がSDK上限を超えています。"), MessageType.Error);
-                var parameters = Parameters.parameters ?? Array.Empty<VRCExpressionParameters.Parameter>();
-                if (parameters.Any(p => p == null || string.IsNullOrWhiteSpace(p.name)))
-                    EditorGUILayout.HelpBox(T("Empty parameter names found. Cleanup can remove them.", "빈 파라미터 이름이 있습니다. 중복 정리로 제거할 수 있습니다.",
-                        "空のパラメータ名があります。重複整理で削除できます。"), MessageType.Warning);
-                foreach (var duplicate in parameters.Where(p => p != null && !string.IsNullOrWhiteSpace(p.name)).GroupBy(p => p.name).Where(g => g.Count() > 1))
-                    EditorGUILayout.HelpBox(T("Duplicate name (conflicting settings are preserved): ", "중복 이름 (설정 충돌은 보존됨): ", "重複した名前（競合する設定は維持）: ") + duplicate.Key, MessageType.Warning);
-                foreach (var parameter in parameters.Where(p => p != null && !string.IsNullOrWhiteSpace(p.name)))
-                {
-                    var animator = AnimatorParameters.FirstOrDefault(p => p.name == parameter.name);
-                    if (Avatar != null && animator == null)
-                        EditorGUILayout.HelpBox(T("Not found in the selected avatar's supported Animator parameters: ", "선택한 아바타의 지원되는 Animator 파라미터에서 찾지 못한 이름: ",
-                            "選択したアバターの対応Animatorパラメータで見つからない名前: ") + parameter.name, MessageType.Warning);
-                    else if (animator != null && ToExpressionType(animator.type) != parameter.valueType)
-                        EditorGUILayout.HelpBox(T("Animator type differs: ", "Animator 유형이 다릅니다: ", "Animatorの種類が異なります: ") + parameter.name, MessageType.Warning);
-                    bool validDefault = !float.IsNaN(parameter.defaultValue) && !float.IsInfinity(parameter.defaultValue) &&
-                        (parameter.valueType == VRCExpressionParameters.ValueType.Bool ? parameter.defaultValue == 0 || parameter.defaultValue == 1 :
-                            parameter.valueType == VRCExpressionParameters.ValueType.Int ? parameter.defaultValue >= 0 && parameter.defaultValue <= 255 && parameter.defaultValue == Mathf.Floor(parameter.defaultValue) :
-                            parameter.defaultValue >= -1 && parameter.defaultValue <= 1);
-                    if (!validDefault) EditorGUILayout.HelpBox(T("Default value is outside the supported range: ", "기본값이 지원 범위를 벗어났습니다: ", "初期値が対応範囲外です: ") + parameter.name, MessageType.Warning);
-                }
+                searchVisible = true;
+                focusSearch = true;
+                current.Use();
+            }
+            if (!parameterList.HasKeyboardControl() || EditorGUIUtility.editingTextField || parameterList.index < 0 ||
+                parameterList.index >= parameterProperty.arraySize) return;
+            bool duplicate = current.commandName == "Duplicate";
+            bool delete = current.commandName == "Delete" || current.commandName == "SoftDelete";
+            if (current.type == EventType.ValidateCommand && (duplicate || delete)) { current.Use(); return; }
+            if (current.type == EventType.KeyDown)
+            {
+                duplicate = (current.control || current.command) && current.keyCode == KeyCode.D;
+                delete = current.keyCode == KeyCode.Delete || current.keyCode == KeyCode.Backspace;
+            }
+            else if (current.type != EventType.ExecuteCommand) return;
+            if (!duplicate && !delete) return;
+            int index = parameterList.index;
+            current.Use();
+            RunGuiAction(() => { if (duplicate) DuplicateParameter(index); else DeleteParameter(index); });
+        }
+
+        private bool MatchesSearch(string name)
+        {
+            if (string.IsNullOrEmpty(search)) return true;
+            try { return Regex.IsMatch(name ?? "", search, RegexOptions.IgnoreCase); }
+            catch (ArgumentException) { return (name ?? "").IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0; }
+        }
+
+        private bool ContainsName(string name, int skip = -1)
+        {
+            for (int index = 0; index < parameterProperty.arraySize; index++)
+            {
+                if (index == skip) continue;
+                var existing = parameterProperty.GetArrayElementAtIndex(index).FindPropertyRelative("name");
+                if (existing != null && existing.stringValue == name) return true;
+            }
+            return false;
+        }
+
+        private bool HasCleanupCandidates()
+        {
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            for (int index = 0; index < parameterProperty.arraySize; index++)
+            {
+                var name = parameterProperty.GetArrayElementAtIndex(index).FindPropertyRelative("name");
+                if (name == null || IsNullEntry(index) || string.IsNullOrWhiteSpace(name.stringValue) || !names.Add(name.stringValue) ||
+                    (Avatar != null && AnimatorParameters.All(parameter => parameter.name != name.stringValue))) return true;
+            }
+            return false;
+        }
+
+        private void AddParameter()
+        {
+            var current = (Parameters.parameters ?? Array.Empty<VRCExpressionParameters.Parameter>()).ToList();
+            var parameter = current.Count > 0 && current[current.Count - 1] != null
+                ? DiNeExpressionUtility.CloneParameter(current[current.Count - 1]) : new VRCExpressionParameters.Parameter();
+            parameter.name = GetUniqueName(parameter.name, current);
+            current.Add(parameter);
+            WriteParameters(current, T("Add Expression Parameter", "Expression 파라미터 추가", "Expressionパラメータを追加"));
+            parameterList.index = current.Count - 1;
+        }
+
+        private void DuplicateParameter(int index)
+        {
+            var current = (Parameters.parameters ?? Array.Empty<VRCExpressionParameters.Parameter>()).ToList();
+            if (index < 0 || index >= current.Count || current[index] == null) return;
+            var copy = DiNeExpressionUtility.CloneParameter(current[index]);
+            copy.name = GetUniqueName(copy.name, current);
+            current.Insert(index + 1, copy);
+            WriteParameters(current, T("Duplicate Expression Parameter", "Expression 파라미터 복제", "Expressionパラメータを複製"));
+            parameterList.index = index + 1;
+        }
+
+        private void DeleteParameter(int index)
+        {
+            var current = (Parameters.parameters ?? Array.Empty<VRCExpressionParameters.Parameter>()).ToList();
+            if (index < 0 || index >= current.Count) return;
+            current.RemoveAt(index);
+            WriteParameters(current, T("Delete Expression Parameter", "Expression 파라미터 삭제", "Expressionパラメータを削除"));
+            parameterList.index = Math.Min(index, current.Count - 1);
+        }
+
+        private void MergeParameters(VRCExpressionParameters source)
+        {
+            if (source == null) return;
+            var current = (Parameters.parameters ?? Array.Empty<VRCExpressionParameters.Parameter>()).ToList();
+            current.AddRange((source.parameters ?? Array.Empty<VRCExpressionParameters.Parameter>()).Select(DiNeExpressionUtility.CloneParameter));
+            WriteParameters(current, T("Merge Expression Parameters", "Expression 파라미터 병합", "Expressionパラメータを統合"));
+        }
+
+        private void CleanupParameters()
+        {
+            RefreshAnimatorParameters();
+            var known = new HashSet<string>(AnimatorParameters.Select(parameter => parameter.name), StringComparer.Ordinal);
+            var retained = new List<VRCExpressionParameters.Parameter>();
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var parameter in Parameters.parameters ?? Array.Empty<VRCExpressionParameters.Parameter>())
+            {
+                if (parameter == null || string.IsNullOrWhiteSpace(parameter.name) ||
+                    (Avatar != null && !known.Contains(parameter.name)) || !names.Add(parameter.name)) continue;
+                retained.Add(parameter);
+            }
+            WriteParameters(retained, T("Clean Expression Parameters", "Expression 파라미터 정리", "Expressionパラメータを整理"));
+        }
+
+        private void SetParameterName(int index, string name)
+        {
+            if (!DiNeExpressionUtility.CanEditAsset(target)) return;
+            serializedObject.Update();
+            parameterProperty = serializedObject.FindProperty("parameters");
+            if (index < 0 || index >= parameterProperty.arraySize) return;
+            parameterProperty.GetArrayElementAtIndex(index).FindPropertyRelative("name").stringValue = name;
+            serializedObject.ApplyModifiedProperties();
+        }
+
+        private void WriteParameters(List<VRCExpressionParameters.Parameter> parameters, string undoName)
+        {
+            if (!DiNeExpressionUtility.CanEditAsset(target)) return;
+            Undo.RecordObject(Parameters, undoName);
+            Parameters.parameters = parameters.ToArray();
+            Parameters.isEmpty = parameters.Count == 0;
+            EditorUtility.SetDirty(Parameters);
+            serializedObject.Update();
+            BuildParameterList();
+        }
+
+        private void UpdateEmptyFlag()
+        {
+            var empty = serializedObject.FindProperty("isEmpty");
+            if (empty != null) empty.boolValue = parameterProperty.arraySize == 0;
+        }
+
+        private static string GetUniqueName(string original, List<VRCExpressionParameters.Parameter> parameters)
+        {
+            string name = original ?? "";
+            var existing = new HashSet<string>(parameters.Where(parameter => parameter != null).Select(parameter => parameter.name ?? ""), StringComparer.Ordinal);
+            if (!existing.Contains(name)) return name;
+            int digit = name.Length;
+            while (digit > 0 && char.IsDigit(name[digit - 1])) digit--;
+            string stem = digit == name.Length ? name.TrimEnd() + " " : name.Substring(0, digit);
+            int number = 1;
+            int padding = digit == name.Length ? 1 : name.Length - digit;
+            if (digit < name.Length && int.TryParse(name.Substring(digit), out int found)) number = found;
+            string candidate;
+            do { candidate = stem + number.ToString("D" + padding); number++; }
+            while (existing.Contains(candidate));
+            return candidate;
+        }
+
+        private static void DrawCenteredToggle(Rect rect, SerializedProperty property)
+        {
+            if (property == null) return;
+            rect.x += (rect.width - 18) / 2;
+            rect.width = 18;
+            EditorGUI.PropertyField(rect, property, GUIContent.none);
+        }
+
+        private static Columns GetColumns(Rect rect, bool add)
+        {
+            var columns = new Columns();
+            float right = rect.xMax;
+            columns.Delete = TakeColumn(ref right, rect, 32, 4);
+            columns.Synced = TakeColumn(ref right, rect, 18, 16);
+            columns.Saved = TakeColumn(ref right, rect, 18, 34);
+            columns.Default = TakeColumn(ref right, rect, 85, 32);
+            columns.Type = TakeColumn(ref right, rect, 85, 12);
+            columns.Warning = TakeColumn(ref right, rect, 18, 4);
+            if (add) columns.Add = TakeColumn(ref right, rect, 55, 4);
+            columns.Dropdown = TakeColumn(ref right, rect, 21, 1);
+            columns.Name = new Rect(rect.x, rect.y, Math.Max(20, right - rect.x), rect.height);
+            return columns;
+        }
+
+        private static Columns GetHeaderColumns(Rect rect)
+        {
+            var columns = new Columns();
+            float right = rect.xMax;
+            columns.Delete = TakeColumn(ref right, rect, 32, 4);
+            columns.Synced = TakeColumn(ref right, rect, 54);
+            columns.Saved = TakeColumn(ref right, rect, 54);
+            columns.Default = TakeColumn(ref right, rect, 117);
+            columns.Type = TakeColumn(ref right, rect, 75);
+            columns.Warning = TakeColumn(ref right, rect, 48);
+            columns.Name = new Rect(rect.x, rect.y, Math.Max(20, right - rect.x), rect.height);
+            return columns;
+        }
+
+        private static Rect TakeColumn(ref float right, Rect row, float width, float gap = 0)
+        {
+            right -= width + gap;
+            var column = new Rect(right, row.y, width, row.height);
+            return column;
+        }
+
+        private bool IsNullEntry(int index)
+        {
+            var parameters = Parameters.parameters;
+            return parameters != null && index >= 0 && index < parameters.Length && parameters[index] == null;
+        }
+
+        private struct Columns { internal Rect Name, Dropdown, Add, Warning, Type, Default, Saved, Synced, Delete; }
+
+        private sealed class ParameterDropdown : AdvancedDropdown
+        {
+            private readonly AnimatorControllerParameter[] parameters;
+            private readonly string title;
+            private readonly Action<string> selected;
+            internal ParameterDropdown(AnimatorControllerParameter[] parameters, string title, Action<string> selected)
+                : base(new AdvancedDropdownState())
+            {
+                this.parameters = parameters;
+                this.title = title;
+                this.selected = selected;
+                minimumSize = new Vector2(260, 280);
+            }
+            protected override AdvancedDropdownItem BuildRoot()
+            {
+                var root = new AdvancedDropdownItem(title);
+                for (int index = 0; index < parameters.Length; index++)
+                    root.AddChild(new AdvancedDropdownItem(parameters[index].name + " (" + parameters[index].type + ")") { id = index });
+                return root;
+            }
+            protected override void ItemSelected(AdvancedDropdownItem item)
+            {
+                if (item.id >= 0 && item.id < parameters.Length) selected(parameters[item.id].name);
             }
         }
     }

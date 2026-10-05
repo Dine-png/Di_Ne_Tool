@@ -140,6 +140,59 @@ public static class GuidedTutorialRegression
         }
         finally { guide.Stop(); window.Close(); }
     }
+
+    public static void CollapsedGuidance()
+    {
+        var window = ScriptableObject.CreateInstance<GuidedTutorialProbe>();
+        string id = "Regression." + Guid.NewGuid();
+        string preference = "DiNe.Tutorial." + id + ".Expanded";
+        bool ready = false;
+        int stops = 0;
+        var guide = new DiNeGuidedTutorial(window, id);
+        var steps = new[] { DiNeTutorialStep.Required("target", "Assign target.", "대상을 넣으세요.", "対象を指定。", () => ready) };
+        try
+        {
+            guide.Configure("one", "Test", "검사", "テスト", steps, onStop: () => stops++);
+            window.position = new Rect(50, 50, 360, 800); window.Show();
+            window.Draw = () => {
+                guide.BeginFrame(); guide.DrawControls();
+                if (Event.current.type == EventType.Repaint)
+                {
+                    Rect card = GUILayoutUtility.GetLastRect();
+                    window.InputRect = new Rect(card.x, card.y, card.width, EditorGUIUtility.singleLineHeight);
+                }
+                Rect control = GUILayoutUtility.GetRect(0, 30, GUILayout.ExpandWidth(true));
+                GUI.Box(control, "Target"); guide.Draw("target", control);
+                guide.EndFrame();
+            };
+            guide.Start(); Next(guide);
+            window.Render(); window.Render(); window.Click(window.InputRect.center);
+            window.Render(); window.Render();
+            Require(!guide.IsExpanded && guide.IsActive && !guide.CanClickCurrent && guide.CurrentStepId == "target", "Foldout click lost active progress or failed to collapse.");
+            Require(!DiNeTutorialBubble.HasOverlay && stops == 0, "Collapsing retained spotlight or stopped preview guidance.");
+            ready = true; guide.NotifyAction("target"); guide.Validate(); Flush(guide);
+            Require(guide.CurrentStepId == "target", "Hidden required action advanced the tutorial.");
+            window.Click(window.InputRect.center);
+            window.Render(); window.Render();
+            Require(guide.CurrentStepId == "target" && guide.CanClickCurrent && DiNeTutorialBubble.HasOverlay,
+                "Expanding did not resume the current step with its updated completion state.");
+            // A queued click must not advance after the user collapses the guide.
+            Invoke(guide, "Advance"); guide.IsExpanded = false; Flush(guide);
+            Require(guide.CurrentStepId == "target", "A queued transition survived collapsing.");
+            // Another inspector or feature tab can change the same tool preference.
+            EditorPrefs.SetBool(preference, true); window.Render(); window.Render();
+            Require(guide.CanClickCurrent && guide.CurrentStepId == "target", "Shared visibility changes did not refresh entry completion.");
+            guide.IsExpanded = false;
+            guide.Configure("two", "Other", "다른 기능", "別機能", steps);
+            Require(!guide.IsExpanded, "Changing course forgot the tool's folded state.");
+            var reopened = new DiNeGuidedTutorial(window, id);
+            reopened.Configure("two", "Other", "다른 기능", "別機能", steps);
+            Require(!reopened.IsExpanded, "Recreating the guide forgot its persisted folded state.");
+            reopened.Stop();
+            Require(window.Error == null, "Folded guidance GUI failed: " + window.Error);
+        }
+        finally { guide.Stop(); window.Close(); EditorPrefs.DeleteKey(preference); }
+    }
 }
 
 public sealed class GuidedTutorialProbe : EditorWindow

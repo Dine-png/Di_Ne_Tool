@@ -60,6 +60,70 @@ the full compilation/editor log is beside it. `-PrepareOnly` prepares without la
 Unity (also pass the editor path to copy the Immutable assembly). `-PackageSource`
 and `-ProjectName` can select a different source snapshot and isolated project.
 
+## Responsive armature layout regression
+
+Run the actual IMGUI geometry and capture suite separately:
+
+```powershell
+./Tests/AviEditor/Run-AviEditorRegression.ps1 -UnityEditorPath 'E:/Unity/2022.3.22f1/Editor/Unity.exe' -ProjectName AviEditorLayoutRegression -UILayout
+```
+
+This suite opens a test host that invokes the real Avi Editor `OnGUI`. It measures
+36 combinations: 300/420/620 pixel widths, 520/850 pixel heights, English/Korean/
+Japanese, and direct/MA modes. Existing tutorial anchors provide real control
+rectangles and their resolved scroll clipping scopes; no test geometry is added
+to the production window. It verifies:
+
+- Avatar fields, preset actions, the complete body map, and selected-bone controls
+  belong to one scrollable armature area inside the window.
+- Every tested control stays within its horizontal viewport; preset actions have
+  positive bounds, minimum hit height, enough height for localized wrapped text,
+  and no overlap. The MA child-position label also fits its actual 12px bold label
+  area after reserving the checkbox and gaps.
+- Both cached themed styles recover the current Unity button backgrounds,
+  including scaled textures used on high DPI displays, after their cached normal
+  background and scaled-background textures are deliberately cleared between
+  repaints. Normal, hover, active and selected-state textures match the real skin.
+- The body map keeps the same full height in short and tall windows. Actual mouse
+  events can select both edge hand joints at every tested size.
+- Scrolling reaches the lower body map and each selected-bone control, including
+  wrapped Vector3 fields in short windows. Passive drawing and bone selection
+  preserve the synthetic avatar's transforms and MA component values.
+
+The runner also copies the production Di Ne icon and title font into its isolated
+project. GPU screenshots of the top, hand selection area, lower map and selected
+controls are saved for all 18 taller cases under
+`.codex_tmp/AviEditorLayoutRegression/AviEditorUiRegression/`. The report and editor
+log are `AviEditorUiRegression-results.txt` and `AviEditorUiRegression.log` in the
+project root. Captures supplement geometric assertions and need visual inspection
+to assess the appearance of button borders, fonts and colors.
+
+The suite never opens an actual avatar scene and creates no VRChat descriptor or
+Multi Dresser component. It persists `DiNeLang` and both preset-picker preference
+roots to `preferences-restore.json` before mutation, then restores and verifies
+them before deleting that manifest. A failed/interrupted run preserves the
+manifest; rerunning `-UILayout` with the same `-ProjectName` recovers it first.
+The fixture asset and its generated folder are removed during normal cleanup.
+
+Completion review on 2026-10-04 against `Docs/DI_NE_UI_STANDARD.md`: the existing
+Di Ne brand icon, header, title font/scale, shared `DiNeLang` language selector,
+mint actions, cards, localization and tooltips are retained. Common controls stay
+accessible through the complete armature scroll area. This changes layout and
+cached styles without adding a runtime component or serialized setting, so a new
+component icon is not applicable; existing Undo and prefab behavior remain covered
+by the functional suite.
+
+Unity 2022.3.22f1 passed all 16 functional cases and all 36 strict UI cases with 72
+actual GPU captures. Evidence is retained in
+`.codex_tmp/AviEditorLayoutFix20261004/AviEditorRegression-results.txt`,
+`.codex_tmp/AviEditorLayoutFix20261004/AviEditorUiRegression-results.txt`, and the
+`AviEditorUiRegression/` capture folder in that same project. Visual review covered
+the Korean 420px full body map (including separated head/neck labels), Korean
+620px preset buttons, and Japanese 300px MA controls. The synthetic transforms and
+MA values were verified unchanged, and preference restoration was verified with
+the recovery manifest removed. No actual avatar scene or its FX/menu/parameter
+references was opened or assigned by these isolated tests.
+
 ## UI standard review
 
 Reviewed against `Docs/DI_NE_UI_STANDARD.md` and the existing Avi Editor sections:
@@ -86,8 +150,9 @@ Reviewed against `Docs/DI_NE_UI_STANDARD.md` and the existing Avi Editor section
   used Unity 2022.3's internal `GUIView.GrabPixels` render-texture capture in hidden
   batch mode to inspect eight actual armature windows: both edit modes in English,
   Korean and Japanese at 420 × 850, plus both Korean modes at 300 × 850. The unified
-  preset card fits and its descriptions wrap correctly. The existing narrow MA
-  child-position toggle can truncate its label outside the new preset card.
+  preset card fits and its descriptions wrap correctly. That historical probe
+  identified truncation in the narrow MA child-position toggle; the responsive
+  layout regression above now verifies its complete label area.
   Screenshots and capture diagnostics are retained in
   `.codex_tmp/AviEditorRegression/AviEditorUiCapture/`. The probe restored and verified
   `DiNeLang` and both picker preference roots, and removed its synthetic avatar and

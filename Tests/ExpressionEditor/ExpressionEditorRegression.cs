@@ -8,7 +8,9 @@ using System.Reflection;
 using DiNeTool.ExpressionEditor;
 using UnityEditor;
 using UnityEditor.Animations;
+using UnityEditor.UIElements;
 using UnityEngine;
+using UnityEngine.UIElements;
 using VRC.SDK3.Avatars.Components;
 using VRC.SDK3.Avatars.ScriptableObjects;
 using Object = UnityEngine.Object;
@@ -55,9 +57,27 @@ public static class ExpressionEditorRegression
         Test("Animator parameters are collected from actual descriptor controllers", AnimatorParameters);
         Test("Read-only assets refuse mutation without changing source state", ReadOnlyAssets);
         Test("SDK cost handling of damaged parameter arrays is observed without mutation", ObserveSdkNullCost);
-        Test("Unity automatically selects both Di Ne inspectors and SDK fallback creates actual SDK editors", InspectorSelection);
+        Test("Unity selects SDK+ inspectors when enabled and actual native SDK roots when disabled", InspectorSelection);
+        Test("Opening native inspectors preserves intentional and pristine empty parameter assets", EmptyInspectorInitialization);
         Test("Inspector priority registration is idempotent and preserves SDK records", RegistryIdempotence);
-        Test("Actual inspectors render at three widths in every language without repaint mutation", ExpressionEditorUiRegression.Verify);
+        Test("SDK+ editor callbacks duplicate, move, append merge, name cleanup and Controller Add with Undo", ConnectedInspectorActions);
+        Test("Descriptor Quick Setup preserves FX/menu/parameters references and supports Undo", QuickSetupReferences);
+        Test("SDK+ advisory controller lookup preserves Trigger and conflicting names during cleanup", InspectorAnimatorParameters);
+        // UI Toolkit binding, list virtualization and layout need real Editor update
+        // frames. The final case completes asynchronously before exiting Unity.
+        tests++;
+        ExpressionEditorUiRegression.Verify(error =>
+        {
+            string name = "Actual SDK+ and native inspector roots render at three widths and languages without mutation; visible row buttons support Undo";
+            if (error == null) Results.Add("PASS " + name);
+            else { failures++; Results.Add("FAIL " + name + ": " + error); }
+            Debug.Log(Results[Results.Count - 1]);
+            CompleteSuite();
+        });
+    }
+
+    private static void CompleteSuite()
+    {
         Results.Add("Tests: " + tests);
         Results.Add("Failures: " + failures);
         File.WriteAllLines("ExpressionEditorRegression-results.txt", Results);
@@ -346,6 +366,8 @@ public static class ExpressionEditorRegression
 
     private static void ReadOnlyAssets()
     {
+        const string modeKey = "DiNeExpressionInspectorEnabled";
+        bool hadMode = EditorPrefs.HasKey(modeKey), oldMode = EditorPrefs.GetBool(modeKey, true);
         var menu = Menu("ReadOnly", C("A")); var parameters = Parameters("ReadOnlyParameters", P("A"));
         AssetDatabase.SaveAssets();
         string menuPath = AssetDatabase.GetAssetPath(menu), parametersPath = AssetDatabase.GetAssetPath(parameters);
@@ -357,12 +379,26 @@ public static class ExpressionEditorRegression
             Require(!DiNeExpressionUtility.CanEditAsset(menu) && !DiNeExpressionUtility.CanEditAsset(parameters), "Read-only assets reported writable.");
             Require(!DiNeExpressionUtility.AddControl(menu, C("B"), "Add") && !DiNeExpressionUtility.RemoveControl(menu, 0, "Remove"), "Read-only menu mutation allowed.");
             Require(!DiNeExpressionUtility.AddParameter(parameters, "B", ValueType.Bool, "Add") && DiNeExpressionUtility.MergeParameters(parameters, Parameters("Source", P("B")), "Merge") == -1, "Read-only parameter mutation allowed.");
+            foreach (bool enhanced in new[] { false, true })
+            foreach (Object item in new Object[] { menu, parameters })
+            {
+                EditorPrefs.SetBool(modeKey, enhanced);
+                var editor = UnityEditor.Editor.CreateEditor(item);
+                try
+                {
+                    Require(editor.CreateInspectorGUI() != null, "Locked inspector created no root.");
+                    var field = typeof(DiNeExpressionInspectorBase).GetField("sdkEditor", BindingFlags.NonPublic | BindingFlags.Instance);
+                    Require(field.GetValue(editor) == null, "Locked asset was passed into SDK initialization.");
+                }
+                finally { Object.DestroyImmediate(editor); }
+            }
             Require(Snapshot(menu) == menuBefore && Snapshot(parameters) == parametersBefore, "Read-only rejection changed assets.");
         }
         finally
         {
             File.SetAttributes(menuPath, File.GetAttributes(menuPath) & ~FileAttributes.ReadOnly);
             File.SetAttributes(parametersPath, File.GetAttributes(parametersPath) & ~FileAttributes.ReadOnly);
+            if (hadMode) EditorPrefs.SetBool(modeKey, oldMode); else EditorPrefs.DeleteKey(modeKey);
         }
     }
 
@@ -383,12 +419,16 @@ public static class ExpressionEditorRegression
                     DescribeEditorRegistry(item.GetType());
                     string expected = item is VRCExpressionsMenu ? "DiNeTool.ExpressionEditor.DiNeExpressionMenuEditor" : "DiNeTool.ExpressionEditor.DiNeExpressionParametersEditor";
                     Require(editor.GetType().FullName == expected, "Unity selected " + editor.GetType().FullName + " instead of " + expected);
-                    Require(editor.CreateInspectorGUI() != null, "Di Ne inspector did not create its root.");
+                    var root = editor.CreateInspectorGUI();
+                    Require(root != null, "Enhanced SDK inspector did not create its root.");
+                    ExpressionEditorUiRegression.AssertInspectorMode(root, item, EditorPrefs.GetBool(modeKey, true));
                     EditorPrefs.SetBool(modeKey, false);
-                    Require(editor.CreateInspectorGUI() != null, "SDK fallback did not create its root.");
+                    root = editor.CreateInspectorGUI();
+                    Require(root != null, "SDK-only mode did not create its root.");
+                    ExpressionEditorUiRegression.AssertInspectorMode(root, item, EditorPrefs.GetBool(modeKey, true));
                     var field = typeof(DiNeExpressionInspectorBase).GetField("sdkEditor", BindingFlags.NonPublic | BindingFlags.Instance);
                     var sdkEditor = (UnityEditor.Editor)field.GetValue(editor);
-                    Require(sdkEditor != null, "SDK fallback used generic serialized fields despite real SDK editors being installed.");
+                    Require(sdkEditor != null, "SDK-only mode used generic serialized fields despite real SDK editors being installed.");
                     string sdkName = item is VRCExpressionsMenu ? "VRCExpressionsMenuEditor" : "VRCExpressionParametersEditor";
                     Require(sdkEditor.GetType().Name == sdkName, "Unexpected SDK fallback editor type: " + sdkEditor.GetType().FullName);
                     Require(Snapshot(item) == before, "Creating inspector/fallback mutated its asset.");
@@ -403,6 +443,237 @@ public static class ExpressionEditorRegression
         }
     }
 
+    private static void EmptyInspectorInitialization()
+    {
+        const string modeKey = "DiNeExpressionInspectorEnabled";
+        bool hadMode = EditorPrefs.HasKey(modeKey), oldMode = EditorPrefs.GetBool(modeKey, true);
+        try
+        {
+            foreach (bool intentionalEmpty in new[] { false, true })
+            foreach (bool enhanced in new[] { false, true })
+            {
+                var parameters = Parameters("Empty_" + intentionalEmpty + "_" + enhanced);
+                parameters.isEmpty = intentionalEmpty;
+                EditorPrefs.SetBool(modeKey, enhanced);
+                string before = Snapshot(parameters);
+                var editor = UnityEditor.Editor.CreateEditor(parameters);
+                try
+                {
+                    Require(editor.CreateInspectorGUI() != null, "Empty parameter inspector created no root.");
+                    Require(parameters.parameters.Length == 0 && parameters.isEmpty == intentionalEmpty,
+                        "SDK initialization populated defaults or changed the empty flag.");
+                    Require(Snapshot(parameters) == before, "Opening the inspector changed the empty asset.");
+                }
+                finally { Object.DestroyImmediate(editor); }
+                Require(Snapshot(parameters) == before, "Closing the inspector changed the empty asset.");
+            }
+        }
+        finally
+        {
+            if (hadMode) EditorPrefs.SetBool(modeKey, oldMode); else EditorPrefs.DeleteKey(modeKey);
+        }
+    }
+
+    private static void ConnectedInspectorActions()
+    {
+        const string modeKey = "DiNeExpressionInspectorEnabled";
+        bool hadMode = EditorPrefs.HasKey(modeKey), oldMode = EditorPrefs.GetBool(modeKey, true);
+        bool hadLanguage = EditorPrefs.HasKey("DiNeLang"); int oldLanguage = EditorPrefs.GetInt("DiNeLang", 0);
+        string oldClipboard = EditorGUIUtility.systemCopyBuffer;
+        UnityEditor.Editor menuEditor = null, parameterEditor = null, destinationEditor = null;
+        GameObject avatarObject = null;
+        try
+        {
+            EditorPrefs.SetBool(modeKey, true); EditorPrefs.SetInt("DiNeLang", 0);
+            var menu = Menu("ConnectedMenu", C("Original01"));
+            var destination = Menu("ConnectedDestination");
+            menuEditor = UnityEditor.Editor.CreateEditor(menu);
+            ExpressionEditorUiRegression.AssertInspectorMode(menuEditor.CreateInspectorGUI(), menu, true);
+            string menuBefore = Snapshot(menu);
+            BeginUndo();
+            menuEditor.serializedObject.FindProperty("controls").GetArrayElementAtIndex(0)
+                .FindPropertyRelative("name").stringValue = "Edited01";
+            InvokeEditorAction(menuEditor, "DuplicateControl", menu.controls[0], false);
+            Require(menu.controls.Count == 2 && menu.controls[0].name == "Edited01" && menu.controls[1].name == "Edited02",
+                "Connected Duplicate omitted a pending name edit or smart suffix increment.");
+            Require(!ReferenceEquals(menu.controls[0], menu.controls[1]), "Connected Duplicate aliases its source.");
+            UndoNow();
+            Require(menu.controls.Count == 1, "Connected Duplicate Undo did not remove its inserted row.");
+            // Pending field edits and the explicit duplicate are separate Unity Undo groups.
+            if (Snapshot(menu) != menuBefore) UndoNow();
+            Require(Snapshot(menu) == menuBefore, "Undo did not restore the pending edit and duplicate.");
+            BeginUndo();
+            InvokeEditorAction(menuEditor, "CopyControl", menu.controls[0]);
+            InvokeEditorAction(menuEditor, "PasteControl", menu.controls[0], true);
+            Require(menu.controls.Count == 2 && menu.controls[1].name == "Original01", "Paste as new failed to insert after the selected row.");
+            UndoNow(); Require(Snapshot(menu) == menuBefore, "Paste as new Undo failed.");
+            destinationEditor = UnityEditor.Editor.CreateEditor(destination);
+            destinationEditor.CreateInspectorGUI();
+            string destinationBefore = Snapshot(destination);
+            InvokeEditorAction(menuEditor, "BeginMove", menu.controls[0]);
+            InvokeEditorAction(destinationEditor, "PlaceControl", null, false);
+            Require(menu.controls.Count == 0 && destination.controls.Count == 1, "Move/Place into an empty menu failed to remove the source row.");
+            UndoNow();
+            Require(Snapshot(menu) == menuBefore && Snapshot(destination) == destinationBefore, "One Move/Place Undo did not restore both assets.");
+
+            var budgeted = Parameters("ConnectedOverBudget", Enumerable.Range(0, 32).Select(index => P("Budget" + index, ValueType.Int)).ToArray());
+            Require(budgeted.CalcTotalCost() == 256, "Inline Add fixture did not start at the SDK memory limit.");
+            DiNeExpressionUtility.SetMenuParameters(menu, budgeted); menuEditor.serializedObject.Update();
+            string budgetBefore = Snapshot(budgeted), lookupMenuBefore = Snapshot(menu);
+            BeginUndo(); InvokeEditorAction(menuEditor, "AddMissingParameter", budgeted, "Original01Param", ValueType.Float, menu.controls[0]);
+            Require(budgeted.parameters.Length == 33 && budgeted.CalcTotalCost() == 264 && budgeted.parameters.Last().name == "Original01Param" &&
+                budgeted.parameters.Last().valueType == ValueType.Float && budgeted.parameters.Last().saved && budgeted.parameters.Last().networkSynced,
+                "SDK+ menu inline Add retained a budget gate or lost Saved/Synced defaults.");
+            Require(Snapshot(menu) == lookupMenuBefore && DiNeExpressionUtility.GetMenuParameters(menu) == budgeted,
+                "Inline Add reassigned menu parameter lookup or changed its control.");
+            UndoNow(); Require(Snapshot(budgeted) == budgetBefore && Snapshot(menu) == lookupMenuBefore, "Inline Add Undo failed.");
+            DiNeExpressionUtility.SetMenuParameters(menu, null); menuEditor.serializedObject.Update();
+            Require(Snapshot(menu) == menuBefore, "Inline Add fixture lookup reference did not restore.");
+
+            var parameters = Parameters("ConnectedParameters", P("A"), P("A"), P("A", ValueType.Int), P(""));
+            parameterEditor = UnityEditor.Editor.CreateEditor(parameters);
+            ExpressionEditorUiRegression.AssertInspectorMode(parameterEditor.CreateInspectorGUI(), parameters, true);
+            string parametersBefore = Snapshot(parameters);
+            BeginUndo(); InvokeEditorAction(parameterEditor, "CleanupParameters");
+            Require(parameters.parameters.Length == 1 && parameters.parameters[0].name == "A" && parameters.parameters[0].valueType == ValueType.Bool,
+                "SDK+ cleanup did not retain the first name while removing blank and duplicate names.");
+            UndoNow(); Require(Snapshot(parameters) == parametersBefore, "SDK+ cleanup Undo failed.");
+            var source = Parameters("ConnectedMergeSource", P("A", ValueType.Float, 0.25f, false, false), P("B", ValueType.Float));
+            string sourceBefore = Snapshot(source);
+            BeginUndo(); InvokeEditorAction(parameterEditor, "MergeParameters", source);
+            Require(parameters.parameters.Length == 6 && parameters.parameters.Count(parameter => parameter.name == "A") == 4 &&
+                parameters.parameters[4].saved == source.parameters[0].saved && parameters.parameters[4].networkSynced == source.parameters[0].networkSynced &&
+                parameters.parameters[4].defaultValue == source.parameters[0].defaultValue,
+                "SDK+ merge did not append duplicate names and preserve source settings.");
+            Require(!ReferenceEquals(parameters.parameters[4], source.parameters[0]) && Snapshot(source) == sourceBefore,
+                "SDK+ merge aliases or modifies its source.");
+            UndoNow(); Require(Snapshot(parameters) == parametersBefore, "SDK+ append merge Undo failed.");
+            BeginUndo(); InvokeEditorAction(parameterEditor, "DuplicateParameter", 0);
+            Require(parameters.parameters.Length == 5 && parameters.parameters[1].name != "A", "Parameter Duplicate did not produce a unique name.");
+            UndoNow(); Require(Snapshot(parameters) == parametersBefore, "Parameter Duplicate Undo failed.");
+            BeginUndo(); InvokeEditorAction(parameterEditor, "AddParameter");
+            Require(parameters.parameters.Length == 5, "Parameter footer Add callback failed.");
+            UndoNow(); Require(Snapshot(parameters) == parametersBefore, "Parameter Add Undo failed.");
+
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(caseFolder + "/ConnectedFX.controller");
+            avatarObject = new GameObject("Connected Avatar");
+            var descriptor = avatarObject.AddComponent<VRCAvatarDescriptor>();
+            descriptor.expressionsMenu = menu; descriptor.expressionParameters = parameters;
+            descriptor.baseAnimationLayers = new[] { new VRCAvatarDescriptor.CustomAnimLayer { type = VRCAvatarDescriptor.AnimLayerType.FX, isDefault = false, animatorController = controller } };
+            descriptor.specialAnimationLayers = Array.Empty<VRCAvatarDescriptor.CustomAnimLayer>();
+            string descriptorBefore = Snapshot(descriptor), controllerBefore = Snapshot(controller);
+            BeginUndo();
+            Require(((DiNeExpressionInspectorBase)parameterEditor).AddPlayableParameter(controller, "ControllerAdded", ValueType.Int, 7),
+                "Explicit Add-to-Controller rejected valid input.");
+            var added = controller.parameters.Single(parameter => parameter.name == "ControllerAdded");
+            Require(added.type == AnimatorControllerParameterType.Int && added.defaultInt == 7, "Controller Add lost type or default.");
+            Require(Snapshot(descriptor) == descriptorBefore && descriptor.expressionsMenu == menu && descriptor.expressionParameters == parameters &&
+                descriptor.baseAnimationLayers[0].animatorController == controller && !descriptor.baseAnimationLayers[0].isDefault,
+                "Controller Add changed AvatarDescriptor references.");
+            Require(!((DiNeExpressionInspectorBase)parameterEditor).AddPlayableParameter(controller, "ControllerAdded", ValueType.Bool, 0),
+                "Controller Add permitted a same-name duplicate.");
+            UndoNow(); Require(Snapshot(controller) == controllerBefore && Snapshot(descriptor) == descriptorBefore, "Controller Add Undo or reference preservation failed.");
+        }
+        finally
+        {
+            if (menuEditor != null) Object.DestroyImmediate(menuEditor);
+            if (parameterEditor != null) Object.DestroyImmediate(parameterEditor);
+            if (destinationEditor != null) Object.DestroyImmediate(destinationEditor);
+            if (avatarObject != null) Object.DestroyImmediate(avatarObject);
+            EditorGUIUtility.systemCopyBuffer = oldClipboard;
+            if (hadMode) EditorPrefs.SetBool(modeKey, oldMode); else EditorPrefs.DeleteKey(modeKey);
+            if (hadLanguage) EditorPrefs.SetInt("DiNeLang", oldLanguage); else EditorPrefs.DeleteKey("DiNeLang");
+        }
+    }
+
+    private static void InvokeEditorAction(UnityEditor.Editor editor, string methodName, params object[] arguments)
+    {
+        var method = editor.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic);
+        Require(method != null, "Connected editor action is unavailable: " + methodName);
+        var apply = typeof(DiNeExpressionInspectorBase).GetMethod("ApplyAction", BindingFlags.Instance | BindingFlags.NonPublic);
+        apply.Invoke(editor, new object[] { (Action)(() => method.Invoke(editor, arguments)) });
+    }
+
+    private static void QuickSetupReferences()
+    {
+        var avatar = new GameObject("Quick Setup Avatar"); TransientObjects.Add(avatar);
+        avatar.AddComponent<Animator>();
+        var descriptor = avatar.AddComponent<VRCAvatarDescriptor>();
+        var left = new GameObject("LeftEye").transform; left.SetParent(avatar.transform); left.localPosition = new Vector3(-0.03f, 1.5f, 0.08f);
+        var right = new GameObject("RightEye").transform; right.SetParent(avatar.transform); right.localPosition = new Vector3(0.03f, 1.5f, 0.08f);
+        var body = new GameObject("Body"); body.transform.SetParent(avatar.transform);
+        var renderer = body.AddComponent<SkinnedMeshRenderer>();
+        var mesh = new Mesh(); TransientObjects.Add(mesh);
+        mesh.vertices = new[] { Vector3.zero, Vector3.right, Vector3.up }; mesh.triangles = new[] { 0, 1, 2 };
+        mesh.AddBlendShapeFrame("Blink", 100, new Vector3[3], new Vector3[3], new Vector3[3]); renderer.sharedMesh = mesh;
+        var controller = AnimatorController.CreateAnimatorControllerAtPath(caseFolder + "/QuickSetupFX.controller");
+        var menu = Menu("QuickSetupMenu", C("A")); var parameters = Parameters("QuickSetupParameters", P("A"));
+        descriptor.expressionsMenu = menu; descriptor.expressionParameters = parameters;
+        descriptor.baseAnimationLayers = new[] { new VRCAvatarDescriptor.CustomAnimLayer { type = VRCAvatarDescriptor.AnimLayerType.FX, isDefault = false, animatorController = controller } };
+        descriptor.specialAnimationLayers = Array.Empty<VRCAvatarDescriptor.CustomAnimLayer>();
+        string before = Snapshot(descriptor), menuBefore = Snapshot(menu), parametersBefore = Snapshot(parameters), controllerBefore = Snapshot(controller);
+        BeginUndo(); DiNeExpressionQuickSetup.Apply(descriptor);
+        using (var serialized = new SerializedObject(descriptor))
+        {
+            serialized.Update(); var eyes = serialized.FindProperty("customEyeLookSettings");
+            Require(serialized.FindProperty("enableEyeLook").boolValue && eyes.FindPropertyRelative("leftEye").objectReferenceValue == left &&
+                eyes.FindPropertyRelative("rightEye").objectReferenceValue == right, "Quick Setup did not bind the synthetic eye transforms.");
+            Require(eyes.FindPropertyRelative("eyelidsSkinnedMesh").objectReferenceValue == renderer &&
+                eyes.FindPropertyRelative("eyelidType").enumValueIndex == 2 &&
+                eyes.FindPropertyRelative("eyelidsBlendshapes").GetArrayElementAtIndex(0).intValue == 0,
+                "Quick Setup did not select the synthetic Blink blend shape.");
+            Require(serialized.FindProperty("ViewPosition").vector3Value.y > 1, "Quick Setup did not position the synthetic avatar view.");
+        }
+        Require(descriptor.expressionsMenu == menu && descriptor.expressionParameters == parameters &&
+            descriptor.baseAnimationLayers[0].animatorController == controller && !descriptor.baseAnimationLayers[0].isDefault &&
+            Snapshot(menu) == menuBefore && Snapshot(parameters) == parametersBefore && Snapshot(controller) == controllerBefore,
+            "Quick Setup changed FX/menu/parameters references or source assets.");
+        UndoNow(); Require(Snapshot(descriptor) == before, "Quick Setup Undo did not restore the complete descriptor.");
+    }
+
+    private static void InspectorAnimatorParameters()
+    {
+        const string key = "DiNeExpressionInspectorEnabled";
+        bool present = EditorPrefs.HasKey(key), previous = EditorPrefs.GetBool(key, true);
+        var avatar = new GameObject("Advisory Lookup Avatar"); TransientObjects.Add(avatar);
+        var descriptor = avatar.AddComponent<VRCAvatarDescriptor>();
+        var fx = AnimatorController.CreateAnimatorControllerAtPath(caseFolder + "/AdvisoryFX.controller");
+        fx.AddParameter("Pulse", AnimatorControllerParameterType.Trigger);
+        fx.AddParameter("Conflict", AnimatorControllerParameterType.Bool);
+        var rootController = AnimatorController.CreateAnimatorControllerAtPath(caseFolder + "/AdvisoryRoot.controller");
+        rootController.AddParameter("Conflict", AnimatorControllerParameterType.Float);
+        rootController.AddParameter("Pulse", AnimatorControllerParameterType.Trigger);
+        var inner = new AnimatorOverrideController(rootController); TransientObjects.Add(inner);
+        var outer = new AnimatorOverrideController(inner); TransientObjects.Add(outer);
+        avatar.AddComponent<Animator>().runtimeAnimatorController = outer;
+        var menu = Menu("AdvisoryMenu", C("A"));
+        var parameters = Parameters("AdvisoryParameters", P("Pulse"), P("Conflict"), P("Unknown"), P(""));
+        descriptor.expressionsMenu = menu; descriptor.expressionParameters = parameters;
+        descriptor.baseAnimationLayers = new[] { new VRCAvatarDescriptor.CustomAnimLayer {
+            type = VRCAvatarDescriptor.AnimLayerType.FX, isDefault = false, animatorController = fx } };
+        descriptor.specialAnimationLayers = Array.Empty<VRCAvatarDescriptor.CustomAnimLayer>();
+        string descriptorBefore = Snapshot(descriptor), fxBefore = Snapshot(fx), rootBefore = Snapshot(rootController), parametersBefore = Snapshot(parameters);
+        var lookup = DiNeExpressionInspectorBase.GetInspectorAnimatorParameters(descriptor);
+        Require(lookup.Count(parameter => parameter.name == "Pulse") == 1 && lookup.Single(parameter => parameter.name == "Pulse").type == AnimatorControllerParameterType.Trigger &&
+            lookup.Count(parameter => parameter.name == "Conflict") == 2, "SDK+ lookup discarded Trigger or conflicting types.");
+        UnityEditor.Editor editor = null;
+        try
+        {
+            EditorPrefs.SetBool(key, true); editor = UnityEditor.Editor.CreateEditor(parameters); editor.CreateInspectorGUI();
+            BeginUndo(); InvokeEditorAction(editor, "CleanupParameters");
+            Require(string.Join(",", parameters.parameters.Select(parameter => parameter.name)) == "Pulse,Conflict",
+                "Cleanup treated existing Trigger/conflict controller names as absent.");
+            UndoNow(); Require(Snapshot(parameters) == parametersBefore, "Advisory cleanup Undo failed.");
+            Require(Snapshot(descriptor) == descriptorBefore && Snapshot(fx) == fxBefore && Snapshot(rootController) == rootBefore && descriptor.expressionsMenu == menu &&
+                descriptor.expressionParameters == parameters && descriptor.baseAnimationLayers[0].animatorController == fx && !descriptor.baseAnimationLayers[0].isDefault,
+                "Advisory lookup/cleanup changed source controller or avatar references.");
+        }
+        finally
+        {
+            if (editor != null) Object.DestroyImmediate(editor);
+            if (present) EditorPrefs.SetBool(key, previous); else EditorPrefs.DeleteKey(key);
+        }
+    }
     private static void ObserveSdkNullCost()
     {
         var asset = Parameters("Damaged", P("A"), null);

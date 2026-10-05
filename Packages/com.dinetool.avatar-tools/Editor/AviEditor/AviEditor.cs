@@ -43,8 +43,11 @@ public partial class ArmatureScalerEditor : EditorWindow
     private Font      titleFont;
     private GUIStyle themedButtonStyle;
     private GUIStyle themedBoldButtonStyle;
+    private GUISkin themedButtonSkin;
+    private bool themedButtonsProSkin;
     [SerializeField] private Vector2 scrollPosition;
     private Texture2D selectedButtonTex;
+    private Rect bodyMapRect;
 
     private Dictionary<HumanBodyBones, Transform> boneMapping;
 
@@ -662,6 +665,9 @@ public partial class ArmatureScalerEditor : EditorWindow
 
     private void DrawArmatureGUI()
     {
+        // Scroll the complete workflow so fixed controls cannot squeeze the body map.
+        _tutorial?.BeginScrollScope();
+        scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition, false, false);
         GameObject tutorialPreviousAvatar = targetAvatarRoot;
         // 다른 탭에서 대상 아바타가 바뀌었으면 본 매핑을 다시 만든다.
         if (targetAvatarRoot != _boneMappingRoot && Event.current.type == EventType.Layout)
@@ -739,14 +745,10 @@ public partial class ArmatureScalerEditor : EditorWindow
 
         DrawArmaturePresetGUI();
 
-        _tutorial?.BeginScrollScope();
-        scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
         HumanoidBodyPart tutorialPreviousPart = selectedPart;
         DrawBodyMap();
         TutorialAnchor("bone");
         if (selectedPart != tutorialPreviousPart) TutorialNotify("bone");
-        EditorGUILayout.EndScrollView();
-        _tutorial?.EndScrollScope(GUILayoutUtility.GetLastRect());
         TutorialDraw("bone");
 
         GuiLine(1, 10);
@@ -818,6 +820,8 @@ public partial class ArmatureScalerEditor : EditorWindow
 
         EditorGUILayout.EndVertical();
         TutorialDraw("scale-uniform", "scale-vector", "position", "rotation", "ma-scale-uniform", "ma-scale-vector");
+        EditorGUILayout.EndScrollView();
+        _tutorial?.EndScrollScope(GUILayoutUtility.GetLastRect());
     }
 
     // ?????? ???ル늅??씤異?에?ル씔???癲ル슢?꾤땟???GUI ??????
@@ -859,51 +863,57 @@ public partial class ArmatureScalerEditor : EditorWindow
                     Tr("Apply the saved direct bone values and MA Scale Adjusters together. Missing Adjusters are added.",
                         "저장된 기본 뼈 값과 MA Scale Adjuster를 함께 적용합니다. 없는 Adjuster는 추가합니다.",
                         "保存したボーンの値とMA Scale Adjusterをまとめて適用します。未追加のAdjusterは追加します。")),
-                new Color(0.30f, 0.82f, 0.76f), true, GUILayout.Height(28)))
+                new Color(0.30f, 0.82f, 0.76f), true, GUILayout.MinWidth(0), GUILayout.MinHeight(30)))
             LoadSelectedPreset();
         TutorialAnchor("preset-load");
 
         EditorGUI.BeginDisabledGroup(!hasDirectData);
-        EditorGUILayout.BeginHorizontal();
-        if (GUILayout.Button(new GUIContent(Tr("Bone Scale Only", "기본 크기만", "ボーンサイズのみ"),
+        GUIContent scaleContent = new GUIContent(Tr("Bone Scale Only", "기본 크기만", "ボーンサイズのみ"),
                 Tr("Load direct bone scale without changing MA Scale Adjusters, rotation or position.",
                     "MA Scale Adjuster·회전·위치를 유지하고 기본 뼈 크기만 불러옵니다.",
-                    "MA Scale Adjuster・回転・位置を保持し、ボーンのサイズのみ読み込みます。")), GUILayout.Height(24)))
+                    "MA Scale Adjuster・回転・位置を保持し、ボーンのサイズのみ読み込みます。"));
+        GUIContent rotationContent = new GUIContent(Tr("Rotation Only", "회전만", "回転のみ"),
+                Tr("Load saved bone rotations only.", "저장된 뼈 회전만 불러옵니다.", "保存したボーンの回転のみ読み込みます。"));
+        GUIContent positionContent = new GUIContent(Tr("Position Only", "위치만", "位置のみ"),
+                Tr("Load saved bone positions only.", "저장된 뼈 위치만 불러옵니다.", "保存したボーンの位置のみ読み込みます。"));
+        bool partialLoadRow = CanFitArmatureButtonRow(scaleContent, rotationContent, positionContent);
+        if (partialLoadRow) EditorGUILayout.BeginHorizontal();
+        if (DrawArmatureActionButton(scaleContent))
             LoadSelectedPreset(true, false, false, false);
         TutorialAnchor("preset-scale");
-        if (GUILayout.Button(new GUIContent(Tr("Rotation Only", "회전만", "回転のみ"),
-                Tr("Load saved bone rotations only.", "저장된 뼈 회전만 불러옵니다.", "保存したボーンの回転のみ読み込みます。")), GUILayout.Height(24)))
+        if (DrawArmatureActionButton(rotationContent))
             LoadSelectedPreset(false, true, false, false);
         TutorialAnchor("preset-rotation");
-        if (GUILayout.Button(new GUIContent(Tr("Position Only", "위치만", "位置のみ"),
-                Tr("Load saved bone positions only.", "저장된 뼈 위치만 불러옵니다.", "保存したボーンの位置のみ読み込みます。")), GUILayout.Height(24)))
+        if (DrawArmatureActionButton(positionContent))
             LoadSelectedPreset(false, false, true, false);
         TutorialAnchor("preset-position");
-        EditorGUILayout.EndHorizontal();
+        if (partialLoadRow) EditorGUILayout.EndHorizontal();
         EditorGUI.EndDisabledGroup();
         EditorGUI.BeginDisabledGroup(!hasMaData);
-        if (GUILayout.Button(new GUIContent(Tr("MA Scale Adjuster Only", "MA Scale Adjuster만 불러오기", "MA Scale Adjusterのみ読み込む"),
+        if (DrawArmatureActionButton(new GUIContent(Tr("MA Scale Adjuster Only", "MA Scale Adjuster만 불러오기", "MA Scale Adjusterのみ読み込む"),
                 Tr("Apply MA values and saved child-position options without loading direct bone values.",
                     "기본 뼈 값을 불러오지 않고 MA 값과 저장된 자식 위치 조정 옵션을 적용합니다.",
-                    "ボーンの値を読み込まず、MAの値と保存した子位置調整オプションを適用します。")), GUILayout.Height(24)))
+                    "ボーンの値を読み込まず、MAの値と保存した子位置調整オプションを適用します。"))))
             LoadSelectedPreset(false, false, false, true);
         TutorialAnchor("preset-ma");
         EditorGUI.EndDisabledGroup();
         EditorGUI.EndDisabledGroup();
 
         EditorGUI.BeginDisabledGroup(targetAvatarRoot == null);
-        if (GUILayout.Button(
+        if (DrawArmatureActionButton(
                 new GUIContent(Tr("＋ Save Both as New Preset", "＋ 두 조정값을 새 프리셋으로 저장", "＋ 両方の調整値を新規プリセットとして保存"),
                     Tr("Save the current values from both editing modes in one asset.",
                         "두 조정 모드의 현재 값을 하나의 에셋에 저장합니다.",
-                        "両方の調整モードの現在値を1つのアセットに保存します。")), GUILayout.Height(30f)))
+                        "両方の調整モードの現在値を1つのアセットに保存します。")), 30f))
             SaveNewPreset();
         TutorialAnchor("preset-save");
         EditorGUI.EndDisabledGroup();
 
-        EditorGUILayout.BeginHorizontal();
+        bool resetRow = armatureEditMode == ArmatureEditMode.DirectTransform &&
+            CanFitArmatureButtonRow(new GUIContent(UI_TEXT[31]), new GUIContent(UI_TEXT[36]));
+        if (resetRow) EditorGUILayout.BeginHorizontal();
         EditorGUI.BeginDisabledGroup(!hasSelection);
-        if (DrawThemedButton(UI_TEXT[31], new Color(0.78f, 0.34f, 0.34f), false, GUILayout.Height(24)) &&
+        if (DrawThemedButton(UI_TEXT[31], new Color(0.78f, 0.34f, 0.34f), false, GUILayout.MinWidth(0), GUILayout.MinHeight(24)) &&
             EditorUtility.DisplayDialog(UI_TEXT[31], UI_TEXT[32] + selectedPresetName + UI_TEXT[33], UI_TEXT[34], UI_TEXT[35]))
         {
             string deletedPath = presetFiles[selectedPresetIndex];
@@ -916,11 +926,11 @@ public partial class ArmatureScalerEditor : EditorWindow
         if (armatureEditMode == ArmatureEditMode.DirectTransform)
         {
             EditorGUI.BeginDisabledGroup(targetAvatarRoot == null);
-            if (GUILayout.Button(UI_TEXT[36], GUILayout.Height(24))) ResetScalesToDefault();
+            if (DrawArmatureActionButton(new GUIContent(UI_TEXT[36]))) ResetScalesToDefault();
             TutorialAnchor("reset-scales");
             EditorGUI.EndDisabledGroup();
         }
-        EditorGUILayout.EndHorizontal();
+        if (resetRow) EditorGUILayout.EndHorizontal();
         if (!string.IsNullOrEmpty(armaturePresetStatus))
             EditorGUILayout.HelpBox(armaturePresetStatus, skippedPresetEntries > 0 ? MessageType.Warning : MessageType.Info);
         EditorGUILayout.EndVertical();
@@ -933,21 +943,25 @@ public partial class ArmatureScalerEditor : EditorWindow
         ModularAvatarScaleAdjuster adjuster = boneTransform.GetComponent<ModularAvatarScaleAdjuster>();
 
         bool adjustChildPositions = GetMAAdjustChildPositions(selectedPart);
-        EditorGUILayout.BeginHorizontal();
+        string childPositionLabel = Tr("Adjust Child Positions", "자식 위치 조정", "子位置調整");
+        string removeLabel = Tr("Remove Adjuster", "Adjuster 제거", "Adjusterを削除");
+        // Reserve room for the checkbox as well as the translated labels.
+        bool controlsRow = CanFitArmatureButtonRow(32f, new GUIContent(childPositionLabel), new GUIContent(removeLabel));
+        if (controlsRow) EditorGUILayout.BeginHorizontal();
         if (adjuster == null)
         {
             if (DrawThemedButton(
                     Tr("Add MA Scale Adjuster", "MA Scale Adjuster 추가", "MA Scale Adjusterを追加"),
-                    new Color(0.30f, 0.82f, 0.76f), true, GUILayout.Height(25)))
+                    new Color(0.30f, 0.82f, 0.76f), true, GUILayout.MinWidth(0), GUILayout.MinHeight(30)))
                 SetMAScale(boneTransform, Vector3.one, "Add MA Scale Adjuster", adjustChildPositions);
             TutorialAnchor("ma-add");
         }
         else
         {
             bool nextAdjustChildPositions = DrawThemedCheckboxToggle(
-                Tr("Adjust Child Positions", "자식 위치 조정", "子位置調整"),
+                childPositionLabel,
                 adjustChildPositions,
-                GUILayout.Height(25));
+                GUILayout.MinWidth(0), GUILayout.MinHeight(30));
             TutorialAnchor("ma-children");
             if (nextAdjustChildPositions != adjustChildPositions)
             {
@@ -955,8 +969,8 @@ public partial class ArmatureScalerEditor : EditorWindow
                 SetMAAdjustChildPositions(selectedPart, adjustChildPositions);
             }
             if (DrawThemedButton(
-                    Tr("Remove Adjuster", "Adjuster 제거", "Adjusterを削除"),
-                    new Color(0.78f, 0.34f, 0.34f), false, GUILayout.Height(25)) &&
+                    removeLabel,
+                    new Color(0.78f, 0.34f, 0.34f), false, GUILayout.MinWidth(0), GUILayout.MinHeight(24)) &&
                 EditorUtility.DisplayDialog(
                     Tr("Remove MA Scale Adjuster", "MA Scale Adjuster 제거", "MA Scale Adjusterを削除"),
                     Tr("Remove it from the selected bone? Child positions previously adjusted by the option above are not restored.",
@@ -970,7 +984,7 @@ public partial class ArmatureScalerEditor : EditorWindow
             }
         }
         TutorialAnchor("ma-remove");
-        EditorGUILayout.EndHorizontal();
+        if (controlsRow) EditorGUILayout.EndHorizontal();
         TutorialDraw("ma-add", "ma-children", "ma-remove");
 
         return boneTransform.GetComponent<ModularAvatarScaleAdjuster>() != null;
@@ -1354,9 +1368,10 @@ public partial class ArmatureScalerEditor : EditorWindow
     }
     private void DrawBodyMap()
     {
-        float panelWidth = position.width - 30;
-        float panelHeight = 660;
-        Rect area = GUILayoutUtility.GetRect(panelWidth, panelHeight);
+        // Keep the whole figure in a stable canvas, independent of the space left
+        // below presets. Width comes from the scroll content, including its gutter.
+        Rect area = GUILayoutUtility.GetRect(0f, 520f, GUILayout.ExpandWidth(true), GUILayout.Height(520f));
+        bodyMapRect = area;
 
         EditorGUI.DrawRect(area, new Color(0.15f, 0.15f, 0.15f, 1f));
 
@@ -1380,7 +1395,7 @@ public partial class ArmatureScalerEditor : EditorWindow
         float lw = 2f;
 
         Vector2 headC = new Vector2(cx, top + 35);
-        DrawCircleOutline(headC, 28, lc, lw);
+        DrawCircleOutline(MapBodyPoint(headC), 28f * area.height / 660f, lc, lw);
 
         float neckTop = top + 63;
         float neckBot = top + 80;
@@ -1470,6 +1485,8 @@ public partial class ArmatureScalerEditor : EditorWindow
 
     private void DrawJointButton(HumanoidBodyPart part, Vector2 center, float radius)
     {
+        // Fit the figure without shrinking text or its mouse targets.
+        center = MapBodyPoint(center);
         HumanBodyBones boneType = GetBoneType(part);
         bool found = TryGetLiveBoneTransform(boneType, out _);
         bool isSelected = selectedPart == part;
@@ -1494,6 +1511,10 @@ public partial class ArmatureScalerEditor : EditorWindow
         string shortLabel = GetShortLabel(part);
         Vector2 sz = labelStyle.CalcSize(new GUIContent(shortLabel));
         Rect labelRect = new Rect(center.x - sz.x / 2, center.y + radius + 2, sz.x, 13);
+        // The head and neck are close together in the compact map. Side labels
+        // leave both joints visible while retaining the standard label size.
+        if (part == HumanoidBodyPart.Head || part == HumanoidBodyPart.Neck)
+            labelRect = new Rect(center.x + radius + 14f, center.y - 6f, sz.x, 13f);
         GUI.Label(labelRect, shortLabel, labelStyle);
 
         if (found && Event.current.type == EventType.MouseDown && Event.current.button == 0 && clickRect.Contains(Event.current.mousePosition))
@@ -1518,12 +1539,22 @@ public partial class ArmatureScalerEditor : EditorWindow
 
     private void DrawLineAA(Vector2 a, Vector2 b, Color color, float width)
     {
+        a = MapBodyPoint(a);
+        b = MapBodyPoint(b);
         Handles.BeginGUI();
         Color prev = Handles.color;
         Handles.color = color;
         Handles.DrawAAPolyLine(width, new Vector3(a.x, a.y, 0), new Vector3(b.x, b.y, 0));
         Handles.color = prev;
         Handles.EndGUI();
+    }
+
+    private Vector2 MapBodyPoint(Vector2 point)
+    {
+        float horizontalScale = Mathf.Min(1f, Mathf.Max(0f, bodyMapRect.width - 64f) / 266f);
+        return new Vector2(
+            bodyMapRect.center.x + (point.x - bodyMapRect.center.x) * horizontalScale,
+            bodyMapRect.y + (point.y - bodyMapRect.y) * bodyMapRect.height / 660f);
     }
 
     private void DrawCircleOutline(Vector2 center, float radius, Color color, float width)
@@ -1878,8 +1909,8 @@ public partial class ArmatureScalerEditor : EditorWindow
         GUI.backgroundColor = value
             ? new Color(0.30f, 0.82f, 0.76f)
             : new Color(0.42f, 0.42f, 0.45f);
-        GUIStyle buttonStyle = new GUIStyle(GUI.skin.button);
-        Rect buttonRect = GUILayoutUtility.GetRect(GUIContent.none, buttonStyle, options);
+        GUIStyle buttonStyle = GetThemedButtonStyle(value);
+        Rect buttonRect = GUILayoutUtility.GetRect(new GUIContent(label), buttonStyle, options);
         bool nextValue = GUI.Toggle(buttonRect, value, GUIContent.none, buttonStyle);
 
         const float boxSize = 14f;
@@ -1940,21 +1971,87 @@ public partial class ArmatureScalerEditor : EditorWindow
     {
         Color previousBackground = GUI.backgroundColor;
         GUI.backgroundColor = backgroundColor;
-        GUIStyle style = bold ? themedBoldButtonStyle : themedButtonStyle;
-        if (style == null)
-        {
-            style = new GUIStyle(GUI.skin.button)
-            {
-                fontStyle = bold ? FontStyle.Bold : FontStyle.Normal,
-                fontSize = 12,
-                normal = { textColor = Color.white }
-            };
-            if (bold) themedBoldButtonStyle = style;
-            else themedButtonStyle = style;
-        }
-        bool pressed = GUILayout.Button(label, style, options);
+        bool pressed = GUILayout.Button(label, GetThemedButtonStyle(bold), options);
         GUI.backgroundColor = previousBackground;
         return pressed;
+    }
+
+    private GUIStyle GetThemedButtonStyle(bool bold)
+    {
+        GUIStyle source = GUI.skin.button;
+        // Unity can replace the built-in skin textures after reload or a theme
+        // switch while the cached GUIStyle survives. Never retain a stale background.
+        if (themedButtonSkin != GUI.skin || themedButtonsProSkin != EditorGUIUtility.isProSkin ||
+            themedButtonStyle == null || themedBoldButtonStyle == null ||
+            !ButtonBackgroundsMatch(themedButtonStyle, source) ||
+            !ButtonBackgroundsMatch(themedBoldButtonStyle, source))
+        {
+            themedButtonSkin = GUI.skin;
+            themedButtonsProSkin = EditorGUIUtility.isProSkin;
+            themedButtonStyle = CreateThemedButtonStyle(source, false);
+            themedBoldButtonStyle = CreateThemedButtonStyle(source, true);
+        }
+        return bold ? themedBoldButtonStyle : themedButtonStyle;
+    }
+
+    private static bool ButtonBackgroundsMatch(GUIStyle actual, GUIStyle expected)
+    {
+        return BackgroundsMatch(actual.normal, expected.normal) &&
+            BackgroundsMatch(actual.hover, expected.hover) &&
+            BackgroundsMatch(actual.active, expected.active) &&
+            BackgroundsMatch(actual.focused, expected.focused) &&
+            BackgroundsMatch(actual.onNormal, expected.onNormal) &&
+            BackgroundsMatch(actual.onHover, expected.onHover) &&
+            BackgroundsMatch(actual.onActive, expected.onActive) &&
+            BackgroundsMatch(actual.onFocused, expected.onFocused);
+    }
+
+    private static bool BackgroundsMatch(GUIStyleState actual, GUIStyleState expected)
+    {
+        if (actual.background != expected.background) return false;
+        // High-DPI editor skins can supply only scaled textures, leaving
+        // background null even for a fully rendered button.
+        Texture2D[] actualScaled = actual.scaledBackgrounds;
+        Texture2D[] expectedScaled = expected.scaledBackgrounds;
+        int count = actualScaled?.Length ?? 0;
+        if (count != (expectedScaled?.Length ?? 0)) return false;
+        for (int i = 0; i < count; i++)
+            if (actualScaled[i] != expectedScaled[i]) return false;
+        return true;
+    }
+
+    private static GUIStyle CreateThemedButtonStyle(GUIStyle source, bool bold)
+    {
+        return new GUIStyle(source)
+        {
+            fontStyle = bold ? FontStyle.Bold : FontStyle.Normal,
+            fontSize = 12,
+            wordWrap = true,
+            fixedWidth = 0f,
+            stretchWidth = true,
+            normal = { textColor = Color.white }
+        };
+    }
+
+    private bool DrawArmatureActionButton(GUIContent content, float minimumHeight = 24f)
+    {
+        return GUILayout.Button(content, GetThemedButtonStyle(false),
+            GUILayout.MinWidth(0f), GUILayout.MinHeight(minimumHeight), GUILayout.ExpandWidth(true));
+    }
+
+    private bool CanFitArmatureButtonRow(params GUIContent[] contents)
+    {
+        return CanFitArmatureButtonRow(0f, contents);
+    }
+
+    private bool CanFitArmatureButtonRow(float extraWidth, params GUIContent[] contents)
+    {
+        GUIStyle style = GetThemedButtonStyle(false);
+        float requiredWidth = extraWidth;
+        foreach (GUIContent content in contents)
+            requiredWidth += style.CalcSize(content).x + style.margin.horizontal;
+        // Scrollbar, card padding and outer margins must not steal label space.
+        return requiredWidth <= Mathf.Max(0f, position.width - 40f);
     }
 
     // ── 얼굴 미리보기 공용 로직 (표정 / 쉐이프키 탭 공용) ──────────────
