@@ -132,11 +132,11 @@ namespace DiNeTool.ExtraModifier.Editor
 
         private void DrawTransplantTab()
         {
-            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
             SectionLabel(TT("Inputs"));
             GUILayout.Space(4f);
             GUILayout.Label(TT("Description"), EditorStyles.wordWrappedLabel);
-            GUILayout.Space(8f);
+            GUILayout.Space(DiNeEditorUI.CardSpacing);
             using (new EditorGUI.DisabledScope(transplantExecutionPending))
             {
                 EditorGUI.BeginChangeCheck();
@@ -161,8 +161,8 @@ namespace DiNeTool.ExtraModifier.Editor
             guidedTutorial.Draw("Target");
             guidedTutorial.Draw("Rules");
 
-            GUILayout.Space(8f);
-            EditorGUILayout.BeginVertical("box");
+            GUILayout.Space(DiNeEditorUI.CardSpacing);
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
             SectionLabel(TT("Tab"));
             GUILayout.Space(4f);
             if (transplantSource == null || transplantTarget == null)
@@ -175,7 +175,7 @@ namespace DiNeTool.ExtraModifier.Editor
                                                EditorUtility.IsPersistent(transplantTarget) ||
                                                EditorApplication.isPlayingOrWillChangePlaymode))
             {
-                if (GUILayout.Button(new GUIContent(TT("Analyze"), TT("AnalyzeTip")), GUILayout.Height(30f)))
+                if (GUILayout.Button(new GUIContent(TT("Analyze"), TT("AnalyzeTip")), GUILayout.Height(DiNeEditorUI.ButtonHeight)))
                 {
                     transplantReport = DiNePrefabTransplantUtility.Analyze(transplantSource, transplantTarget);
                     tutorialAnalyzedSource = transplantSource;
@@ -188,7 +188,7 @@ namespace DiNeTool.ExtraModifier.Editor
                 GUILayout.Space(4f);
                 var previousColor = GUI.backgroundColor;
                 GUI.backgroundColor = AccentColor;
-                if (GUILayout.Button(new GUIContent(TT("Execute"), TT("ExecuteTip")), ActionButtonStyle(), GUILayout.Height(30f)))
+                if (DiNeEditorUI.Button(new GUIContent(TT("Execute"), TT("ExecuteTip"))))
                     QueueTransplantExecution();
                 guidedTutorial.Anchor("Execute", GUILayoutUtility.GetLastRect());
                 GUI.backgroundColor = previousColor;
@@ -197,7 +197,7 @@ namespace DiNeTool.ExtraModifier.Editor
             guidedTutorial.Draw("Analyze");
             guidedTutorial.Draw("Execute");
 
-            GUILayout.Space(8f);
+            GUILayout.Space(DiNeEditorUI.CardSpacing);
             DrawTransplantReport();
             guidedTutorial.Draw("Report");
             guidedTutorial.Draw("Details");
@@ -224,7 +224,7 @@ namespace DiNeTool.ExtraModifier.Editor
 
         private void DrawTransplantReport()
         {
-            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
             SectionLabel(TT("Result"));
             GUILayout.Space(4f);
             if (transplantReport == null)
@@ -256,7 +256,7 @@ namespace DiNeTool.ExtraModifier.Editor
                 GUILayout.Space(5f);
                 using (new EditorGUI.DisabledScope(true))
                     EditorGUILayout.ObjectField(TT("TargetResult"), transplantReport.ResultRoot, typeof(GameObject), true);
-                if (GUILayout.Button(new GUIContent(TT("SelectTarget"), TT("SelectTargetTip")), GUILayout.Height(24f)))
+                if (GUILayout.Button(new GUIContent(TT("SelectTarget"), TT("SelectTargetTip")), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
                 {
                     Selection.activeGameObject = transplantReport.ResultRoot;
                     EditorGUIUtility.PingObject(transplantReport.ResultRoot);

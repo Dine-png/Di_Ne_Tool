@@ -55,6 +55,10 @@ namespace DiNeTool.InGameChecker
             /* 32 */ new[] { "ThumbsUp",                                       "엄지척",                                        "サムズアップ"                                     },
             /* 33 */ new[] { "Gesture Control",                                "제스처 컨트롤",                                  "ジェスチャーコントロール"                         },
             /* 34 */ new[] { "Expression Parameters",                          "익스프레션 파라미터",                            "エクスプレッションパラメータ"                     },
+            /* 35 */ new[] { "Missing Animator", "Animator 없음", "Animator がありません" },
+            /* 36 */ new[] { "DiNe Options Menu", "DiNe 옵션 메뉴", "DiNeオプションメニュー" },
+            /* 37 */ new[] { "Expression Menu", "익스프레션 메뉴", "エクスプレッションメニュー" },
+            /* 38 */ new[] { "No Menu Configured", "설정된 메뉴가 없습니다", "メニューが設定されていません" },
         };
         private string T(int i) => UI_TEXT[i][L];
 
@@ -68,23 +72,20 @@ namespace DiNeTool.InGameChecker
 
         // ─── Colors ───────────────────────────────────────────────────────────
         private static readonly Color ColCard    = new Color(0.21f, 0.21f, 0.24f);
-        private static readonly Color ColAccent  = new Color(0.30f, 0.82f, 0.76f);
-        private static readonly Color ColGreen   = new Color(0.30f, 0.82f, 0.76f);
+        private static Color ColAccent => DiNeEditorUI.Mint;
         private static readonly Color ColRed     = new Color(0.60f, 0.25f, 0.25f);
-        private static readonly Color ColBlue    = new Color(0.30f, 0.82f, 0.76f);
-        private static readonly Color ColText    = new Color(0.88f, 0.88f, 0.92f);
-        private static readonly Color ColSubText = new Color(0.58f, 0.58f, 0.63f);
-        private static readonly Color ColLine    = new Color(0.30f, 0.30f, 0.35f, 0.8f);
+        private static Color ColText => EditorStyles.label.normal.textColor;
+        private static Color ColSubText => DiNeEditorUI.MutedText;
 
         // ─── State ────────────────────────────────────────────────────────────
-        private Texture2D   _icon;
         private Texture2D   _headerIcon;
-        private Font        _titleFont;
         private Vector2     _scroll;
         private bool        _showStats;
         private bool        _showParams;
         private bool        _statsDirty = true;
         private DiNeAvatarStats.StatsData _stats;
+        private GUIStyle statusValueStyle;
+        private static GUIStyle centeredHintStyle;
 
         // 모듈 — GestureManager 대신 자체 모듈 사용
         private DiNeAvatarModule _module;
@@ -105,9 +106,7 @@ namespace DiNeTool.InGameChecker
         {
             if (!EditorPrefs.HasKey("DiNeLang") && EditorPrefs.HasKey("DiNeCheckerLang"))
                 EditorPrefs.SetInt("DiNeLang", Mathf.Clamp(EditorPrefs.GetInt("DiNeCheckerLang", 0), 0, 2));
-            _icon       = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
             _headerIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe_Icon.png");
-            _titleFont  = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
             titleContent = new GUIContent("In-Game Checker", _headerIcon);
             ConfigureTutorial();
 
@@ -207,70 +206,26 @@ namespace DiNeTool.InGameChecker
         // ─── Header ──────────────────────────────────────────────────────────
         private void DrawHeader()
         {
-            GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
-            EditorGUILayout.BeginVertical("box");
-
-            EditorGUILayout.BeginHorizontal();
-            GUILayout.FlexibleSpace();
-
-            var titleStyle = new GUIStyle(EditorStyles.label)
+            string description = CurrentLang switch
             {
-                font      = _titleFont,
-                alignment = TextAnchor.MiddleCenter,
-                fontStyle = FontStyle.Bold,
-                fontSize  = 36,
-                normal    = { textColor = Color.white }
-            };
-            float iconSize = _icon != null ? _icon.height * 2f / 3f : 48;
-            GUILayout.Label(_icon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
-            GUILayout.Space(6);
-            GUILayout.Label("In-Game Checker", titleStyle, GUILayout.Height(iconSize));
-
-            GUILayout.FlexibleSpace();
-            EditorGUILayout.EndHorizontal();
-
-            GUILayout.Space(4);
-            string desc = CurrentLang switch
-            {
-                Language.Korean  => "인게임에서 시점과 포즈가 어떻게 보이는지 에디터 환경에서 미리 검증합니다.",
+                Language.Korean => "인게임에서 시점과 포즈가 어떻게 보이는지 에디터 환경에서 미리 검증합니다.",
                 Language.Japanese => "ゲーム内での視点やポーズがどう見えるかをエディター上で事前確認します。",
-                _                => "Verify how viewports and poses will look in-game directly within the Editor."
+                _ => "Verify how viewports and poses will look in-game directly within the Editor."
             };
-            GUILayout.Label(desc, new GUIStyle(EditorStyles.wordWrappedLabel)
-                { alignment = TextAnchor.MiddleCenter, fontSize = 12, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } });
-
-            GUILayout.Space(5);
-            EditorGUILayout.EndVertical();
+            DiNeEditorUI.DrawHeader("In-Game Checker", description);
         }
 
         // ─── Language Bar ─────────────────────────────────────────────────────
         private void DrawLangBar()
         {
-            int idx = L;
-            idx = DrawCustomToolbar(idx, new[] { "English", "한국어", "日本語" }, 35);
-            CurrentLang = (Language)idx;
+            GUILayout.Space(5f);
+            DiNeEditorUI.DrawLanguageToolbar(L);
+            GUILayout.Space(15f);
         }
 
         private int DrawCustomToolbar(int selected, string[] options, float height)
         {
-            EditorGUILayout.BeginHorizontal();
-            int newSelected = selected;
-            for (int i = 0; i < options.Length; i++)
-            {
-                var prevBg = GUI.backgroundColor;
-                GUI.backgroundColor = (i == selected) ? ColAccent : new Color(0.5f, 0.5f, 0.5f, 1f);
-                GUIStyle style = new GUIStyle(GUI.skin.button)
-                {
-                    fontStyle = (i == selected) ? FontStyle.Bold : FontStyle.Normal,
-                    fontSize = 12,
-                    normal = { textColor = (i == selected) ? Color.white : new Color(0.8f, 0.8f, 0.8f) }
-                };
-                if (GUILayout.Button(options[i], style, GUILayout.Height(height)))
-                    newSelected = i;
-                GUI.backgroundColor = prevBg;
-            }
-            EditorGUILayout.EndHorizontal();
-            return newSelected;
+            return DiNeEditorUI.DrawToolbar(selected, options, height);
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -289,13 +244,13 @@ namespace DiNeTool.InGameChecker
 
             DrawCenteredButton(
                 isPlaying ? T(2) : T(1),
-                isPlaying ? ColRed : ColGreen,
-                200, 36,
+                isPlaying ? ColRed : ColAccent,
+                200, (int)DiNeEditorUI.ButtonHeight,
                 () => { if (isPlaying) EditorApplication.ExitPlaymode(); else EditorApplication.EnterPlaymode(); });
             tutorialSetupAnchor = GUILayoutUtility.GetLastRect();
             guidedTutorial.Draw("PlayMode", tutorialSetupAnchor);
 
-            if (!isPlaying) { guidedTutorial.Draw("Avatar", tutorialSetupAnchor); GUILayout.Space(8); return; }
+            if (!isPlaying) { guidedTutorial.Draw("Avatar", tutorialSetupAnchor); GUILayout.Space(DiNeEditorUI.CardSpacing); return; }
 
             GUILayout.Space(14);
             HLine();
@@ -321,49 +276,41 @@ namespace DiNeTool.InGameChecker
                     if (desc == null) continue;
                     bool hasAnimator = desc.GetComponent<Animator>() != null;
 
-                    using (new BgColor(ColCard))
+                    EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
+                    EditorGUILayout.BeginHorizontal();
+
+                    GUILayout.Label(desc.gameObject.name, EditorStyles.boldLabel,
+                        GUILayout.ExpandWidth(true));
+
+                    using (new EditorGUI.DisabledScope(!hasAnimator))
                     {
-                        EditorGUILayout.BeginVertical("box");
-                        EditorGUILayout.BeginHorizontal();
-
-                        GUILayout.Label(desc.gameObject.name, new GUIStyle(EditorStyles.boldLabel)
-                            { fontSize = 12, normal = { textColor = hasAnimator ? new Color(0.80f, 0.95f, 0.70f) : ColSubText } },
-                            GUILayout.ExpandWidth(true));
-
-                        GUI.enabled = hasAnimator;
-                        using (new BgColor(ColGreen))
+                        if (DiNeEditorUI.Button(T(4), DiNeEditorUI.CompactButtonHeight, GUILayout.Width(60)))
                         {
-                            if (GUILayout.Button(T(4), GUILayout.Width(60), GUILayout.Height(22)))
-                            {
-                                DisconnectModule();
-                                _module = new DiNeAvatarModule(desc);
-                                _module.Connect();
-                                _statsDirty = true;
-                                _radialMenu = new DiNeRadialMenu();
-                                _radialMenu.Init(_module);
-                                guidedTutorial.NotifyAction("Avatar");
-                            }
+                            DisconnectModule();
+                            _module = new DiNeAvatarModule(desc);
+                            _module.Connect();
+                            _statsDirty = true;
+                            _radialMenu = new DiNeRadialMenu();
+                            _radialMenu.Init(_module);
+                            guidedTutorial.NotifyAction("Avatar");
                         }
-                        GUI.enabled = true;
-
-                        EditorGUILayout.EndHorizontal();
-                        guidedTutorial.Anchor("Avatar", GUILayoutUtility.GetLastRect());
-
-                        if (!hasAnimator)
-                            GUILayout.Label("Missing Animator", new GUIStyle(EditorStyles.miniLabel)
-                                { normal = { textColor = new Color(1f, 0.5f, 0.3f) } });
-
-                        EditorGUILayout.EndVertical();
                     }
+
+                    EditorGUILayout.EndHorizontal();
+                    guidedTutorial.Anchor("Avatar", GUILayoutUtility.GetLastRect());
+
+                    if (!hasAnimator)
+                        EditorGUILayout.HelpBox(T(35), MessageType.Warning);
+
+                    EditorGUILayout.EndVertical();
                     GUILayout.Space(2);
                 }
                 guidedTutorial.Draw("Avatar");
             }
 
-            GUILayout.Space(8);
-            using (new BgColor(ColBlue))
-                if (GUILayout.Button(T(6), GUILayout.Height(26)))
-                    RefreshAvatarList();
+            GUILayout.Space(DiNeEditorUI.CardSpacing);
+            if (GUILayout.Button(T(6), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
+                RefreshAvatarList();
             if (_sceneAvatars.Count == 0) guidedTutorial.Draw("Avatar", GUILayoutUtility.GetLastRect());
         }
 
@@ -374,27 +321,19 @@ namespace DiNeTool.InGameChecker
         {
             GUILayout.Space(4);
 
-            using (new BgColor(ColCard))
-            {
-                EditorGUILayout.BeginHorizontal("box");
-                GUILayout.Label(T(22) + ":", new GUIStyle(EditorStyles.miniLabel)
-                    { normal = { textColor = ColSubText } }, GUILayout.Width(52));
-                GUILayout.Label(_module.Name, new GUIStyle(EditorStyles.boldLabel)
-                    { fontSize = 12, normal = { textColor = new Color(0.80f, 0.95f, 0.70f) } },
-                    GUILayout.ExpandWidth(true));
+            EditorGUILayout.BeginHorizontal(DiNeEditorUI.CardStyle);
+            GUILayout.Label(T(22) + ":", EditorStyles.miniLabel, GUILayout.Width(52));
+            GUILayout.Label(_module.Name, EditorStyles.boldLabel,
+                GUILayout.ExpandWidth(true));
 
-                using (new BgColor(ColAccent))
-                {
-                    if (GUILayout.Button(T(8), GUILayout.Width(70), GUILayout.Height(20)))
-                    {
-                        DisconnectModule();
-                        _statsDirty = true;
-                    }
-                    guidedTutorial.Anchor("Unlink", GUILayoutUtility.GetLastRect());
-                }
-                EditorGUILayout.EndHorizontal();
-                guidedTutorial.Anchor("Avatar", GUILayoutUtility.GetLastRect());
+            if (GUILayout.Button(T(8), GUILayout.Width(70), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
+            {
+                DisconnectModule();
+                _statsDirty = true;
             }
+            guidedTutorial.Anchor("Unlink", GUILayoutUtility.GetLastRect());
+            EditorGUILayout.EndHorizontal();
+            guidedTutorial.Anchor("Avatar", GUILayoutUtility.GetLastRect());
             guidedTutorial.Draw("PlayMode", GUILayoutUtility.GetLastRect());
             guidedTutorial.Draw("Avatar");
             guidedTutorial.Draw("Unlink");
@@ -407,10 +346,10 @@ namespace DiNeTool.InGameChecker
         {
             if (_radialMenu == null) return;
 
-            GUILayout.Space(8);
+            GUILayout.Space(DiNeEditorUI.CardSpacing);
 
             EditorGUILayout.BeginHorizontal();
-            SectionLabel(_isOptionMenuMode ? "DiNe Options Menu" : "Expression Menu");
+            SectionLabel(_isOptionMenuMode ? T(36) : T(37));
             GUILayout.FlexibleSpace();
 
             // Options Toggle Button (DiNe Icon)
@@ -437,7 +376,7 @@ namespace DiNeTool.InGameChecker
 
             if (!_radialMenu.HasMenu)
             {
-                DrawCenteredHint("No Menu Configured", ColSubText);
+                DrawCenteredHint(T(38), ColSubText);
                 guidedTutorial.Draw("Menu", GUILayoutUtility.GetLastRect());
                 return;
             }
@@ -449,7 +388,7 @@ namespace DiNeTool.InGameChecker
 
             using (new BgColor(ColCard))
             {
-                GUI.Box(new Rect(area.x, area.y - 5, area.width, 310), "", "box");
+                GUI.Box(new Rect(area.x, area.y - 5, area.width, 310), "", DiNeEditorUI.CardStyle);
             }
 
             _radialMenu.Draw(centerRect);
@@ -466,36 +405,29 @@ namespace DiNeTool.InGameChecker
             SectionLabel(T(33));
             GUILayout.Space(4);
 
-            using (new BgColor(ColCard))
-            {
-                EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
 
-                // 왼손
-                EditorGUILayout.BeginHorizontal();
-                GUILayout.Label(T(23), new GUIStyle(EditorStyles.boldLabel)
-                    { fontSize = 11, normal = { textColor = ColAccent } }, GUILayout.Width(80));
-                GUILayout.Label(GestureName(_module.Left), new GUIStyle(EditorStyles.boldLabel)
-                    { fontSize = 11, normal = { textColor = ColText } });
-                EditorGUILayout.EndHorizontal();
+            // 왼손
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label(T(23), EditorStyles.boldLabel, GUILayout.Width(80));
+            GUILayout.Label(GestureName(_module.Left), EditorStyles.label);
+            EditorGUILayout.EndHorizontal();
 
-                DrawGestureButtons(true);
-                guidedTutorial.Anchor("LeftGesture", GUILayoutUtility.GetLastRect());
+            DrawGestureButtons(true);
+            guidedTutorial.Anchor("LeftGesture", GUILayoutUtility.GetLastRect());
 
-                GUILayout.Space(6);
+            GUILayout.Space(6);
 
-                // 오른손
-                EditorGUILayout.BeginHorizontal();
-                GUILayout.Label(T(24), new GUIStyle(EditorStyles.boldLabel)
-                    { fontSize = 11, normal = { textColor = ColAccent } }, GUILayout.Width(80));
-                GUILayout.Label(GestureName(_module.Right), new GUIStyle(EditorStyles.boldLabel)
-                    { fontSize = 11, normal = { textColor = ColText } });
-                EditorGUILayout.EndHorizontal();
+            // 오른손
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label(T(24), EditorStyles.boldLabel, GUILayout.Width(80));
+            GUILayout.Label(GestureName(_module.Right), EditorStyles.label);
+            EditorGUILayout.EndHorizontal();
 
-                DrawGestureButtons(false);
-                guidedTutorial.Anchor("RightGesture", GUILayoutUtility.GetLastRect());
+            DrawGestureButtons(false);
+            guidedTutorial.Anchor("RightGesture", GUILayoutUtility.GetLastRect());
 
-                EditorGUILayout.EndVertical();
-            }
+            EditorGUILayout.EndVertical();
             guidedTutorial.Draw("LeftGesture");
             guidedTutorial.Draw("RightGesture");
         }
@@ -503,33 +435,20 @@ namespace DiNeTool.InGameChecker
         private void DrawGestureButtons(bool isLeft)
         {
             int current = isLeft ? _module.Left : _module.Right;
-
-            // 2줄 × 4개 버튼
             for (int row = 0; row < 2; row++)
             {
-                EditorGUILayout.BeginHorizontal();
-                for (int col = 0; col < 4; col++)
+                using (new EditorGUILayout.HorizontalScope())
                 {
-                    int idx = row * 4 + col;
-                    bool isActive = (idx == current);
-                    var prevBg = GUI.backgroundColor;
-                    GUI.backgroundColor = isActive ? ColAccent : new Color(0.35f, 0.35f, 0.38f);
-
-                    var btnStyle = new GUIStyle(GUI.skin.button)
+                    for (int col = 0; col < 4; col++)
                     {
-                        fontSize = 10,
-                        fontStyle = isActive ? FontStyle.Bold : FontStyle.Normal,
-                        normal = { textColor = isActive ? Color.white : ColSubText }
-                    };
-
-                    if (GUILayout.Button(GestureName(idx), btnStyle, GUILayout.Height(24)))
-                    {
-                        if (isLeft) _module.SetLeftGesture(idx);
-                        else        _module.SetRightGesture(idx);
+                        int index = row * 4 + col;
+                        if (DiNeEditorUI.SegmentButton(GestureName(index), index == current, DiNeEditorUI.CompactButtonHeight))
+                        {
+                            if (isLeft) _module.SetLeftGesture(index);
+                            else _module.SetRightGesture(index);
+                        }
                     }
-                    GUI.backgroundColor = prevBg;
                 }
-                EditorGUILayout.EndHorizontal();
             }
         }
 
@@ -546,61 +465,54 @@ namespace DiNeTool.InGameChecker
             }
 
             GUILayout.Space(4);
-            using (new BgColor(_showParams ? ColAccent : ColCard))
-            {
-                if (GUILayout.Button((_showParams ? "▼  " : "▶  ") + T(34), GUILayout.Height(28)))
-                    _showParams = !_showParams;
-            }
+            if (DiNeEditorUI.SegmentButton((_showParams ? "▼  " : "▶  ") + T(34), _showParams, DiNeEditorUI.ButtonHeight))
+                _showParams = !_showParams;
             guidedTutorial.Draw("Parameters", GUILayoutUtility.GetLastRect());
 
             if (!_showParams) return;
 
             GUILayout.Space(4);
-            using (new BgColor(ColCard))
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
+
+            foreach (var ep in exprParams.parameters)
             {
-                EditorGUILayout.BeginVertical("box");
+                if (string.IsNullOrEmpty(ep.name)) continue;
+                if (!_module.Params.TryGetValue(ep.name, out var param)) continue;
+                // VRC 시스템 파라미터는 제외
+                if (IsSystemParam(ep.name)) continue;
 
-                foreach (var ep in exprParams.parameters)
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Label(ep.name, EditorStyles.miniLabel, GUILayout.Width(160));
+
+                switch (ep.valueType)
                 {
-                    if (string.IsNullOrEmpty(ep.name)) continue;
-                    if (!_module.Params.TryGetValue(ep.name, out var param)) continue;
-                    // VRC 시스템 파라미터는 제외
-                    if (IsSystemParam(ep.name)) continue;
-
-                    EditorGUILayout.BeginHorizontal();
-                    GUILayout.Label(ep.name, new GUIStyle(EditorStyles.miniLabel)
-                        { normal = { textColor = ColText } }, GUILayout.Width(160));
-
-                    switch (ep.valueType)
+                    case VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionParameters.ValueType.Bool:
                     {
-                        case VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionParameters.ValueType.Bool:
-                        {
-                            bool val = param.BoolValue();
-                            bool newVal = EditorGUILayout.Toggle(val, GUILayout.Width(20));
-                            if (newVal != val) param.Set(newVal ? 1f : 0f);
-                            break;
-                        }
-                        case VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionParameters.ValueType.Int:
-                        {
-                            int val = param.IntValue();
-                            int newVal = EditorGUILayout.IntField(val, GUILayout.Width(60));
-                            if (newVal != val) param.Set(newVal);
-                            break;
-                        }
-                        case VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionParameters.ValueType.Float:
-                        {
-                            float val = param.FloatValue();
-                            float newVal = EditorGUILayout.Slider(val, -1f, 1f);
-                            if (Math.Abs(newVal - val) > 0.001f) param.Set(newVal);
-                            break;
-                        }
+                        bool val = param.BoolValue();
+                        bool newVal = EditorGUILayout.Toggle(val, GUILayout.Width(20));
+                        if (newVal != val) param.Set(newVal ? 1f : 0f);
+                        break;
                     }
-
-                    EditorGUILayout.EndHorizontal();
+                    case VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionParameters.ValueType.Int:
+                    {
+                        int val = param.IntValue();
+                        int newVal = EditorGUILayout.IntField(val, GUILayout.Width(60));
+                        if (newVal != val) param.Set(newVal);
+                        break;
+                    }
+                    case VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionParameters.ValueType.Float:
+                    {
+                        float val = param.FloatValue();
+                        float newVal = EditorGUILayout.Slider(val, -1f, 1f);
+                        if (Math.Abs(newVal - val) > 0.001f) param.Set(newVal);
+                        break;
+                    }
                 }
 
-                EditorGUILayout.EndVertical();
+                EditorGUILayout.EndHorizontal();
             }
+
+            EditorGUILayout.EndVertical();
         }
 
         private static bool IsSystemParam(string name)
@@ -621,17 +533,14 @@ namespace DiNeTool.InGameChecker
         private void DrawStatsSection()
         {
             bool hasAvatar = _module is { Active: true, Avatar: not null };
-            GUI.enabled = hasAvatar;
-
-            using (new BgColor(_showStats ? ColAccent : ColCard))
+            using (new EditorGUI.DisabledScope(!hasAvatar))
             {
-                if (GUILayout.Button((_showStats ? "▼  " : "▶  ") + T(9), GUILayout.Height(28)))
+                if (DiNeEditorUI.SegmentButton((_showStats ? "▼  " : "▶  ") + T(9), _showStats, DiNeEditorUI.ButtonHeight))
                 {
                     _showStats = !_showStats;
                     if (_showStats) _statsDirty = true;
                 }
             }
-            GUI.enabled = true;
             guidedTutorial.Draw("Stats", GUILayoutUtility.GetLastRect());
 
             if (!_showStats) { guidedTutorial.Draw("Refresh", GUILayoutUtility.GetLastRect()); return; }
@@ -643,47 +552,40 @@ namespace DiNeTool.InGameChecker
             }
 
             GUILayout.Space(4);
-            using (new BgColor(ColCard))
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
+
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label(T(10), EditorStyles.boldLabel, GUILayout.Width(110));
+            DrawStatusValue(_stats.PerformanceRank, _stats.RankColor);
+            EditorGUILayout.EndHorizontal();
+
+            HLine();
+
+            DrawStatGrid(new[]
             {
-                EditorGUILayout.BeginVertical("box");
+                (T(11), _stats.TriangleCount.ToString("N0"), _stats.TriColor),
+                (T(12), _stats.VertexCount.ToString("N0"),   ColText),
+                (T(13), _stats.MeshCount.ToString(),         ColText),
+                (T(14), _stats.BoneCount.ToString(),         ColText),
+            });
+            HLine();
+            DrawStatGrid(new[]
+            {
+                (T(15), _stats.MaterialCount.ToString(),    ColText),
+                (T(16), _stats.TextureCount.ToString(),     ColText),
+                (T(17), FormatBytes(_stats.VRAMBytes),      _stats.VRAMColor),
+                (T(18), FormatBytes(_stats.UploadSizeBytes), ColSubText),
+            });
 
-                EditorGUILayout.BeginHorizontal();
-                GUILayout.Label(T(10), new GUIStyle(EditorStyles.boldLabel)
-                    { fontSize = 11, normal = { textColor = ColAccent } }, GUILayout.Width(110));
-                GUILayout.Label(_stats.PerformanceRank, new GUIStyle(EditorStyles.boldLabel)
-                    { fontSize = 13, normal = { textColor = _stats.RankColor } });
-                EditorGUILayout.EndHorizontal();
+            GUILayout.Space(4);
+            GUILayout.Label(T(20), EditorStyles.wordWrappedMiniLabel);
+            GUILayout.Space(4);
 
-                HLine();
+            if (GUILayout.Button(T(19), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
+                _statsDirty = true;
+            guidedTutorial.Anchor("Refresh", GUILayoutUtility.GetLastRect());
 
-                DrawStatGrid(new[]
-                {
-                    (T(11), _stats.TriangleCount.ToString("N0"), _stats.TriColor),
-                    (T(12), _stats.VertexCount.ToString("N0"),   ColText),
-                    (T(13), _stats.MeshCount.ToString(),         ColText),
-                    (T(14), _stats.BoneCount.ToString(),         ColText),
-                });
-                HLine();
-                DrawStatGrid(new[]
-                {
-                    (T(15), _stats.MaterialCount.ToString(),    ColText),
-                    (T(16), _stats.TextureCount.ToString(),     ColText),
-                    (T(17), FormatBytes(_stats.VRAMBytes),      _stats.VRAMColor),
-                    (T(18), FormatBytes(_stats.UploadSizeBytes), ColSubText),
-                });
-
-                GUILayout.Space(4);
-                GUILayout.Label(T(20), new GUIStyle(EditorStyles.miniLabel)
-                    { normal = { textColor = ColSubText }, fontSize = 9 });
-                GUILayout.Space(4);
-
-                using (new BgColor(ColBlue))
-                    if (GUILayout.Button(T(19), GUILayout.Height(24)))
-                        _statsDirty = true;
-                guidedTutorial.Anchor("Refresh", GUILayoutUtility.GetLastRect());
-
-                EditorGUILayout.EndVertical();
-            }
+            EditorGUILayout.EndVertical();
             guidedTutorial.Draw("Refresh");
         }
 
@@ -701,43 +603,53 @@ namespace DiNeTool.InGameChecker
 
         private void DrawStatCell(string label, string value, Color col)
         {
-            EditorGUILayout.BeginVertical();
-            GUILayout.Label(label, new GUIStyle(EditorStyles.miniLabel)
-                { normal = { textColor = ColSubText } });
-            GUILayout.Label(value, new GUIStyle(EditorStyles.boldLabel)
-                { normal = { textColor = col } });
-            EditorGUILayout.EndVertical();
+            using (new EditorGUILayout.VerticalScope())
+            {
+                GUILayout.Label(label, EditorStyles.miniLabel);
+                DrawStatusValue(value, col);
+            }
+        }
+
+        private void DrawStatusValue(string text, Color color)
+        {
+            if (statusValueStyle == null) statusValueStyle = new GUIStyle(EditorStyles.boldLabel);
+            statusValueStyle.normal.textColor = color;
+            GUILayout.Label(text, statusValueStyle);
         }
 
         // ─── Helpers ─────────────────────────────────────────────────────────
         private void SectionLabel(string text) =>
-            GUILayout.Label(text, new GUIStyle(EditorStyles.boldLabel)
-                { fontSize = 11, normal = { textColor = ColAccent } });
+            GUILayout.Label(text, EditorStyles.boldLabel);
 
         private static void DrawCenteredHint(string text, Color color)
         {
-            GUILayout.Label(text, new GUIStyle(EditorStyles.centeredGreyMiniLabel)
-                { fontStyle = FontStyle.Italic, fontSize = 11, wordWrap = true,
-                  normal = { textColor = color } });
+            if (centeredHintStyle == null)
+                centeredHintStyle = new GUIStyle(EditorStyles.wordWrappedLabel) { alignment = TextAnchor.MiddleCenter };
+            centeredHintStyle.normal.textColor = color;
+            GUILayout.Label(text, centeredHintStyle);
         }
 
         private static void DrawCenteredButton(string label, Color color, int width, int height, Action onClick)
         {
-            EditorGUILayout.BeginHorizontal();
-            GUILayout.FlexibleSpace();
-            using (new BgColor(color))
-                if (GUILayout.Button(label, GUILayout.Width(width), GUILayout.Height(height)))
-                    onClick?.Invoke();
-            GUILayout.FlexibleSpace();
-            EditorGUILayout.EndHorizontal();
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUILayout.FlexibleSpace();
+                if (color == DiNeEditorUI.Mint)
+                {
+                    if (DiNeEditorUI.Button(label, height, GUILayout.Width(width))) onClick?.Invoke();
+                }
+                else
+                {
+                    using (new BgColor(color))
+                        if (GUILayout.Button(label, GUILayout.Width(width), GUILayout.Height(height))) onClick?.Invoke();
+                }
+                GUILayout.FlexibleSpace();
+            }
         }
 
         private static void HLine()
         {
-            GUILayout.Space(4);
-            var r = EditorGUILayout.GetControlRect(false, 1);
-            EditorGUI.DrawRect(r, ColLine);
-            GUILayout.Space(4);
+            GUILayout.Space(DiNeEditorUI.CardSpacing);
         }
 
         private static string FormatBytes(long bytes)

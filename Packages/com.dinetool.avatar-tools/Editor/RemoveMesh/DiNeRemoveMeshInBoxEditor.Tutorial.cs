@@ -6,7 +6,6 @@ public partial class DiNeRemoveMeshInBoxEditor
 {
     private DiNeGuidedTutorial tutorial;
     private DiNeTutorialStep[] tutorialSteps;
-    private GUIStyle tutorialTitleStyle, tutorialDescriptionStyle;
 
     private void EnsureTutorial()
     {

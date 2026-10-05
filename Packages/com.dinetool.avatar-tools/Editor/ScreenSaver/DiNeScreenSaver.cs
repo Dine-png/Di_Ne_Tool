@@ -241,10 +241,7 @@ namespace DiNeScreenSaver
         // ══════════════════════════════════════════════════════════════════════
         //  Assets
         // ══════════════════════════════════════════════════════════════════════
-        private Texture2D _windowIcon;
         private Texture2D _tabIcon;
-        private Font      _titleFont;
-
         // ══════════════════════════════════════════════════════════════════════
         //  Lifecycle & Context Menu
         // ══════════════════════════════════════════════════════════════════════
@@ -384,9 +381,7 @@ namespace DiNeScreenSaver
             Selection.selectionChanged += OnSelectionChangedOutsideWindow;
             EditorSceneManager.sceneOpened -= OnSceneOpened;
             EditorSceneManager.sceneOpened += OnSceneOpened;
-            _windowIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
             _tabIcon    = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe_Icon.png");
-            _titleFont  = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
             titleContent = new GUIContent("Screen", _tabIcon);
         }
 
@@ -472,87 +467,59 @@ namespace DiNeScreenSaver
         // ══════════════════════════════════════════════════════════════════════
         void OnGUI()
         {
-            BeginTutorialFrame();
-            try
+            using (new EditorGUILayout.VerticalScope())
             {
-            int sharedLanguage = SavedLanguageIndex;
-            if (sharedLanguage != L)
-                _lang = (Lang)sharedLanguage;
+                BeginTutorialFrame();
+                try
+                {
+                int sharedLanguage = SavedLanguageIndex;
+                if (sharedLanguage != L)
+                    _lang = (Lang)sharedLanguage;
 
-            GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
+                string desc = L == 1 ? "유니티 에디터 화면 보호기 기능과 아이콘 생성 기능을 제공합니다."
+                            : L == 2 ? "Unityエディターのスクリーンセーバーおよびアイコン生成機能を提供します。"
+                                     : "Provides Unity Editor screen saver and icon generation features.";
+                DiNeEditorUI.DrawHeader("Screen Saver", desc);
+                GUILayout.Space(5f);
+                _lang = (Lang)DiNeEditorUI.DrawLanguageToolbar(L);
+                GUILayout.Space(15f);
 
-            // ── 헤더 ──
-            EditorGUILayout.BeginVertical("box");
-            EditorGUILayout.BeginHorizontal();
-            GUILayout.FlexibleSpace();
-            float iconSize = 72f;
-            GUILayout.Label(_windowIcon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
-            GUILayout.Space(6);
-            GUILayout.Label("Screen Saver", new GUIStyle(EditorStyles.label)
-            {
-                font = _titleFont, alignment = TextAnchor.MiddleCenter,
-                fontStyle = FontStyle.Bold, fontSize = 36,
-                normal = { textColor = Color.white }
-            }, GUILayout.Height(iconSize));
-            GUILayout.FlexibleSpace();
-            EditorGUILayout.EndHorizontal();
+                // ── 모드 선택 ──
+                _tutorial.DrawControls();
+                ToolMode previousMode = _mode;
+                _mode = (ToolMode)DrawToolbar((int)_mode, new[] { T(14), T(15) }, DiNeEditorUI.ToolbarHeight);
+                if (previousMode == ToolMode.Icon && _mode != ToolMode.Icon)
+                {
+                    ReleaseIconPreviewResources();
+                    _gamePreviewDirty = true;
+                }
+                else if (previousMode != ToolMode.Icon && _mode == ToolMode.Icon)
+                {
+                    ReleaseGamePreviewResources();
+                    _previewDirty = true;
+                }
 
-            GUILayout.Space(4);
-            string desc = L == 1 ? "유니티 에디터 화면 보호기 기능과 아이콘 생성 기능을 제공합니다."
-                        : L == 2 ? "Unityエディターのスクリーンセーバーおよびアイコン生成機能を提供します。"
-                                 : "Provides Unity Editor screen saver and icon generation features.";
-            GUILayout.Label(desc, new GUIStyle(EditorStyles.wordWrappedLabel)
-                { alignment = TextAnchor.MiddleCenter, fontSize = 12, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } });
-            GUILayout.Space(5);
-            EditorGUILayout.EndVertical();
+                GUILayout.Space(DiNeEditorUI.CardSpacing);
 
-            GUILayout.Space(5);
-
-            // ── 언어 선택 ──
-            Lang selectedLanguage = (Lang)DrawToolbar(L, new[] { "English", "한국어", "日本語" }, 28);
-            if (selectedLanguage != _lang)
-            {
-                _lang = selectedLanguage;
-                EditorPrefs.SetInt(LANGUAGE_PREF_KEY, (int)_lang);
+                if (_mode == ToolMode.Screenshot)
+                {
+                    _tutorial?.BeginScrollScope();
+                    _screenshotScroll = EditorGUILayout.BeginScrollView(_screenshotScroll);
+                    DrawScreenshotMode();
+                    EditorGUILayout.EndScrollView();
+                    _tutorial?.EndScrollScope(GUILayoutUtility.GetLastRect());
+                }
+                else
+                {
+                    _tutorial?.BeginScrollScope();
+                    _iconScroll = EditorGUILayout.BeginScrollView(_iconScroll);
+                    DrawIconMode();
+                    EditorGUILayout.EndScrollView();
+                    _tutorial?.EndScrollScope(GUILayoutUtility.GetLastRect());
+                }
+                }
+                finally { _tutorial.EndFrame(); }
             }
-
-            GUILayout.Space(6);
-
-            // ── 모드 선택 ──
-            _tutorial.DrawControls();
-            ToolMode previousMode = _mode;
-            _mode = (ToolMode)DrawToolbar((int)_mode, new[] { T(14), T(15) }, 32);
-            if (previousMode == ToolMode.Icon && _mode != ToolMode.Icon)
-            {
-                ReleaseIconPreviewResources();
-                _gamePreviewDirty = true;
-            }
-            else if (previousMode != ToolMode.Icon && _mode == ToolMode.Icon)
-            {
-                ReleaseGamePreviewResources();
-                _previewDirty = true;
-            }
-
-            GUILayout.Space(10);
-
-            if (_mode == ToolMode.Screenshot)
-            {
-                _tutorial?.BeginScrollScope();
-                _screenshotScroll = EditorGUILayout.BeginScrollView(_screenshotScroll);
-                DrawScreenshotMode();
-                EditorGUILayout.EndScrollView();
-                _tutorial?.EndScrollScope(GUILayoutUtility.GetLastRect());
-            }
-            else
-            {
-                _tutorial?.BeginScrollScope();
-                _iconScroll = EditorGUILayout.BeginScrollView(_iconScroll);
-                DrawIconMode();
-                EditorGUILayout.EndScrollView();
-                _tutorial?.EndScrollScope(GUILayoutUtility.GetLastRect());
-            }
-            }
-            finally { _tutorial.EndFrame(); }
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -562,7 +529,7 @@ namespace DiNeScreenSaver
         {
             // 캡처 대상 탭
             CaptureTarget previousTarget = _captureTarget;
-            _captureTarget = (CaptureTarget)DrawToolbar((int)_captureTarget, new[] { T(9), T(10) }, 28);
+            _captureTarget = (CaptureTarget)DrawToolbar((int)_captureTarget, new[] { T(9), T(10) }, DiNeEditorUI.ToolbarHeight);
             TutorialAnchor("capture-target");
             TutorialAnchor("camera");
             TutorialDraw("capture-target");
@@ -576,7 +543,7 @@ namespace DiNeScreenSaver
             }
             GUILayout.Space(8);
 
-            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
             if (_captureTarget == CaptureTarget.GameView)
             {
                 EditorGUI.BeginChangeCheck();
@@ -610,14 +577,11 @@ namespace DiNeScreenSaver
 
             GUILayout.Space(12);
 
-            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
             EditorGUI.BeginDisabledGroup(_captureTarget == CaptureTarget.GameView && _camera == null);
 
             var prevBg = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
-            if (GUILayout.Button(T(11), new GUIStyle(GUI.skin.button)
-                { fontSize = 20, fontStyle = FontStyle.Bold, normal = { textColor = Color.white }, hover = { textColor = Color.white } },
-                GUILayout.Height(45)))
+            if (DiNeEditorUI.Button(T(11)))
             {
                 if (_captureTarget == CaptureTarget.GameView) CaptureGameView();
                 else CaptureSceneView();
@@ -692,7 +656,7 @@ namespace DiNeScreenSaver
 
         private void DrawGameViewPreview()
         {
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
             EditorGUILayout.LabelField(new GUIContent(T(49), T(50)), EditorStyles.boldLabel);
 
             if (_camera != null && !_camera.orthographic)
@@ -1308,7 +1272,7 @@ namespace DiNeScreenSaver
         private void DrawIconMode()
         {
             // 타겟 설정
-            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
             _iconTarget = (GameObject)EditorGUILayout.ObjectField(T(16), _iconTarget, typeof(GameObject), true);
             TutorialAnchor("icon-target");
             EditorGUILayout.EndVertical();
@@ -1428,7 +1392,7 @@ namespace DiNeScreenSaver
             GUILayout.Space(8);
 
             // ── 가시성 효과 ──
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
             Rect effectTitleRect = EditorGUILayout.GetControlRect(false, 24f);
             EditorGUI.DrawRect(new Rect(effectTitleRect.x, effectTitleRect.yMax - 1f, effectTitleRect.width, 1f),
                 new Color(0.30f, 0.82f, 0.76f, 0.65f));
@@ -1442,7 +1406,7 @@ namespace DiNeScreenSaver
 
             EditorGUILayout.BeginHorizontal();
 
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.MinWidth(0));
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle, GUILayout.MinWidth(0));
             _iconOutlineEnabled = DrawEffectCardHeader(T(31), _iconOutlineEnabled);
             TutorialAnchor("icon-outline");
             TutorialAnchor("icon-outline-color");
@@ -1461,7 +1425,7 @@ namespace DiNeScreenSaver
 
             GUILayout.Space(4f);
 
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.MinWidth(0));
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle, GUILayout.MinWidth(0));
             _iconForbiddenOverlay = DrawEffectCardHeader(T(34), _iconForbiddenOverlay);
             TutorialAnchor("icon-forbidden");
             TutorialAnchor("icon-forbidden-size");
@@ -1502,7 +1466,7 @@ namespace DiNeScreenSaver
             GUILayout.Space(8);
 
             // ── 설정 및 버튼 ──
-            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
 
             if (!string.IsNullOrEmpty(_iconOverwriteAssetPath))
                 EditorGUILayout.HelpBox($"{T(37)}\n{_iconOverwriteAssetPath}", MessageType.Info);
@@ -1524,26 +1488,19 @@ namespace DiNeScreenSaver
             EditorGUILayout.BeginHorizontal();
             
             // 기존 덮어쓰기 생성 버튼 (메인)
-            GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
             string generateLabel = string.IsNullOrEmpty(_iconOverwriteAssetPath) ? T(18) : T(38);
-            if (GUILayout.Button(generateLabel, new GUIStyle(GUI.skin.button)
-                { fontSize = 14, fontStyle = FontStyle.Bold,
-                  normal = { textColor = Color.white }, hover = { textColor = Color.white } },
-                GUILayout.Height(38)))
+            if (DiNeEditorUI.Button(generateLabel))
             {
                 GenerateCurrentIcon(false);
             }
             TutorialAnchor("icon-generate");
             TutorialAnchor("icon-copy");
 
-            // 파일이 존재할 경우 복사본 생성 버튼을 우측에 추가 (가로 폭 제한 제거하여 1:1 분할, 짙은 민트색 적용)
+            // 파일이 존재하면 복사본 저장을 보조 작업으로 제공한다.
             if (fileExists)
             {
-                GUI.backgroundColor = new Color(0.18f, 0.68f, 0.62f); 
-                if (GUILayout.Button(T(29), new GUIStyle(GUI.skin.button)
-                    { fontSize = 14, fontStyle = FontStyle.Bold,
-                      normal = { textColor = Color.white }, hover = { textColor = Color.white } },
-                    GUILayout.Height(38)))
+                GUI.backgroundColor = prevBg;
+                if (GUILayout.Button(T(29), GUILayout.Height(DiNeEditorUI.ButtonHeight)))
                 {
                     GenerateCurrentIcon(true);
                 }
@@ -1571,36 +1528,16 @@ namespace DiNeScreenSaver
 
         private void DrawDirectionButtons()
         {
-            var dirLabels = new[] { T(22), T(23), T(24), T(25), T(26), T(27) };
-            var prevBg = GUI.backgroundColor;
-            var btnStyle = new GUIStyle(GUI.skin.button)
-            {
-                fontSize  = 11,
-                fontStyle = FontStyle.Bold,
-                normal    = { textColor = new Color(0.85f, 0.85f, 0.85f) },
-                hover     = { textColor = Color.white },
-                padding   = new RectOffset(0, 0, 0, 0),
-                alignment = TextAnchor.MiddleCenter
-            };
-
-            float btnW = (position.width - 35f) / dirLabels.Length;
-
+            var labels = new[] { T(22), T(23), T(24), T(25), T(26), T(27) };
             EditorGUILayout.BeginHorizontal();
-            for (int i = 0; i < dirLabels.Length; i++)
-            {
-                bool active = (_previewEuler == DIR_EULERS[i]);
-                GUI.backgroundColor = active
-                    ? new Color(0.30f, 0.82f, 0.76f)
-                    : new Color(0.21f, 0.21f, 0.24f);
-
-                if (GUILayout.Button(dirLabels[i], btnStyle, GUILayout.Height(24), GUILayout.Width(btnW)))
+            for (int i = 0; i < labels.Length; i++)
+                if (DiNeEditorUI.SegmentButton(labels[i], _previewEuler == DIR_EULERS[i],
+                    DiNeEditorUI.CompactButtonHeight, GUILayout.MinWidth(0f)))
                 {
                     _previewEuler = DIR_EULERS[i];
                     _previewDirty = true;
                     Repaint();
                 }
-            }
-            GUI.backgroundColor = prevBg;
             EditorGUILayout.EndHorizontal();
             TutorialAnchor("icon-direction");
             TutorialDraw("icon-direction");
@@ -1608,79 +1545,30 @@ namespace DiNeScreenSaver
 
         private static bool DrawEffectCardHeader(string label, bool enabled)
         {
-            Rect row = EditorGUILayout.GetControlRect(false, 24f);
-            Color previousBackground = GUI.backgroundColor;
-            Color previousContent = GUI.contentColor;
-            GUI.backgroundColor = enabled ? new Color(0.30f, 0.82f, 0.76f) : new Color(0.55f, 0.55f, 0.55f);
-            GUI.contentColor = Color.white;
-            var style = new GUIStyle(GUI.skin.button)
+            if (DiNeEditorUI.SegmentButton(enabled ? $"✓  {label}" : label, enabled, DiNeEditorUI.CompactButtonHeight))
             {
-                fontStyle = FontStyle.Bold,
-                fontSize = 11,
-                alignment = TextAnchor.MiddleCenter,
-                normal = { textColor = Color.white },
-                hover = { textColor = Color.white },
-                active = { textColor = Color.white }
-            };
-            string buttonLabel = enabled ? $"✓  {label}" : label;
-            bool updated = GUI.Toggle(row, enabled, buttonLabel, style);
-            GUI.backgroundColor = previousBackground;
-            GUI.contentColor = previousContent;
-            return updated;
+                GUI.changed = true;
+                return !enabled;
+            }
+            return enabled;
         }
 
         private static bool DrawPositionSegment(string label, bool selected, GUIStyle baseStyle)
         {
-            Color previousBackground = GUI.backgroundColor;
-            Color previousContent = GUI.contentColor;
-            GUI.backgroundColor = selected ? new Color(0.30f, 0.82f, 0.76f) : new Color(0.55f, 0.55f, 0.55f);
-            GUI.contentColor = Color.white;
-            var style = new GUIStyle(baseStyle)
-            {
-                fontStyle = FontStyle.Bold,
-                fontSize = 10,
-                normal = { textColor = Color.white },
-                hover = { textColor = Color.white },
-                active = { textColor = Color.white },
-                alignment = TextAnchor.MiddleCenter
-            };
-            bool clicked = GUILayout.Button(label, style, GUILayout.Height(20f), GUILayout.MinWidth(34f));
-            GUI.backgroundColor = previousBackground;
-            GUI.contentColor = previousContent;
-            return clicked;
+            return DiNeEditorUI.SegmentButton(label, selected, DiNeEditorUI.CompactButtonHeight, GUILayout.MinWidth(34f));
         }
 
         private void DrawZoomButtons()
         {
-            var prevBg = GUI.backgroundColor;
-            var btnStyle = new GUIStyle(GUI.skin.button)
-            {
-                fontSize  = 10,
-                fontStyle = FontStyle.Bold,
-                normal    = { textColor = new Color(0.85f, 0.85f, 0.85f) },
-                hover     = { textColor = Color.white },
-                padding   = new RectOffset(0, 0, 0, 0),
-                alignment = TextAnchor.MiddleCenter
-            };
-
-            float btnW = (position.width - 35f) / ZOOM_PRESETS.Length;
-
             EditorGUILayout.BeginHorizontal();
             for (int i = 0; i < ZOOM_PRESETS.Length; i++)
-            {
-                bool active = Mathf.Approximately(_zoomFactor, ZOOM_PRESETS[i]);
-                GUI.backgroundColor = active
-                    ? new Color(0.30f, 0.82f, 0.76f)
-                    : new Color(0.21f, 0.21f, 0.24f);
-
-                if (GUILayout.Button(ZOOM_PRESET_LABELS[i], btnStyle, GUILayout.Height(22), GUILayout.Width(btnW)))
+                if (DiNeEditorUI.SegmentButton(ZOOM_PRESET_LABELS[i], Mathf.Approximately(_zoomFactor, ZOOM_PRESETS[i]),
+                    DiNeEditorUI.CompactButtonHeight, GUILayout.MinWidth(0f)))
                 {
-                    _zoomFactor   = ZOOM_PRESETS[i];
+                    _zoomFactor = ZOOM_PRESETS[i];
                     _previewDirty = true;
                     Repaint();
                 }
-            }
-            GUI.backgroundColor = prevBg;
             EditorGUILayout.EndHorizontal();
             TutorialAnchor("icon-zoom-preset");
             TutorialDraw("icon-zoom-preset");
@@ -2508,23 +2396,7 @@ namespace DiNeScreenSaver
 
         private int DrawToolbar(int selected, string[] options, float height)
         {
-            EditorGUILayout.BeginHorizontal();
-            int result = selected;
-            for (int i = 0; i < options.Length; i++)
-            {
-                var prev = GUI.backgroundColor;
-                GUI.backgroundColor = i == selected ? new Color(0.30f, 0.82f, 0.76f) : new Color(0.5f, 0.5f, 0.5f);
-                var style = new GUIStyle(GUI.skin.button)
-                {
-                    fontSize  = 12,
-                    fontStyle = i == selected ? FontStyle.Bold : FontStyle.Normal,
-                    normal    = { textColor = i == selected ? Color.white : new Color(0.8f, 0.8f, 0.8f) }
-                };
-                if (GUILayout.Button(options[i], style, GUILayout.Height(height))) result = i;
-                GUI.backgroundColor = prev;
-            }
-            EditorGUILayout.EndHorizontal();
-            return result;
+            return DiNeEditorUI.DrawToolbar(selected, options, height);
         }
 
         // ══════════════════════════════════════════════════════════════════════

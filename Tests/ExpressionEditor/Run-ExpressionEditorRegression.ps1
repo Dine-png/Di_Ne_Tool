@@ -66,6 +66,9 @@ try {
     $packageAssets = Join-Path $PackageSource 'Runtime/DiNePackageAssets.cs'
     Copy-Item -LiteralPath $packageAssets -Destination $scripts -Force
     $productionFiles += [PSCustomObject]@{ RelativePath = 'Runtime/DiNePackageAssets.cs'; Source = $packageAssets; CompiledCopy = Join-Path $scripts 'DiNePackageAssets.cs' }
+    $editorUI = Join-Path $PackageSource 'Editor/Core/DiNeEditorUI.cs'
+    Copy-Item -LiteralPath $editorUI -Destination $scripts -Force
+    $productionFiles += [PSCustomObject]@{ RelativePath = 'Editor/Core/DiNeEditorUI.cs'; Source = $editorUI; CompiledCopy = Join-Path $scripts 'DiNeEditorUI.cs' }
     foreach ($relative in @('DungGeunMo.ttf', 'Assets/DiNe.png')) {
         $source = Join-Path $PackageSource $relative
         $copy = Join-Path $assets ([IO.Path]::GetFileName($relative))

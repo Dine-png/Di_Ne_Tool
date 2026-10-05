@@ -38,9 +38,7 @@ public partial class ArmatureScalerEditor : EditorWindow
     private Dictionary<HumanoidBodyPart, Vector3>    positionValues = new Dictionary<HumanoidBodyPart, Vector3>();
 
     private string[]  UI_TEXT;
-    private Texture2D windowIcon;
     private Texture2D tabIcon;
-    private Font      titleFont;
     private GUIStyle themedButtonStyle;
     private GUIStyle themedBoldButtonStyle;
     private GUISkin themedButtonSkin;
@@ -136,11 +134,9 @@ public partial class ArmatureScalerEditor : EditorWindow
 
     void OnEnable()
     {
-        windowIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
         tabIcon    = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe_Icon.png");
-        titleFont  = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
         titleContent = new GUIContent("Avi Editor", tabIcon);
-        selectedButtonTex = MakeTex(1, 1, new Color(0.30f, 0.82f, 0.76f, 1f));
+        selectedButtonTex = MakeTex(1, 1, DiNeEditorUI.Mint);
         LanguagePreset selectedLanguage = language;
         SetLanguage(selectedLanguage);
         appliedLanguage = selectedLanguage;
@@ -370,41 +366,10 @@ public partial class ArmatureScalerEditor : EditorWindow
         BeginTutorialFrame();
         try
         {
-        Color headerBackground = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
-
-        EditorGUILayout.BeginVertical("box");
-        EditorGUILayout.BeginHorizontal();
-        GUILayout.FlexibleSpace();
-
-        GUIStyle titleStyle = new GUIStyle(EditorStyles.label)
-        {
-            font      = titleFont,
-            alignment = TextAnchor.MiddleCenter,
-            fontStyle = FontStyle.Bold,
-            fontSize  = 36,
-            normal    = new GUIStyleState() { textColor = Color.white }
-        };
-        float iconSize = 72f;
-        GUILayout.Label(windowIcon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
-        GUILayout.Space(6);
-        GUILayout.Label("Avi Editor", titleStyle, GUILayout.Height(iconSize));
-
-        GUILayout.FlexibleSpace();
-        EditorGUILayout.EndHorizontal();
-
-        GUILayout.Space(4);
-        GUILayout.Label(Tr(
-                "Edit your avatar's armature, mesh shape keys, and PhysBone settings.",
-                "아바타의 본, 메시 쉐이프키와 PhysBone 설정을 편집합니다.",
-                "アバターのボーン、メッシュのシェイプキー、PhysBone設定を編集します。"),
-            new GUIStyle(EditorStyles.wordWrappedLabel)
-            { alignment = TextAnchor.MiddleCenter, fontSize = 12, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } });
-
-        GUILayout.Space(5);
-        EditorGUILayout.EndVertical();
-        GUI.backgroundColor = headerBackground;
-
+        DiNeEditorUI.DrawHeader("Avi Editor", Tr(
+            "Edit your avatar's armature, mesh shape keys, and PhysBone settings.",
+            "아바타의 본, 메시 쉐이프키와 PhysBone 설정을 편집합니다.",
+            "アバターのボーン、メッシュのシェイプキー、PhysBone設定を編集します。"));
         GUILayout.Space(5);
 
         LanguagePreset selectedLanguage = language;
@@ -416,8 +381,7 @@ public partial class ArmatureScalerEditor : EditorWindow
         }
 
         int currentLanguageIndex = (int)selectedLanguage;
-        string[] languageButtons = { "English", "한국어", "日本語" };
-        int newLanguageIndex = DrawCustomToolbar(currentLanguageIndex, languageButtons, 35);
+        int newLanguageIndex = DiNeEditorUI.DrawLanguageToolbar(currentLanguageIndex);
         if (newLanguageIndex != currentLanguageIndex)
         {
             armaturePresetStatus = "";
@@ -426,8 +390,8 @@ public partial class ArmatureScalerEditor : EditorWindow
             SetLanguage(selectedLanguage);
             appliedLanguage = selectedLanguage;
         }
-        _tutorial.DrawControls();
         GUILayout.Space(15);
+        _tutorial.DrawControls();
 
         string[] modeLabels =
         {
@@ -440,7 +404,7 @@ public partial class ArmatureScalerEditor : EditorWindow
         if (newMainMode != currentMainMode)
             SetMainModeIndex(newMainMode);
 
-        GUILayout.Space(10);
+        GUILayout.Space(DiNeEditorUI.CardSpacing);
 
         if (currentMode == EditorMode.Armature)
             DrawArmatureGUI();
@@ -463,7 +427,6 @@ public partial class ArmatureScalerEditor : EditorWindow
         SkeRestoreAndClearPreview();
         GUI.FocusControl(null);
     }
-
 
     private void DrawExtraGUI()
     {
@@ -498,7 +461,7 @@ public partial class ArmatureScalerEditor : EditorWindow
 
         EditorGUI.BeginDisabledGroup(targetAvatarRoot == null);
         Color previousBackground = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+        GUI.backgroundColor = DiNeEditorUI.Mint;
         if (GUILayout.Button(new GUIContent("\u21BA", Tr("Refresh", "새로고침", "更新")),
                 GUILayout.Width(28), GUILayout.Height(18)))
         {
@@ -529,7 +492,7 @@ public partial class ArmatureScalerEditor : EditorWindow
         DiNePhysBoneBatchSummary total = DiNePhysBoneBatchUtility.GetSummary(
             targetAvatarRoot, DiNePhysBoneBatchSetting.AllowGrabbing);
 
-        EditorGUILayout.BeginVertical("GroupBox");
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         EditorGUILayout.LabelField(
             Tr("PhysBone Interaction", "PhysBone 상호작용", "PhysBoneインタラクション"),
             EditorStyles.boldLabel);
@@ -540,7 +503,7 @@ public partial class ArmatureScalerEditor : EditorWindow
             EditorStyles.wordWrappedMiniLabel);
         EditorGUILayout.EndVertical();
 
-        GUILayout.Space(8);
+        GUILayout.Space(DiNeEditorUI.CardSpacing);
 
         EditorGUI.BeginDisabledGroup(total.Total == 0);
         DrawPhysBoneBatchRow(
@@ -550,7 +513,7 @@ public partial class ArmatureScalerEditor : EditorWindow
                 "플레이어가 PhysBone을 잡아 움직일 수 있게 합니다.",
                 "プレイヤーがPhysBoneをつかんで動かせるようにします。"));
 
-        GUILayout.Space(8);
+        GUILayout.Space(DiNeEditorUI.CardSpacing);
 
         DrawPhysBoneBatchRow(
             DiNePhysBoneBatchSetting.AllowPosing,
@@ -559,7 +522,7 @@ public partial class ArmatureScalerEditor : EditorWindow
                 "잡은 PhysBone을 원하는 자세로 고정할 수 있게 합니다.",
                 "つかんだPhysBoneを任意のポーズで固定できるようにします。"));
 
-        GUILayout.Space(8);
+        GUILayout.Space(DiNeEditorUI.CardSpacing);
 
         DrawPhysBoneBatchRow(
             DiNePhysBoneBatchSetting.AllowCollision,
@@ -569,7 +532,7 @@ public partial class ArmatureScalerEditor : EditorWindow
                 "プレイヤーの手やその他のグローバルコライダーとの衝突を調整します。"));
         EditorGUI.EndDisabledGroup();
 
-        GUILayout.Space(8);
+        GUILayout.Space(DiNeEditorUI.CardSpacing);
         EditorGUILayout.HelpBox(
             Tr("Turning off Player Collider Response does not remove or disable colliders explicitly assigned in each PhysBone's Colliders list.",
                 "플레이어 콜라이더 반응을 꺼도 각 PhysBone의 Colliders 목록에 직접 지정한 콜라이더는 제거되거나 비활성화되지 않습니다.",
@@ -586,7 +549,7 @@ public partial class ArmatureScalerEditor : EditorWindow
         string tutorialPrefix = setting == DiNePhysBoneBatchSetting.AllowGrabbing ? "grab" : setting == DiNePhysBoneBatchSetting.AllowPosing ? "pose" : "collision";
         DiNePhysBoneBatchSummary summary = DiNePhysBoneBatchUtility.GetSummary(targetAvatarRoot, setting);
 
-        EditorGUILayout.BeginVertical("GroupBox");
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         EditorGUILayout.BeginHorizontal();
         EditorGUILayout.LabelField(title, EditorStyles.boldLabel);
         GUILayout.FlexibleSpace();
@@ -598,13 +561,13 @@ public partial class ArmatureScalerEditor : EditorWindow
 
         EditorGUILayout.BeginHorizontal();
         Color previousBackground = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+        GUI.backgroundColor = DiNeEditorUI.Mint;
         GUIContent enableContent = new GUIContent(
             Tr("Enable All", "모두 켜기", "すべてオン"),
             Tr("Enable this setting on every found PhysBone.",
                 "찾은 모든 PhysBone에서 이 설정을 켭니다.",
                 "見つかったすべてのPhysBoneでこの設定をオンにします。"));
-        if (GUILayout.Button(enableContent, GUILayout.Height(30)))
+        if (DiNeEditorUI.Button(enableContent))
             ApplyPhysBoneBatchSetting(setting, true, title);
         TutorialAnchor(tutorialPrefix + "-on");
 
@@ -614,7 +577,7 @@ public partial class ArmatureScalerEditor : EditorWindow
             Tr("Disable this setting on every found PhysBone.",
                 "찾은 모든 PhysBone에서 이 설정을 끕니다.",
                 "見つかったすべてのPhysBoneでこの設定をオフにします。"));
-        if (GUILayout.Button(disableContent, GUILayout.Height(30)))
+        if (GUILayout.Button(disableContent, GUILayout.Height(DiNeEditorUI.ButtonHeight)))
             ApplyPhysBoneBatchSetting(setting, false, title);
         TutorialAnchor(tutorialPrefix + "-off");
 
@@ -711,7 +674,7 @@ public partial class ArmatureScalerEditor : EditorWindow
 
         EditorGUI.BeginDisabledGroup(targetAvatarRoot == null);
         var _prevBg = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+        GUI.backgroundColor = DiNeEditorUI.Mint;
         if (GUILayout.Button(new GUIContent("\u21BA", Tr("Refresh", "\uC0C8\uB85C\uACE0\uCE68", "\u66F4\u65B0")), GUILayout.Width(28), GUILayout.Height(18)))
         {
             boneMapping = ArmatureScalerCore.AssignBoneMappings(targetAvatarRoot);
@@ -753,7 +716,7 @@ public partial class ArmatureScalerEditor : EditorWindow
 
         GuiLine(1, 10);
 
-        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         GUILayout.Label(UI_TEXT[24], EditorStyles.boldLabel);
 
         if (selectedPart != HumanoidBodyPart.None)
@@ -783,7 +746,7 @@ public partial class ArmatureScalerEditor : EditorWindow
 
             if (armatureEditMode == ArmatureEditMode.DirectTransform)
             {
-            GUILayout.Space(10);
+            GUILayout.Space(DiNeEditorUI.CardSpacing);
             GUILayout.Label(UI_TEXT[41], EditorStyles.boldLabel);
             Vector3 position = GetPartPosition(selectedPart);
 
@@ -798,7 +761,7 @@ public partial class ArmatureScalerEditor : EditorWindow
 
             if (CanRotate(selectedPart))
             {
-                GUILayout.Space(10);
+                GUILayout.Space(DiNeEditorUI.CardSpacing);
                 GUILayout.Label(UI_TEXT[37], EditorStyles.boldLabel);
                 Quaternion rotation = GetPartRotation(selectedPart);
 
@@ -827,7 +790,7 @@ public partial class ArmatureScalerEditor : EditorWindow
     // ?????? ???ル늅??씤異?에?ル씔???癲ル슢?꾤땟???GUI ??????
     private void DrawArmaturePresetGUI()
     {
-        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         EditorGUILayout.LabelField(Tr("Armature Presets", "아마추어 프리셋", "アーマチュアプリセット"), EditorStyles.boldLabel);
         EditorGUILayout.LabelField(Tr(
             "Save direct bone size, position and rotation together with MA Scale Adjuster values.",
@@ -863,7 +826,7 @@ public partial class ArmatureScalerEditor : EditorWindow
                     Tr("Apply the saved direct bone values and MA Scale Adjusters together. Missing Adjusters are added.",
                         "저장된 기본 뼈 값과 MA Scale Adjuster를 함께 적용합니다. 없는 Adjuster는 추가합니다.",
                         "保存したボーンの値とMA Scale Adjusterをまとめて適用します。未追加のAdjusterは追加します。")),
-                new Color(0.30f, 0.82f, 0.76f), true, GUILayout.MinWidth(0), GUILayout.MinHeight(30)))
+                DiNeEditorUI.Mint, true, GUILayout.MinWidth(0), GUILayout.MinHeight(30)))
             LoadSelectedPreset();
         TutorialAnchor("preset-load");
 
@@ -952,7 +915,7 @@ public partial class ArmatureScalerEditor : EditorWindow
         {
             if (DrawThemedButton(
                     Tr("Add MA Scale Adjuster", "MA Scale Adjuster 추가", "MA Scale Adjusterを追加"),
-                    new Color(0.30f, 0.82f, 0.76f), true, GUILayout.MinWidth(0), GUILayout.MinHeight(30)))
+                    DiNeEditorUI.Mint, true, GUILayout.MinWidth(0), GUILayout.MinHeight(30)))
                 SetMAScale(boneTransform, Vector3.one, "Add MA Scale Adjuster", adjustChildPositions);
             TutorialAnchor("ma-add");
         }
@@ -1382,7 +1345,7 @@ public partial class ArmatureScalerEditor : EditorWindow
             GUIStyle infoStyle = new GUIStyle(EditorStyles.boldLabel)
             {
                 alignment = TextAnchor.MiddleCenter,
-                normal = { textColor = new Color(0.30f, 0.82f, 0.76f) },
+                normal = { textColor = DiNeEditorUI.Mint },
                 fontSize = 12
             };
             Rect infoRect = new Rect(area.x, area.y + 4, area.width, 20);
@@ -1492,7 +1455,7 @@ public partial class ArmatureScalerEditor : EditorWindow
         bool isSelected = selectedPart == part;
 
         Color dotColor = !found ? new Color(0.3f, 0.3f, 0.3f, 0.6f)
-                       : isSelected ? new Color(0.30f, 0.82f, 0.76f, 1f)
+                       : isSelected ? DiNeEditorUI.Mint
                        : new Color(0.2f, 0.8f, 0.3f, 0.9f);
 
         float clickSize = Mathf.Max(radius * 2.5f, 26f);
@@ -1879,25 +1842,7 @@ public partial class ArmatureScalerEditor : EditorWindow
     }
     private int DrawCustomToolbar(int selected, string[] options, float height)
     {
-        EditorGUILayout.BeginHorizontal();
-        int newSelected = selected;
-        for (int i = 0; i < options.Length; i++)
-        {
-            var prevBg = GUI.backgroundColor;
-            GUI.backgroundColor = (i == selected) ? new Color(0.30f, 0.82f, 0.76f) : new Color(0.5f, 0.5f, 0.5f, 1f);
-            GUIStyle style = new GUIStyle(GUI.skin.button) {
-                fontStyle = (i == selected) ? FontStyle.Bold : FontStyle.Normal,
-                fontSize = 12,
-                normal = { textColor = (i == selected) ? Color.white : new Color(0.8f, 0.8f, 0.8f) }
-            };
-            if (GUILayout.Button(options[i], style, GUILayout.Height(height)))
-            {
-                newSelected = i;
-            }
-            GUI.backgroundColor = prevBg;
-        }
-        EditorGUILayout.EndHorizontal();
-        return newSelected;
+        return DiNeEditorUI.DrawToolbar(selected, options, height);
     }
 
     // ??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已??誘딆궠已?
@@ -1907,7 +1852,7 @@ public partial class ArmatureScalerEditor : EditorWindow
     {
         Color previousBackground = GUI.backgroundColor;
         GUI.backgroundColor = value
-            ? new Color(0.30f, 0.82f, 0.76f)
+            ? DiNeEditorUI.Mint
             : new Color(0.42f, 0.42f, 0.45f);
         GUIStyle buttonStyle = GetThemedButtonStyle(value);
         Rect buttonRect = GUILayoutUtility.GetRect(new GUIContent(label), buttonStyle, options);
@@ -2171,7 +2116,7 @@ public partial class ArmatureScalerEditor : EditorWindow
         var prevBg = GUI.backgroundColor;
 
         // ─ 대상 설정 ────────────────────────────────────────────────────────
-        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         EditorGUILayout.LabelField(
             language == LanguagePreset.Korean  ? "대상 설정"
           : language == LanguagePreset.Japanese ? "対象設定" : "Target Settings",
@@ -2195,7 +2140,7 @@ public partial class ArmatureScalerEditor : EditorWindow
         }
 
         EditorGUI.BeginDisabledGroup(targetAvatarRoot == null);
-        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+        GUI.backgroundColor = DiNeEditorUI.Mint;
         if (GUILayout.Button("↺", GUILayout.Width(28), GUILayout.Height(18)))
         {
             SkeRestoreAndClearPreview();
@@ -2256,7 +2201,7 @@ public partial class ArmatureScalerEditor : EditorWindow
         string[] subLabels = language == LanguagePreset.Korean  ? new[] { "새로 만들기", "수정하기" }
                            : language == LanguagePreset.Japanese ? new[] { "新規作成", "編集" }
                            : new[] { "Create New", "Modify" };
-        int newSubMode = DrawCustomToolbar(_skeSubMode, subLabels, 26);
+        int newSubMode = DrawCustomToolbar(_skeSubMode, subLabels, DiNeEditorUI.CompactButtonHeight);
         if (newSubMode != _skeSubMode)
         {
             SkeRestoreAndClearPreview();
@@ -2291,7 +2236,7 @@ public partial class ArmatureScalerEditor : EditorWindow
             GUILayout.Space(4);
             EditorGUILayout.HelpBox(_skeStatus, _skeStatusIsError ? MessageType.Error : MessageType.Info);
         }
-        GUILayout.Space(8);
+        GUILayout.Space(DiNeEditorUI.CardSpacing);
         EditorGUILayout.EndScrollView();
         _tutorial?.EndScrollScope(GUILayoutUtility.GetLastRect());
     }
@@ -2388,7 +2333,7 @@ public partial class ArmatureScalerEditor : EditorWindow
             if (listMode == 0) // ─ 새로 만들기: 레이블 + [추가] ─
             {
                 GUILayout.Label(name, GUILayout.ExpandWidth(true));
-                GUI.backgroundColor = isInCreate ? new Color(0.30f, 0.82f, 0.76f) : prevBg;
+                GUI.backgroundColor = isInCreate ? DiNeEditorUI.Mint : prevBg;
                 string addL = language == LanguagePreset.Korean ? "추가" : language == LanguagePreset.Japanese ? "追加" : "Add";
                 EditorGUI.BeginDisabledGroup(isInCreate);
                 if (GUILayout.Button(addL, GUILayout.Width(42), GUILayout.Height(19)))
@@ -2402,7 +2347,7 @@ public partial class ArmatureScalerEditor : EditorWindow
             }
             else // ─ 수정하기: 클릭으로 대상 선택 (+ 믹스 추가 버튼) ─
             {
-                GUI.backgroundColor = isTarget ? new Color(0.30f, 0.82f, 0.76f) : prevBg;
+                GUI.backgroundColor = isTarget ? DiNeEditorUI.Mint : prevBg;
                 GUIStyle rowStyle = isTarget ? _skeSelectedRowStyle : _skeRowStyle;
                 if (GUILayout.Button(new GUIContent(name, modifyPreviewTooltip), rowStyle,
                         GUILayout.ExpandWidth(true), GUILayout.Height(20)))
@@ -2412,7 +2357,7 @@ public partial class ArmatureScalerEditor : EditorWindow
                 TutorialAnchor("shape-select");
                 if (listMode == 2) // 믹스 추가 버튼
                 {
-                    GUI.backgroundColor = isInModMix ? new Color(0.30f, 0.82f, 0.76f) : prevBg;
+                    GUI.backgroundColor = isInModMix ? DiNeEditorUI.Mint : prevBg;
                     EditorGUI.BeginDisabledGroup(isInModMix);
                     if (GUILayout.Button(new GUIContent("+", Tr("Add to mix", "믹스에 추가", "ミックスに追加")),
                             GUILayout.Width(24), GUILayout.Height(20)))
@@ -2465,7 +2410,7 @@ public partial class ArmatureScalerEditor : EditorWindow
     private void DrawSkeCreateMix(string[] shapeNames, Color prevBg)
     {
         // ─ 쉐이프키 선택 ────────────────────────────────────────────────────
-        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         EditorGUILayout.LabelField(
             language == LanguagePreset.Korean  ? "쉐이프키 선택 (클릭으로 추가)"
           : language == LanguagePreset.Japanese ? "シェイプキー選択 (クリックで追加)"
@@ -2477,7 +2422,7 @@ public partial class ArmatureScalerEditor : EditorWindow
         GUILayout.Space(5);
 
         // ─ 혼합 목록 ────────────────────────────────────────────────────────
-        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         EditorGUILayout.LabelField(
             language == LanguagePreset.Korean  ? "혼합 목록"
           : language == LanguagePreset.Japanese ? "ミックスリスト" : "Mix List",
@@ -2488,13 +2433,13 @@ public partial class ArmatureScalerEditor : EditorWindow
 
         GUILayout.Space(3);
         EditorGUILayout.BeginHorizontal();
-        GUI.backgroundColor = new Color(0.27f, 0.55f, 0.82f);
+        GUI.backgroundColor = DiNeEditorUI.Mint;
         string prevL = language == LanguagePreset.Korean ? "미리보기 갱신" : language == LanguagePreset.Japanese ? "プレビュー更新" : "Update Preview";
-        if (GUILayout.Button(prevL, GUILayout.Height(22))) SkeApplyMixPreview(_skeMixEntries);
+        if (GUILayout.Button(prevL, GUILayout.Height(DiNeEditorUI.CompactButtonHeight))) SkeApplyMixPreview(_skeMixEntries);
         TutorialAnchor("mix-preview");
         GUI.backgroundColor = new Color(0.38f, 0.38f, 0.38f);
         string restL = language == LanguagePreset.Korean ? "원본 복원" : language == LanguagePreset.Japanese ? "元に戻す" : "Restore";
-        if (GUILayout.Button(restL, GUILayout.Height(22))) { SkeRestoreAndClearPreview(); _skePreviewDirty = true; }
+        if (GUILayout.Button(restL, GUILayout.Height(DiNeEditorUI.CompactButtonHeight))) { SkeRestoreAndClearPreview(); _skePreviewDirty = true; }
         TutorialAnchor("mix-restore");
         GUI.backgroundColor = prevBg;
         EditorGUILayout.EndHorizontal();
@@ -2503,16 +2448,16 @@ public partial class ArmatureScalerEditor : EditorWindow
         GUILayout.Space(5);
 
         // ─ 이름 + 생성 ───────────────────────────────────────────────────────
-        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         string nameLabel = language == LanguagePreset.Korean ? "새 쉐이프키 이름" : language == LanguagePreset.Japanese ? "新規シェイプキー名" : "New Shape Key Name";
         _skeNewName = EditorGUILayout.TextField(nameLabel, _skeNewName);
         TutorialAnchor("shape-name");
         GUILayout.Space(4);
         bool canCreate = _skeMixEntries.Count > 0 && !string.IsNullOrWhiteSpace(_skeNewName);
         EditorGUI.BeginDisabledGroup(!canCreate);
-        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+        GUI.backgroundColor = DiNeEditorUI.Mint;
         string createL = language == LanguagePreset.Korean ? "쉐이프키 생성" : language == LanguagePreset.Japanese ? "シェイプキー生成" : "Create Shape Key";
-        if (GUILayout.Button(createL, GUILayout.Height(28)))
+        if (DiNeEditorUI.Button(createL))
         {
             SkeRestoreAndClearPreview();
             var entries = _skeMixEntries.Select(e => ((int)e.index, e.weight)).ToList<(int, float)>();
@@ -2553,7 +2498,7 @@ public partial class ArmatureScalerEditor : EditorWindow
             ? shapeNames[_skeModifyIndex] : "-";
 
         // ─ 대상 쉐이프키 선택 ─────────────────────────────────────────────────
-        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         string listHeader = language == LanguagePreset.Korean  ? $"대상 쉐이프키 선택  ✦ {selectedName}"
                           : language == LanguagePreset.Japanese ? $"対象シェイプキー選択  ✦ {selectedName}"
                           : $"Select Target Shape Key  ✦ {selectedName}";
@@ -2576,7 +2521,7 @@ public partial class ArmatureScalerEditor : EditorWindow
         if (_skeModifySubMode == 0)
         {
             // ─ 배율 조정 ──────────────────────────────────────────────────────
-            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
             EditorGUILayout.LabelField(
                 language == LanguagePreset.Korean ? "배율 조정" : language == LanguagePreset.Japanese ? "倍率調整" : "Scale Adjustment",
                 EditorStyles.boldLabel);
@@ -2618,9 +2563,9 @@ public partial class ArmatureScalerEditor : EditorWindow
             }
             GUILayout.Space(4);
             EditorGUI.BeginDisabledGroup(Mathf.Approximately(_skeModifyScale, 0f));
-            GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+            GUI.backgroundColor = DiNeEditorUI.Mint;
             string applyL = language == LanguagePreset.Korean ? "배율 적용" : language == LanguagePreset.Japanese ? "倍率を適用" : "Apply Scale";
-            if (GUILayout.Button(applyL, GUILayout.Height(28)))
+            if (DiNeEditorUI.Button(applyL))
             {
                 float factor = _skeModifyScale / 100f;
                 bool ok = DiNeShapeKeyEditorCore.ModifyShapeKeyScale(_skeSmr, _skeModifyIndex, factor, out string err);
@@ -2636,7 +2581,7 @@ public partial class ArmatureScalerEditor : EditorWindow
             GUI.backgroundColor = prevBg;
             EditorGUI.EndDisabledGroup();
             TutorialAnchor("shape-apply-scale");
-            if (GUILayout.Button(Tr("Restore preview", "미리보기 초기화", "プレビューをリセット"), GUILayout.Height(24)))
+            if (GUILayout.Button(Tr("Restore preview", "미리보기 초기화", "プレビューをリセット"), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
             {
                 SkeRestoreAndClearPreview();
                 Repaint();
@@ -2648,7 +2593,7 @@ public partial class ArmatureScalerEditor : EditorWindow
         else
         {
             // ─ 믹스로 교체 ────────────────────────────────────────────────────
-            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
             EditorGUILayout.LabelField(
                 language == LanguagePreset.Korean  ? $"교체할 내용 (믹스)  →  '{selectedName}'"
               : language == LanguagePreset.Japanese ? $"置換内容 (ミックス)  →  '{selectedName}'"
@@ -2661,13 +2606,13 @@ public partial class ArmatureScalerEditor : EditorWindow
 
             GUILayout.Space(3);
             EditorGUILayout.BeginHorizontal();
-            GUI.backgroundColor = new Color(0.27f, 0.55f, 0.82f);
+            GUI.backgroundColor = DiNeEditorUI.Mint;
             string prevL2 = language == LanguagePreset.Korean ? "미리보기 갱신" : language == LanguagePreset.Japanese ? "プレビュー更新" : "Update Preview";
-            if (GUILayout.Button(prevL2, GUILayout.Height(22))) SkeApplyMixPreview(_skeModifyMixEntries);
+            if (GUILayout.Button(prevL2, GUILayout.Height(DiNeEditorUI.CompactButtonHeight))) SkeApplyMixPreview(_skeModifyMixEntries);
             TutorialAnchor("mix-preview");
             GUI.backgroundColor = new Color(0.38f, 0.38f, 0.38f);
             string restL2 = language == LanguagePreset.Korean ? "원본 복원" : language == LanguagePreset.Japanese ? "元に戻す" : "Restore";
-            if (GUILayout.Button(restL2, GUILayout.Height(22))) { SkeRestoreAndClearPreview(); _skePreviewDirty = true; }
+            if (GUILayout.Button(restL2, GUILayout.Height(DiNeEditorUI.CompactButtonHeight))) { SkeRestoreAndClearPreview(); _skePreviewDirty = true; }
             TutorialAnchor("mix-restore");
             GUI.backgroundColor = prevBg;
             EditorGUILayout.EndHorizontal();
@@ -2676,10 +2621,10 @@ public partial class ArmatureScalerEditor : EditorWindow
 
             bool canReplace = _skeModifyMixEntries.Count > 0;
             EditorGUI.BeginDisabledGroup(!canReplace);
-            GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+            GUI.backgroundColor = DiNeEditorUI.Mint;
             string replaceL = language == LanguagePreset.Korean  ? "믹스로 교체 적용"
                             : language == LanguagePreset.Japanese ? "ミックスで置換を適用" : "Apply Mix Replace";
-            if (GUILayout.Button(replaceL, GUILayout.Height(28)))
+            if (DiNeEditorUI.Button(replaceL))
             {
                 SkeRestoreAndClearPreview();
                 var entries = _skeModifyMixEntries.Select(e => ((int)e.index, e.weight)).ToList<(int, float)>();

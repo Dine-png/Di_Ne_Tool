@@ -158,6 +158,22 @@ namespace DiNeTool.ExpressionEditor
             bool editable = DiNeExpressionUtility.CanEditAsset(target);
             if (DiNeExpressionInspectorSettings.UseDiNeInspector)
             {
+                bool isMenu = target is VRCExpressionsMenu;
+                DiNeEditorUI.DrawHeader(isMenu ? "Expression Menu" : "Expression Parameters", isMenu
+                    ? T("Edit expression controls, submenus and puppet parameters.",
+                        "표정 메뉴 항목, 하위 메뉴와 Puppet 파라미터를 편집합니다.",
+                        "表情メニューの項目、サブメニュー、Puppetパラメーターを編集します。")
+                    : T("Edit expression parameters, merge assets and check memory usage.",
+                        "표정 파라미터를 편집하고 에셋 병합과 메모리 사용량을 확인합니다.",
+                        "表情パラメーターの編集、アセットの統合、メモリ使用量の確認。"));
+                GUILayout.Space(5f);
+                int previousLanguage = Language;
+                if (DiNeEditorUI.DrawLanguageToolbar(previousLanguage) != previousLanguage)
+                {
+                    Status = null;
+                    Repaint();
+                }
+                GUILayout.Space(15f);
                 serializedObject.Update();
                 using (new EditorGUI.DisabledScope(!editable)) DrawContents();
                 serializedObject.ApplyModifiedProperties();
@@ -261,7 +277,7 @@ namespace DiNeTool.ExpressionEditor
         {
             var avatars = UnityEngine.Object.FindObjectsByType<VRCAvatarDescriptor>(FindObjectsInactive.Include, FindObjectsSortMode.None)
                 .Where(a => a.gameObject.scene.IsValid()).ToArray();
-            using (new EditorGUILayout.HorizontalScope(EditorStyles.helpBox))
+            using (new EditorGUILayout.HorizontalScope(DiNeEditorUI.CardStyle))
             {
                 var label = C("Active Avatar", "활성 아바타", "アクティブアバター",
                     "Parameter suggestions and warnings use this avatar. Its references are preserved.",

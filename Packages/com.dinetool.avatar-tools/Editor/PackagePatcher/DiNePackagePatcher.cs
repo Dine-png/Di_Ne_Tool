@@ -375,15 +375,12 @@ public partial class DiNePackagePatcher : EditorWindow
     private string statusMessage   = "";
 
     private string[] UI_TEXT;
-    private Texture2D windowIcon;
     private Texture2D tabIcon;
-    private Font      titleFont;
-
     private static string tempExtractPath  = "Temp/DiNePatcher_Extract";
     private static string tempCachePath    = "Temp/DiNePatcher_Cache";
     private bool reloadAssembliesLocked = false;
 
-    private static readonly Color ColMint   = new Color(0.30f, 0.82f, 0.76f);
+    private static readonly Color ColMint   = DiNeEditorUI.Mint;
     private static readonly Color ColZip    = new Color(0.40f, 0.75f, 1.00f);
     private static readonly Color ColPkg    = new Color(0.55f, 0.90f, 0.65f);
     private static readonly Color ColDone   = new Color(0.40f, 0.85f, 0.55f);
@@ -404,9 +401,7 @@ public partial class DiNePackagePatcher : EditorWindow
         if (!EditorPrefs.HasKey("DiNeLang")) EditorPrefs.SetInt("DiNeLang", (int)language);
         language = (LanguagePreset)Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", (int)language), 0, 2);
         s_window   = this;
-        windowIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
         tabIcon    = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe_Icon.png");
-        titleFont  = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
         SetLanguage(language);
         if (!HasPendingBatch()) statusMessage = "";
     }
@@ -438,260 +433,233 @@ public partial class DiNePackagePatcher : EditorWindow
 
     void DrawToolGUI()
     {
-        var sharedLanguage = (LanguagePreset)Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", (int)language), 0, 2);
-        if (sharedLanguage != language) { language = sharedLanguage; SetLanguage(language); }
-        bool isImporting = HasPendingBatch();
-        var  st          = isImporting ? LoadState() : null;
-        int  doneCount   = st?.done  ?? 0;
-        int  totalCount  = st?.total ?? 0;
-
-        GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
-
-        // ── 타이틀 바 ──
-        EditorGUILayout.BeginVertical("box");
-        EditorGUILayout.BeginHorizontal();
-        GUILayout.FlexibleSpace();
-        var titleStyle = new GUIStyle(EditorStyles.label)
+        using (new EditorGUILayout.VerticalScope())
         {
-            font      = titleFont,
-            alignment = TextAnchor.MiddleCenter,
-            fontStyle = FontStyle.Bold,
-            fontSize  = 36,
-            normal    = new GUIStyleState { textColor = Color.white }
-        };
-        float iconSize = 72f;
-        if (windowIcon != null) GUILayout.Label(windowIcon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
-        GUILayout.Space(6);
-        GUILayout.Label("Package Patcher", titleStyle, GUILayout.Height(iconSize));
-        GUILayout.FlexibleSpace();
-        EditorGUILayout.EndHorizontal();
-        GUILayout.Space(4);
-        GUILayout.Label(UI_TEXT[13], new GUIStyle(EditorStyles.wordWrappedLabel)
-            { alignment = TextAnchor.MiddleCenter, fontSize = 12, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } });
-        GUILayout.Space(5);
-        EditorGUILayout.EndVertical();
+            var sharedLanguage = (LanguagePreset)Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", (int)language), 0, 2);
+            if (sharedLanguage != language) { language = sharedLanguage; SetLanguage(language); }
+            bool isImporting = HasPendingBatch();
+            var  st          = isImporting ? LoadState() : null;
+            int  doneCount   = st?.done  ?? 0;
+            int  totalCount  = st?.total ?? 0;
 
-        GUILayout.Space(5);
+            DiNeEditorUI.DrawHeader("Package Patcher", UI_TEXT[13]);
+            GUILayout.Space(5f);
+            int curLang = (int)language;
+            int newLang = DiNeEditorUI.DrawLanguageToolbar(curLang);
+            if (newLang != curLang) { language = (LanguagePreset)newLang; SetLanguage(language); Repaint(); }
+            GUILayout.Space(15f);
+            guidedTutorial.DrawControls();
 
-        // ── 언어 탭 ──
-        int curLang = (int)language;
-        int newLang = DrawCustomToolbar(curLang, new[] { "English", "한국어", "日本語" }, 35);
-        if (newLang != curLang) { language = (LanguagePreset)newLang; EditorPrefs.SetInt("DiNeLang", newLang); SetLanguage(language); Repaint(); }
-        guidedTutorial.DrawControls();
+            GUILayout.Space(5);
 
-        GUILayout.Space(5);
+            // ── 설정 ── (방해되던 수동 임포트 체크박스 제거)
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
+            EditorGUILayout.LabelField(UI_TEXT[0], EditorStyles.boldLabel);
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField(UI_TEXT[1], GUILayout.Width(110));
+            var tutorialFolderBefore = targetFolderName;
+            targetFolderName = EditorGUILayout.TextField(targetFolderName);
+            guidedTutorial.Anchor("Folder", GUILayoutUtility.GetLastRect());
+            if (tutorialFolderBefore != targetFolderName) guidedTutorial.NotifyAction("Folder");
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.EndVertical();
+            guidedTutorial.Draw("Folder");
 
-        // ── 설정 ── (방해되던 수동 임포트 체크박스 제거)
-        EditorGUILayout.BeginVertical("box");
-        EditorGUILayout.BeginHorizontal();
-        EditorGUILayout.LabelField(UI_TEXT[1], GUILayout.Width(110));
-        var tutorialFolderBefore = targetFolderName;
-        targetFolderName = EditorGUILayout.TextField(targetFolderName);
-        guidedTutorial.Anchor("Folder", GUILayoutUtility.GetLastRect());
-        if (tutorialFolderBefore != targetFolderName) guidedTutorial.NotifyAction("Folder");
-        EditorGUILayout.EndHorizontal();
-        EditorGUILayout.EndVertical();
-        guidedTutorial.Draw("Folder");
+            GUILayout.Space(5);
 
-        GUILayout.Space(5);
-
-        // ── 파일 직접 선택 버튼 ──
-        EditorGUILayout.BeginHorizontal();
-        var prevBgBrowse = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.28f, 0.42f, 0.55f);
-        if (GUILayout.Button(UI_TEXT[20], GUILayout.Height(26)))
-        {
-            string picked = EditorUtility.OpenFilePanel(UI_TEXT[20], "", "unitypackage,zip,rar,7z");
-            if (!string.IsNullOrEmpty(picked))
-                QueuePaths(new[] { picked });
-        }
-        guidedTutorial.Anchor("BrowseFiles", GUILayoutUtility.GetLastRect());
-        GUI.backgroundColor = new Color(0.28f, 0.38f, 0.28f);
-        if (GUILayout.Button(UI_TEXT[21], GUILayout.Height(26)))
-        {
-            string pickedDir = EditorUtility.OpenFolderPanel(UI_TEXT[21], "", "");
-            if (!string.IsNullOrEmpty(pickedDir))
-                QueuePaths(new[] { pickedDir });
-        }
-        guidedTutorial.Anchor("BrowseFolder", GUILayoutUtility.GetLastRect());
-        GUI.backgroundColor = prevBgBrowse;
-        EditorGUILayout.EndHorizontal();
-        guidedTutorial.Draw("BrowseFiles");
-        guidedTutorial.Draw("BrowseFolder");
-
-        GUILayout.Space(4);
-
-        // ── 드래그 앤 드롭 영역 ──
-        Rect dropArea = GUILayoutUtility.GetRect(0f, 70f, GUILayout.ExpandWidth(true));
-        bool isDraggingOver = dropArea.Contains(Event.current.mousePosition)
-            && (Event.current.type == EventType.DragUpdated || Event.current.type == EventType.DragPerform);
-        var dropBg = isDraggingOver ? new Color(0.20f, 0.36f, 0.34f) : new Color(0.18f, 0.22f, 0.22f);
-        EditorGUI.DrawRect(dropArea, dropBg);
-        DrawBorder(dropArea, isDraggingOver ? ColMint : new Color(0.35f, 0.52f, 0.50f), 2);
-        GUI.Label(new Rect(dropArea.x, dropArea.y + 10f, dropArea.width, 24f), "📦",
-            new GUIStyle(EditorStyles.label) { fontSize = 20, alignment = TextAnchor.MiddleCenter,
-                normal = { textColor = isDraggingOver ? ColMint : new Color(0.45f, 0.62f, 0.60f) } });
-        GUI.Label(new Rect(dropArea.x, dropArea.y + 34f, dropArea.width, 20f), UI_TEXT[3],
-            new GUIStyle(EditorStyles.label) { fontSize = 12, alignment = TextAnchor.MiddleCenter,
-                normal = { textColor = isDraggingOver ? Color.white : ColSub },
-                fontStyle = isDraggingOver ? FontStyle.Bold : FontStyle.Normal });
-        GUI.Label(new Rect(dropArea.x, dropArea.y + 52f, dropArea.width, 16f), UI_TEXT[15],
-            new GUIStyle(EditorStyles.miniLabel) { alignment = TextAnchor.MiddleCenter,
-                normal = { textColor = new Color(0.42f, 0.42f, 0.42f) } });
-        HandleDragAndDrop(dropArea);
-        guidedTutorial.Draw("Queue", dropArea);
-
-        GUILayout.Space(5);
-
-        // ── 패키 목록 ──
-        EditorGUILayout.BeginVertical("box");
-        EditorGUILayout.BeginHorizontal();
-        int selCount = foundPackages.Count(p => p.IsSelected);
-        EditorGUILayout.LabelField(
-            $"{UI_TEXT[4]}  {(foundPackages.Count > 0 ? $"({selCount} / {foundPackages.Count})" : "")}",
-            EditorStyles.boldLabel);
-        if (foundPackages.Count > 0)
-        {
-            var prev = GUI.backgroundColor;
-            if (GUILayout.Button(UI_TEXT[16], EditorStyles.miniButtonLeft,  GUILayout.Width(38))) { foundPackages.ForEach(p => p.IsSelected = true);  Repaint(); }
-            if (GUILayout.Button(UI_TEXT[17], EditorStyles.miniButtonRight, GUILayout.Width(38))) { foundPackages.ForEach(p => p.IsSelected = false); Repaint(); }
-            guidedTutorial.Anchor("Bulk", GUILayoutUtility.GetLastRect());
-            GUI.backgroundColor = new Color(0.6f, 0.2f, 0.2f);
-            if (GUILayout.Button("Clear", EditorStyles.miniButton, GUILayout.Width(46))) { foundPackages.Clear(); statusMessage = ""; Repaint(); }
-            GUI.backgroundColor = prev;
-        }
-        EditorGUILayout.EndHorizontal();
-
-        GUILayout.Space(2);
-
-        float listH = Mathf.Clamp(foundPackages.Count * 46f + 8f, 80f, 260f);
-        guidedTutorial.BeginScrollScope();
-        packageScrollPos = EditorGUILayout.BeginScrollView(packageScrollPos, GUILayout.Height(listH));
-        if (foundPackages.Count == 0)
-        {
-            GUILayout.Space(18f);
-            EditorGUILayout.LabelField(UI_TEXT[5], new GUIStyle(EditorStyles.centeredGreyMiniLabel) { fontSize = 11 });
-        }
-        else
-        {
-            string inFlightId = st?.inFlightId ?? "";
-            int removeIndex = -1;
-            for (int i = 0; i < foundPackages.Count; i++)
+            // ── 파일 직접 선택 버튼 ──
+            EditorGUILayout.BeginHorizontal();
+            var prevBgBrowse = GUI.backgroundColor;
+            if (GUILayout.Button(UI_TEXT[20], GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
             {
-                var item = foundPackages[i];
-                var rowBg = item.IsSelected ? new Color(0.18f, 0.28f, 0.26f) : new Color(0.20f, 0.20f, 0.20f);
-                var prevBg = GUI.backgroundColor;
-                GUI.backgroundColor = rowBg;
-                EditorGUILayout.BeginHorizontal("box");
-                GUI.backgroundColor = prevBg;
-
-                // 체크박스 자리만 비워 두고, 칸이 다 그려진 뒤 칸 높이 전체를 클릭 영역으로 쓴다.
-                GUILayout.Space(DiNePackageSelectWindow.ToggleColumnWidth);
-                EditorGUILayout.BeginVertical();
-
-                EditorGUILayout.BeginHorizontal();
-
-                // 타입 뱃지
-                string badgeText  = item.IsDone ? "✓" : item.IsFailed ? "✗" : item.IsFromZip ? item.ArchiveLabel : "PKG";
-                Color  badgeColor = item.IsDone ? ColDone : item.IsFailed ? ColFail : item.IsFromZip ? ColZip : ColPkg;
-                GUILayout.Label(badgeText, new GUIStyle(EditorStyles.miniLabel)
-                    { fontStyle = FontStyle.Bold, fontSize = 9, alignment = TextAnchor.MiddleCenter,
-                      normal = { textColor = badgeColor } }, GUILayout.Width(28));
-
-                // 파일명
-                string dispName = item.DisplayName;
-                if (item.IsFromZip && dispName.Contains("/")) dispName = Path.GetFileName(dispName);
-                Color nameColor = item.IsDone ? ColDone : item.IsFailed ? ColFail : item.IsSelected ? Color.white : ColSub;
-                GUILayout.Label(dispName, new GUIStyle(EditorStyles.label)
-                    { fontSize = 11, clipping = TextClipping.Clip, normal = { textColor = nameColor } },
-                    GUILayout.ExpandWidth(true));
-
-                // 진행 중 표시
-                if (isImporting && item.Id == inFlightId)
-                    GUILayout.Label("…", new GUIStyle(EditorStyles.miniLabel)
-                        { normal = { textColor = ColMint } }, GUILayout.Width(14));
-                else
-                    GUILayout.Space(14);
-
-                // 삭제
-                prevBg = GUI.backgroundColor;
-                GUI.backgroundColor = new Color(0.45f, 0.18f, 0.18f);
-                if (GUILayout.Button("✕", EditorStyles.miniButton, GUILayout.Width(20), GUILayout.Height(18)))
-                    removeIndex = i;
-                if (i == 0) guidedTutorial.Anchor("Remove", GUILayoutUtility.GetLastRect());
-                GUI.backgroundColor = prevBg;
-
-                EditorGUILayout.EndHorizontal();
-
-                // ZIP 서브라인
-                if (item.IsFromZip && !string.IsNullOrEmpty(item.PackagePathInZip))
-                    GUILayout.Label($"  ↳  {AppendChain(Path.GetFileName(item.SourcePath), item.ContainerChain)}",
-                        new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = new Color(0.40f, 0.55f, 0.70f) } });
-
-                EditorGUILayout.EndVertical();
-                EditorGUILayout.EndHorizontal();
-                item.IsSelected = DiNePackageSelectWindow.RowToggle(GUILayoutUtility.GetLastRect(), item.IsSelected);
-                if (i == 0) guidedTutorial.Anchor("Rows", GUILayoutUtility.GetLastRect());
-                GUILayout.Space(1);
+                string picked = EditorUtility.OpenFilePanel(UI_TEXT[20], "", "unitypackage,zip,rar,7z");
+                if (!string.IsNullOrEmpty(picked))
+                    QueuePaths(new[] { picked });
             }
-            if (removeIndex != -1 && !isImporting) { foundPackages.RemoveAt(removeIndex); Repaint(); }
-        }
-        EditorGUILayout.EndScrollView();
-        guidedTutorial.EndScrollScope(GUILayoutUtility.GetLastRect());
-        if (foundPackages.Count == 0)
-        {
-            guidedTutorial.Anchor("Rows", GUILayoutUtility.GetLastRect());
-            guidedTutorial.Anchor("Bulk", GUILayoutUtility.GetLastRect());
-            guidedTutorial.Anchor("Remove", GUILayoutUtility.GetLastRect());
-        }
-        EditorGUILayout.EndVertical();
-        guidedTutorial.Draw("Rows");
-        guidedTutorial.Draw("Bulk");
-        guidedTutorial.Draw("Remove");
+            guidedTutorial.Anchor("BrowseFiles", GUILayoutUtility.GetLastRect());
+            if (GUILayout.Button(UI_TEXT[21], GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
+            {
+                string pickedDir = EditorUtility.OpenFolderPanel(UI_TEXT[21], "", "");
+                if (!string.IsNullOrEmpty(pickedDir))
+                    QueuePaths(new[] { pickedDir });
+            }
+            guidedTutorial.Anchor("BrowseFolder", GUILayoutUtility.GetLastRect());
+            GUI.backgroundColor = prevBgBrowse;
+            EditorGUILayout.EndHorizontal();
+            guidedTutorial.Draw("BrowseFiles");
+            guidedTutorial.Draw("BrowseFolder");
 
-        GUILayout.Space(3);
+            GUILayout.Space(4);
 
-        // ── 진행 바 ──
-        if (isImporting && totalCount > 0)
-        {
-            Rect barBg = GUILayoutUtility.GetRect(0f, 5f, GUILayout.ExpandWidth(true));
-            EditorGUI.DrawRect(barBg, new Color(0.15f, 0.15f, 0.15f));
-            float ratio = (float)doneCount / totalCount;
-            EditorGUI.DrawRect(new Rect(barBg.x, barBg.y, barBg.width * ratio, barBg.height), ColMint);
+            // ── 드래그 앤 드롭 영역 ──
+            Rect dropArea = GUILayoutUtility.GetRect(0f, 70f, GUILayout.ExpandWidth(true));
+            bool isDraggingOver = dropArea.Contains(Event.current.mousePosition)
+                && (Event.current.type == EventType.DragUpdated || Event.current.type == EventType.DragPerform);
+            var dropBg = isDraggingOver ? new Color(0.20f, 0.36f, 0.34f) : new Color(0.18f, 0.22f, 0.22f);
+            EditorGUI.DrawRect(dropArea, dropBg);
+            DrawBorder(dropArea, isDraggingOver ? ColMint : new Color(0.35f, 0.52f, 0.50f), 2);
+            GUI.Label(new Rect(dropArea.x, dropArea.y + 10f, dropArea.width, 24f), "📦",
+                new GUIStyle(EditorStyles.label) { fontSize = 20, alignment = TextAnchor.MiddleCenter,
+                    normal = { textColor = isDraggingOver ? ColMint : new Color(0.45f, 0.62f, 0.60f) } });
+            GUI.Label(new Rect(dropArea.x, dropArea.y + 34f, dropArea.width, 20f), UI_TEXT[3],
+                new GUIStyle(EditorStyles.label) { fontSize = 12, alignment = TextAnchor.MiddleCenter,
+                    normal = { textColor = isDraggingOver ? Color.white : ColSub },
+                    fontStyle = isDraggingOver ? FontStyle.Bold : FontStyle.Normal });
+            GUI.Label(new Rect(dropArea.x, dropArea.y + 52f, dropArea.width, 16f), UI_TEXT[15],
+                new GUIStyle(EditorStyles.miniLabel) { alignment = TextAnchor.MiddleCenter,
+                    normal = { textColor = new Color(0.42f, 0.42f, 0.42f) } });
+            HandleDragAndDrop(dropArea);
+            guidedTutorial.Draw("Queue", dropArea);
+
+            GUILayout.Space(5);
+
+            // ── 패키 목록 ──
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
+            EditorGUILayout.BeginHorizontal();
+            int selCount = foundPackages.Count(p => p.IsSelected);
+            EditorGUILayout.LabelField(
+                $"{UI_TEXT[4]}  {(foundPackages.Count > 0 ? $"({selCount} / {foundPackages.Count})" : "")}",
+                EditorStyles.boldLabel);
+            if (foundPackages.Count > 0)
+            {
+                var prev = GUI.backgroundColor;
+                if (GUILayout.Button(UI_TEXT[16], EditorStyles.miniButtonLeft,  GUILayout.Width(38))) { foundPackages.ForEach(p => p.IsSelected = true);  Repaint(); }
+                if (GUILayout.Button(UI_TEXT[17], EditorStyles.miniButtonRight, GUILayout.Width(38))) { foundPackages.ForEach(p => p.IsSelected = false); Repaint(); }
+                guidedTutorial.Anchor("Bulk", GUILayoutUtility.GetLastRect());
+                GUI.backgroundColor = new Color(0.6f, 0.2f, 0.2f);
+                if (GUILayout.Button("Clear", EditorStyles.miniButton, GUILayout.Width(46))) { foundPackages.Clear(); statusMessage = ""; Repaint(); }
+                GUI.backgroundColor = prev;
+            }
+            EditorGUILayout.EndHorizontal();
+
+            GUILayout.Space(2);
+
+            float listH = Mathf.Clamp(foundPackages.Count * 46f + 8f, 80f, 260f);
+            guidedTutorial.BeginScrollScope();
+            packageScrollPos = EditorGUILayout.BeginScrollView(packageScrollPos, GUILayout.Height(listH));
+            if (foundPackages.Count == 0)
+            {
+                GUILayout.Space(18f);
+                EditorGUILayout.LabelField(UI_TEXT[5], new GUIStyle(EditorStyles.centeredGreyMiniLabel) { fontSize = 11 });
+            }
+            else
+            {
+                string inFlightId = st?.inFlightId ?? "";
+                int removeIndex = -1;
+                for (int i = 0; i < foundPackages.Count; i++)
+                {
+                    var item = foundPackages[i];
+                    var rowBg = item.IsSelected ? new Color(0.18f, 0.28f, 0.26f) : new Color(0.20f, 0.20f, 0.20f);
+                    var prevBg = GUI.backgroundColor;
+                    GUI.backgroundColor = rowBg;
+                    EditorGUILayout.BeginHorizontal("box");
+                    GUI.backgroundColor = prevBg;
+
+                    // 체크박스 자리만 비워 두고, 칸이 다 그려진 뒤 칸 높이 전체를 클릭 영역으로 쓴다.
+                    GUILayout.Space(DiNePackageSelectWindow.ToggleColumnWidth);
+                    EditorGUILayout.BeginVertical();
+
+                    EditorGUILayout.BeginHorizontal();
+
+                    // 타입 뱃지
+                    string badgeText  = item.IsDone ? "✓" : item.IsFailed ? "✗" : item.IsFromZip ? item.ArchiveLabel : "PKG";
+                    Color  badgeColor = item.IsDone ? ColDone : item.IsFailed ? ColFail : item.IsFromZip ? ColZip : ColPkg;
+                    GUILayout.Label(badgeText, new GUIStyle(EditorStyles.miniLabel)
+                        { fontStyle = FontStyle.Bold, fontSize = 9, alignment = TextAnchor.MiddleCenter,
+                          normal = { textColor = badgeColor } }, GUILayout.Width(28));
+
+                    // 파일명
+                    string dispName = item.DisplayName;
+                    if (item.IsFromZip && dispName.Contains("/")) dispName = Path.GetFileName(dispName);
+                    Color nameColor = item.IsDone ? ColDone : item.IsFailed ? ColFail : item.IsSelected ? Color.white : ColSub;
+                    GUILayout.Label(dispName, new GUIStyle(EditorStyles.label)
+                        { fontSize = 11, clipping = TextClipping.Clip, normal = { textColor = nameColor } },
+                        GUILayout.ExpandWidth(true));
+
+                    // 진행 중 표시
+                    if (isImporting && item.Id == inFlightId)
+                        GUILayout.Label("…", new GUIStyle(EditorStyles.miniLabel)
+                            { normal = { textColor = ColMint } }, GUILayout.Width(14));
+                    else
+                        GUILayout.Space(14);
+
+                    // 삭제
+                    prevBg = GUI.backgroundColor;
+                    GUI.backgroundColor = new Color(0.45f, 0.18f, 0.18f);
+                    if (GUILayout.Button("✕", EditorStyles.miniButton, GUILayout.Width(20), GUILayout.Height(18)))
+                        removeIndex = i;
+                    if (i == 0) guidedTutorial.Anchor("Remove", GUILayoutUtility.GetLastRect());
+                    GUI.backgroundColor = prevBg;
+
+                    EditorGUILayout.EndHorizontal();
+
+                    // ZIP 서브라인
+                    if (item.IsFromZip && !string.IsNullOrEmpty(item.PackagePathInZip))
+                        GUILayout.Label($"  ↳  {AppendChain(Path.GetFileName(item.SourcePath), item.ContainerChain)}",
+                            new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = new Color(0.40f, 0.55f, 0.70f) } });
+
+                    EditorGUILayout.EndVertical();
+                    EditorGUILayout.EndHorizontal();
+                    item.IsSelected = DiNePackageSelectWindow.RowToggle(GUILayoutUtility.GetLastRect(), item.IsSelected);
+                    if (i == 0) guidedTutorial.Anchor("Rows", GUILayoutUtility.GetLastRect());
+                    GUILayout.Space(1);
+                }
+                if (removeIndex != -1 && !isImporting) { foundPackages.RemoveAt(removeIndex); Repaint(); }
+            }
+            EditorGUILayout.EndScrollView();
+            guidedTutorial.EndScrollScope(GUILayoutUtility.GetLastRect());
+            if (foundPackages.Count == 0)
+            {
+                guidedTutorial.Anchor("Rows", GUILayoutUtility.GetLastRect());
+                guidedTutorial.Anchor("Bulk", GUILayoutUtility.GetLastRect());
+                guidedTutorial.Anchor("Remove", GUILayoutUtility.GetLastRect());
+            }
+            EditorGUILayout.EndVertical();
+            guidedTutorial.Draw("Rows");
+            guidedTutorial.Draw("Bulk");
+            guidedTutorial.Draw("Remove");
+
             GUILayout.Space(3);
+
+            // ── 진행 바 ──
+            if (isImporting && totalCount > 0)
+            {
+                Rect barBg = GUILayoutUtility.GetRect(0f, 5f, GUILayout.ExpandWidth(true));
+                EditorGUI.DrawRect(barBg, new Color(0.15f, 0.15f, 0.15f));
+                float ratio = (float)doneCount / totalCount;
+                EditorGUI.DrawRect(new Rect(barBg.x, barBg.y, barBg.width * ratio, barBg.height), ColMint);
+                GUILayout.Space(3);
+            }
+
+            // ── 상태 메시지 ──
+            if (isImporting)
+                statusMessage = $"{UI_TEXT[9]}  ({doneCount} / {totalCount})";
+
+            if (!string.IsNullOrEmpty(statusMessage))
+                EditorGUILayout.HelpBox(statusMessage, MessageType.Info);
+            guidedTutorial.Anchor("Progress", GUILayoutUtility.GetLastRect());
+
+            GUILayout.FlexibleSpace();
+
+            // ── 임포트 버튼 ──
+            EditorGUI.BeginDisabledGroup(selCount == 0 || isImporting);
+            var prevBgBtn = GUI.backgroundColor;
+            GUI.backgroundColor = (!isImporting && selCount > 0) ? ColMint : Color.gray;
+            string btnLabel = isImporting
+                ? $"⏳  {doneCount} / {totalCount}"
+                : $"{UI_TEXT[10]}  ({selCount})";
+            if (DiNeEditorUI.Button(btnLabel))
+                StartImport();
+            guidedTutorial.Anchor("Import", GUILayoutUtility.GetLastRect());
+            GUI.backgroundColor = prevBgBtn;
+            EditorGUI.EndDisabledGroup();
+            guidedTutorial.Draw("Import");
+            if (string.IsNullOrEmpty(statusMessage)) guidedTutorial.Anchor("Progress", GUILayoutUtility.GetLastRect());
+            guidedTutorial.Draw("Progress");
+
+            // 백그라운드 진행 중에는 창이 스스로 갱신되도록 한다.
+            if (isImporting) Repaint();
         }
-
-        // ── 상태 메시지 ──
-        if (isImporting)
-            statusMessage = $"{UI_TEXT[9]}  ({doneCount} / {totalCount})";
-
-        if (!string.IsNullOrEmpty(statusMessage))
-            EditorGUILayout.HelpBox(statusMessage, MessageType.Info);
-        guidedTutorial.Anchor("Progress", GUILayoutUtility.GetLastRect());
-
-        GUILayout.FlexibleSpace();
-
-        // ── 임포트 버튼 ──
-        EditorGUI.BeginDisabledGroup(selCount == 0 || isImporting);
-        var prevBgBtn = GUI.backgroundColor;
-        GUI.backgroundColor = (!isImporting && selCount > 0) ? ColMint : Color.gray;
-        string btnLabel = isImporting
-            ? $"⏳  {doneCount} / {totalCount}"
-            : $"{UI_TEXT[10]}  ({selCount})";
-        if (GUILayout.Button(btnLabel, new GUIStyle(GUI.skin.button)
-            { fontSize = 13, fontStyle = FontStyle.Bold,
-              normal = { textColor = Color.white }, hover = { textColor = Color.white } },
-            GUILayout.Height(46)))
-            StartImport();
-        guidedTutorial.Anchor("Import", GUILayoutUtility.GetLastRect());
-        GUI.backgroundColor = prevBgBtn;
-        EditorGUI.EndDisabledGroup();
-        guidedTutorial.Draw("Import");
-        if (string.IsNullOrEmpty(statusMessage)) guidedTutorial.Anchor("Progress", GUILayoutUtility.GetLastRect());
-        guidedTutorial.Draw("Progress");
-
-        // 백그라운드 진행 중에는 창이 스스로 갱신되도록 한다.
-        if (isImporting) Repaint();
     }
 
     // ════════════════════════════════════════════════════════════
@@ -919,7 +887,8 @@ public partial class DiNePackagePatcher : EditorWindow
             progress,
             fresh.Select(r => Path.GetFileName(r.InnerPath)).ToArray(),
             fresh.Select(r => r.InnerPath).ToArray(),
-            flags, UI_TEXT[16], UI_TEXT[17], UI_TEXT[26], UI_TEXT[27]);
+            flags, UI_TEXT[16], UI_TEXT[17], UI_TEXT[26], UI_TEXT[27],
+            Path.GetFileName(path), index, total);
 
         var chosen = ok ? fresh.Where((r, i) => flags[i]).ToList() : new List<FoundPackage>();
         foreach (var skipped in fresh.Except(chosen)) DeleteCachedFile(skipped);
@@ -1698,16 +1667,6 @@ public partial class DiNePackagePatcher : EditorWindow
 
     private int DrawCustomToolbar(int selected, string[] options, float height)
     {
-        EditorGUILayout.BeginHorizontal();
-        int newSelected = selected;
-        for (int i = 0; i < options.Length; i++)
-        {
-            var prev = GUI.backgroundColor;
-            GUI.backgroundColor = (i == selected) ? ColMint : Color.gray;
-            if (GUILayout.Button(options[i], GUILayout.Height(height))) newSelected = i;
-            GUI.backgroundColor = prev;
-        }
-        EditorGUILayout.EndHorizontal();
-        return newSelected;
+        return DiNeEditorUI.DrawToolbar(selected, options, height);
     }
 }

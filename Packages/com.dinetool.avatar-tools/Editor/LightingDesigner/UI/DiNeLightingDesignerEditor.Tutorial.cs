@@ -270,8 +270,6 @@ public sealed partial class DiNeLightingDesignerPresetEditor
 {
     private DiNeGuidedTutorial presetTutorial;
     private DiNeTutorialStep[] presetTutorialSteps;
-    private Texture2D presetBrandIcon;
-    private GUIStyle presetTitleStyle, presetDescriptionStyle, presetSelectedStyle, presetNormalStyle;
 
     private void EnsurePresetTutorial()
     {
@@ -291,43 +289,10 @@ public sealed partial class DiNeLightingDesignerPresetEditor
 
     private void DrawPresetHeader()
     {
-        if (presetTitleStyle == null)
-        {
-            presetBrandIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
-            presetTitleStyle = new GUIStyle(EditorStyles.label)
-            { font = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf"), fontSize = 36, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            presetDescriptionStyle = new GUIStyle(EditorStyles.wordWrappedLabel)
-            { fontSize = 12, alignment = TextAnchor.MiddleCenter, normal = { textColor = new Color(.8f, .8f, .8f) } };
-            presetSelectedStyle = new GUIStyle(GUI.skin.button) { fontStyle = FontStyle.Bold, normal = { textColor = Color.white } };
-            presetNormalStyle = new GUIStyle(GUI.skin.button) { normal = { textColor = new Color(.8f, .8f, .8f) } };
-        }
-        Color previous = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(.9f, .9f, .9f);
-        using (new EditorGUILayout.VerticalScope("box"))
-        {
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                GUILayout.FlexibleSpace();
-                GUILayout.Label(presetBrandIcon, GUILayout.Width(72f), GUILayout.Height(72f));
-                GUILayout.Space(6f);
-                GUILayout.Label("Lighting Preset", presetTitleStyle, GUILayout.Height(72f));
-                GUILayout.FlexibleSpace();
-            }
-            GUILayout.Label(DiNeLightingLocalization.T("저장된 라이팅 설정을 확인합니다.", "Inspect saved lighting settings.", "保存済みライティング設定を確認します。"), presetDescriptionStyle);
-        }
-        GUI.backgroundColor = previous;
+        DiNeEditorUI.DrawHeader("Lighting Preset", DiNeLightingLocalization.T(
+            "저장된 라이팅 설정을 확인합니다.", "Inspect saved lighting settings.", "保存済みライティング設定を確認します。"));
         GUILayout.Space(5f);
-        int selected = (int)DiNeLightingLocalization.CurrentLanguage;
-        using (new EditorGUILayout.HorizontalScope())
-        {
-            for (int i = 0; i < DiNeLightingLocalization.LanguageButtonLabels.Length; i++)
-            {
-                GUI.backgroundColor = selected == i ? new Color(.30f, .82f, .76f) : new Color(.5f, .5f, .5f);
-                if (GUILayout.Button(DiNeLightingLocalization.LanguageButtonLabels[i], selected == i ? presetSelectedStyle : presetNormalStyle, GUILayout.Height(35f)))
-                    DiNeLightingLocalization.CurrentLanguage = (DiNeLightingLanguage)i;
-                GUI.backgroundColor = previous;
-            }
-        }
+        DiNeEditorUI.DrawLanguageToolbar((int)DiNeLightingLocalization.CurrentLanguage);
         GUILayout.Space(15f);
     }
 }

@@ -11,16 +11,13 @@ public partial class DiNeOpticoreEditor : Editor
         Japanese,
     }
 
-    private static readonly Color ColAccent = new Color(0.30f, 0.82f, 0.76f);
+    private static Color ColAccent => DiNeEditorUI.Mint;
     private static readonly Color ColGood = new Color(0.22f, 0.70f, 0.36f);
     private static readonly Color ColWarn = new Color(0.90f, 0.66f, 0.20f);
-    private static readonly Color ColMuted = new Color(0.58f, 0.58f, 0.63f);
-    private static readonly Color ColLine = new Color(0.30f, 0.30f, 0.35f, 0.8f);
 
-    private Texture2D _windowIcon;
-    private Font _titleFont;
     private LanguagePreset _language = LanguagePreset.Korean;
 
+    private GUIStyle centeredCardTitleStyle, centeredCardValueStyle, statusBadgeStyle;
     private bool _showGeometry = true;
     private bool _showMaterials = true;
     private bool _showRig = true;
@@ -50,9 +47,6 @@ public partial class DiNeOpticoreEditor : Editor
 
     private void OnEnable()
     {
-        _windowIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
-        _titleFont = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
-
         _optimizeMeshes = serializedObject.FindProperty("_optimizeMeshes");
         _optimizeMaterials = serializedObject.FindProperty("_optimizeMaterials");
         _optimizeRigAndBones = serializedObject.FindProperty("_optimizeRigAndBones");
@@ -152,13 +146,10 @@ public partial class DiNeOpticoreEditor : Editor
                     "\u73FE\u5728\u306E\u81EA\u52D5\u30D1\u30B9: \u4F59\u5206\u306A\u30B9\u30ED\u30C3\u30C8\u6574\u7406\u3001\u7A7A / \u7121\u52B9\u306A\u30B5\u30D6\u30E1\u30C3\u30B7\u30E5\u306E\u524A\u9664\u3001\u91CD\u8907\u30B9\u30ED\u30C3\u30C8\u306E\u7D71\u5408\u3001\u672A\u4F7F\u7528\u30DE\u30C6\u30EA\u30A2\u30EB\u30D7\u30ED\u30D1\u30C6\u30A3\u306E\u6574\u7406\u3092\u884C\u3044\u307E\u3059."),
                 true);
 
-            using (new BackgroundColorScope(ColAccent))
+            if (DiNeEditorUI.Button(L("Open Material Tool", "Material Tool \uC5F4\uAE30", "Material Tool \u3092\u958B\u304F")))
             {
-                if (GUILayout.Button(L("Open Material Tool", "Material Tool \uC5F4\uAE30", "Material Tool \u3092\u958B\u304F"), GUILayout.Height(28f)))
-                {
-                    DiNeMaterialTool.ShowWindow();
-                    tutorial.NotifyAction("material-tool");
-                }
+                DiNeMaterialTool.ShowWindow();
+                tutorial.NotifyAction("material-tool");
             }
             tutorial.Draw("material-tool", GUILayoutUtility.GetLastRect());
         }
@@ -277,51 +268,16 @@ public partial class DiNeOpticoreEditor : Editor
 
     private new void DrawHeader()
     {
-        EditorGUILayout.BeginVertical("box");
-        EditorGUILayout.BeginHorizontal();
-        GUILayout.FlexibleSpace();
-
-        if (_windowIcon != null)
-            GUILayout.Label(_windowIcon, GUILayout.Width(72f), GUILayout.Height(72f));
-
-        GUIStyle titleStyle = new GUIStyle(EditorStyles.label)
-        {
-            font = _titleFont,
-            fontSize = 36,
-            fontStyle = FontStyle.Bold,
-            alignment = TextAnchor.MiddleCenter,
-            normal = { textColor = Color.white }
-        };
-
-        GUILayout.Space(6f);
-        GUILayout.Label("Opticore", titleStyle, GUILayout.Height(72f));
-        GUILayout.FlexibleSpace();
-        EditorGUILayout.EndHorizontal();
-
-        GUILayout.Space(4f);
-        GUILayout.Label(
-            L(
-                "A component-style optimizer for VRChat avatars.",
-                "VRChat \uC544\uBC14\uD0C0\uB97C \uC704\uD55C \uCEF4\uD3EC\uB10C\uD2B8\uD615 \uCD5C\uC801\uD654 \uD234\uC785\uB2C8\uB2E4.",
-                "VRChat \u30A2\u30D0\u30BF\u30FC\u5411\u3051\u306E\u30B3\u30F3\u30DD\u30FC\u30CD\u30F3\u30C8\u578B\u6700\u9069\u5316\u30C4\u30FC\u30EB\u3067\u3059."),
-            new GUIStyle(EditorStyles.wordWrappedLabel)
-            {
-                alignment = TextAnchor.MiddleCenter,
-                fontSize = 12,
-                normal = { textColor = new Color(0.82f, 0.82f, 0.82f) }
-            });
-
-        EditorGUILayout.EndVertical();
+        DiNeEditorUI.DrawHeader("Opticore", L(
+            "A component-style optimizer for VRChat avatars.",
+            "VRChat \uC544\uBC14\uD0C0\uB97C \uC704\uD55C \uCEF4\uD3EC\uB10C\uD2B8\uD615 \uCD5C\uC801\uD654 \uD234\uC785\uB2C8\uB2E4.",
+            "VRChat \u30A2\u30D0\u30BF\u30FC\u5411\u3051\u306E\u30B3\u30F3\u30DD\u30FC\u30CD\u30F3\u30C8\u578B\u6700\u9069\u5316\u30C4\u30FC\u30EB\u3067\u3059."));
     }
 
     private void DrawNDMFRequiredCard()
     {
-        EditorGUILayout.BeginVertical("box");
-        GUILayout.Label(L("NDMF Required", "NDMF 필요", "NDMF が必要です"), new GUIStyle(EditorStyles.boldLabel)
-        {
-            fontSize = 13,
-            normal = { textColor = ColWarn }
-        });
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
+        GUILayout.Label(L("NDMF Required", "NDMF 필요", "NDMF が必要です"), EditorStyles.boldLabel);
 
         GUILayout.Space(4f);
         EditorGUILayout.HelpBox(
@@ -337,33 +293,19 @@ public partial class DiNeOpticoreEditor : Editor
                 "If you install Di Ne Tool through VCC / VPM, NDMF is usually pulled in automatically. Manual package installs may require adding it yourself.",
                 "VCC / VPM\uC73C\uB85C Di Ne Tool\uC744 \uC124\uCE58\uD558\uBA74 \uBCF4\uD1B5 NDMF\uAC00 \uD568\uAED8 \uB4E4\uC5B4\uC635\uB2C8\uB2E4. \uC218\uB3D9 \uD328\uD0A4\uC9C0 \uC124\uCE58\uB294 \uBCC4\uB3C4 \uCD94\uAC00\uAC00 \uD544\uC694\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
                 "VCC / VPM \u3067 Di Ne Tool \u3092\u5C0E\u5165\u3059\u308B\u3068\u3001\u901A\u5E38\u306F NDMF \u3082\u81EA\u52D5\u3067\u5C0E\u5165\u3055\u308C\u307E\u3059\u3002\u624B\u52D5\u3067\u30D1\u30C3\u30B1\u30FC\u30B8\u3092\u5165\u308C\u305F\u5834\u5408\u306F\u3001\u5225\u9014\u8FFD\u52A0\u304C\u5FC5\u8981\u306A\u3053\u3068\u304C\u3042\u308A\u307E\u3059."),
-            new GUIStyle(EditorStyles.wordWrappedLabel)
-            {
-                fontSize = 10,
-                normal = { textColor = new Color(0.86f, 0.86f, 0.90f) }
-            });
+            EditorStyles.wordWrappedLabel);
         EditorGUILayout.EndVertical();
     }
 
     private void DrawLanguageBar()
     {
-        int current = (int)_language;
-        int next = DrawToolbar(current, new[] { "English", "\uD55C\uAD6D\uC5B4", "\u65E5\u672C\u8A9E" });
-        if (next == current)
-            return;
-
-        _language = (LanguagePreset)next;
-        EditorPrefs.SetInt("DiNeLang", next);
+        _language = (LanguagePreset)DiNeEditorUI.DrawLanguageToolbar((int)_language);
     }
 
     private void DrawOverviewCard()
     {
-        EditorGUILayout.BeginVertical("box");
-        GUILayout.Label(L("Overview", "\uAC1C\uC694", "\u6982\u8981"), new GUIStyle(EditorStyles.boldLabel)
-        {
-            fontSize = 12,
-            normal = { textColor = ColAccent }
-        });
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
+        GUILayout.Label(L("Overview", "\uAC1C\uC694", "\u6982\u8981"), EditorStyles.boldLabel);
 
         GUILayout.Space(3f);
         EditorGUILayout.BeginHorizontal();
@@ -384,21 +326,17 @@ public partial class DiNeOpticoreEditor : Editor
                 "Current automatic coverage: blendShape freeze, zero-sized polygon cleanup, skinned mesh merge with bone remapping, material slot and submesh cleanup, unused material property cleanup, rig cleanup, PhysBone reference cleanup, PhysBone collider dedupe, PhysBone isAnimated cleanup, conservative endpointPosition replacement, missing-script cleanup, and hierarchy cleanup. Animator optimizer is intentionally excluded from this port.",
                 "\uD604\uC7AC \uC790\uB3D9 \uC801\uC6A9 \uBC94\uC704: BlendShape \uD504\uB9AC\uC988, \uC81C\uB85C \uC0AC\uC774\uC988 \uD3F4\uB9AC\uACE4 \uC815\uB9AC, \uBCF4\uC218\uC801 Skinned Mesh \uBCD1\uD569, \uBA38\uD2F0\uB9AC\uC5BC \uC2AC\uB86F / \uC11C\uBE0C\uBA54\uC26C \uC815\uB9AC, \uBBF8\uC0AC\uC6A9 \uBA38\uD2F0\uB9AC\uC5BC \uD504\uB85C\uD37C\uD2F0 \uC815\uB9AC, \uB9AC\uADF8 \uC815\uB9AC, PhysBone \uCC38\uC870 \uC815\uB9AC, PhysBone Collider \uC911\uBCF5 \uD1B5\uD569, PhysBone isAnimated \uC815\uB9AC, \uBCF4\uC218\uC801 endpointPosition \uB300\uCCB4, missing script \uC815\uB9AC, \uACC4\uCE35 \uC815\uB9AC. Animator \uCD5C\uC801\uD654\uB294 \uC758\uB3C4\uC801\uC73C\uB85C \uC774 \uC774\uC2DD \uBC94\uC704\uC5D0\uC11C \uC81C\uC678\uD588\uC2B5\uB2C8\uB2E4.",
                 "\u73FE\u5728\u306E\u81EA\u52D5\u9069\u7528\u7BC4\u56F2: BlendShape \u306E\u51CD\u7D50\u3001\u30BC\u30ED\u30B5\u30A4\u30BA\u30DD\u30EA\u30B4\u30F3\u6574\u7406\u3001\u4FDD\u5B88\u7684\u306A Skinned Mesh \u7D50\u5408\u3001\u30DE\u30C6\u30EA\u30A2\u30EB\u30B9\u30ED\u30C3\u30C8 / \u30B5\u30D6\u30E1\u30C3\u30B7\u30E5\u6574\u7406\u3001\u672A\u4F7F\u7528\u30DE\u30C6\u30EA\u30A2\u30EB\u30D7\u30ED\u30D1\u30C6\u30A3\u6574\u7406\u3001\u30EA\u30B0\u6574\u7406\u3001PhysBone \u53C2\u7167\u6574\u7406\u3001PhysBone Collider \u306E\u91CD\u8907\u7D71\u5408\u3001PhysBone isAnimated \u6574\u7406\u3001\u4FDD\u5B88\u7684\u306A endpointPosition \u7F6E\u63DB\u3001missing script \u6574\u7406\u3001\u968E\u5C64\u6574\u7406\u3002Animator \u6700\u9069\u5316\u306F\u610F\u56F3\u7684\u306B\u3053\u306E\u79FB\u690D\u7BC4\u56F2\u304B\u3089\u5916\u3057\u3066\u3044\u307E\u3059."),
-            new GUIStyle(EditorStyles.wordWrappedMiniLabel)
-            {
-                fontSize = 10,
-                normal = { textColor = ColMuted }
-            });
+            EditorStyles.wordWrappedMiniLabel);
 
         EditorGUILayout.EndVertical();
     }
 
     private void DrawModuleCard(SerializedProperty property, string title, string description, string expectedEffect, bool livePreviewReady)
     {
-        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         EditorGUILayout.BeginHorizontal();
         EditorGUI.BeginChangeCheck();
-        property.boolValue = EditorGUILayout.ToggleLeft(title, property.boolValue, new GUIStyle(EditorStyles.boldLabel) { fontSize = 12 });
+        property.boolValue = EditorGUILayout.ToggleLeft(title, property.boolValue, EditorStyles.boldLabel);
         if (EditorGUI.EndChangeCheck()) { tutorial.NotifyAction(property.name); tutorial.NotifyAction("modules"); }
         tutorial.Anchor(property.name, GUILayoutUtility.GetLastRect());
         if (property == _optimizeMeshes) tutorial.Anchor("modules", GUILayoutUtility.GetLastRect());
@@ -411,74 +349,53 @@ public partial class DiNeOpticoreEditor : Editor
         tutorial.Draw(property.name);
         if (property == _optimizeMeshes) tutorial.Draw("modules");
 
-        GUILayout.Label(description, new GUIStyle(EditorStyles.wordWrappedLabel)
-        {
-            fontSize = 10,
-            normal = { textColor = new Color(0.86f, 0.86f, 0.90f) }
-        });
+        GUILayout.Label(description, EditorStyles.wordWrappedLabel);
 
         GUILayout.Space(3f);
         DrawInfoRow(L("Expected effect", "\uC608\uC0C1 \uD6A8\uACFC", "\u671F\u5F85\u529F\u679C"), expectedEffect);
         EditorGUILayout.EndVertical();
+        GUILayout.Space(DiNeEditorUI.CardSpacing);
     }
 
     private bool DrawSectionHeader(bool expanded, string title, string subtitle)
     {
-        EditorGUILayout.BeginVertical("box");
-        expanded = EditorGUILayout.Foldout(expanded, title, true, new GUIStyle(EditorStyles.foldout)
-        {
-            fontStyle = FontStyle.Bold,
-            fontSize = 12,
-        });
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
+        expanded = EditorGUILayout.Foldout(expanded, title, true, EditorStyles.foldoutHeader);
         tutorialSectionRect = GUILayoutUtility.GetLastRect();
-        GUILayout.Label(subtitle, new GUIStyle(EditorStyles.wordWrappedMiniLabel)
-        {
-            fontSize = 10,
-            normal = { textColor = ColMuted }
-        });
+        GUILayout.Label(subtitle, EditorStyles.wordWrappedMiniLabel);
         EditorGUILayout.EndVertical();
+        GUILayout.Space(DiNeEditorUI.CardSpacing);
         return expanded;
     }
 
     private void DrawInfoRow(string label, string value)
     {
         EditorGUILayout.BeginHorizontal();
-        GUILayout.Label(label, new GUIStyle(EditorStyles.miniBoldLabel)
-        {
-            normal = { textColor = ColAccent }
-        }, GUILayout.Width(110f));
-        GUILayout.Label(value, new GUIStyle(EditorStyles.wordWrappedMiniLabel)
-        {
-            fontSize = 10,
-            normal = { textColor = new Color(0.82f, 0.82f, 0.86f) }
-        });
+        GUILayout.Label(label, EditorStyles.miniBoldLabel, GUILayout.Width(110f));
+        GUILayout.Label(value, EditorStyles.wordWrappedMiniLabel);
         EditorGUILayout.EndHorizontal();
     }
 
     private void DrawMiniCard(string title, string value, Color accent)
     {
-        EditorGUILayout.BeginVertical("box", GUILayout.MinWidth(90f));
-        GUILayout.Label(title, new GUIStyle(EditorStyles.miniBoldLabel)
+        if (centeredCardTitleStyle == null)
+            centeredCardTitleStyle = new GUIStyle(EditorStyles.miniBoldLabel) { alignment = TextAnchor.MiddleCenter };
+        if (centeredCardValueStyle == null)
+            centeredCardValueStyle = new GUIStyle(EditorStyles.boldLabel) { alignment = TextAnchor.MiddleCenter };
+        centeredCardTitleStyle.normal.textColor = accent;
+        using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle, GUILayout.MinWidth(90f)))
         {
-            alignment = TextAnchor.MiddleCenter,
-            normal = { textColor = accent }
-        });
-        GUILayout.Label(value, new GUIStyle(EditorStyles.boldLabel)
-        {
-            alignment = TextAnchor.MiddleCenter,
-            fontSize = 13,
-            normal = { textColor = Color.white }
-        });
-        EditorGUILayout.EndVertical();
+            GUILayout.Label(title, centeredCardTitleStyle);
+            GUILayout.Label(value, centeredCardValueStyle);
+        }
     }
 
     private void DrawStatusBadge(string text, Color color)
     {
-        GUILayout.Label(text, new GUIStyle(EditorStyles.miniBoldLabel)
-        {
-            alignment = TextAnchor.MiddleRight,
-            normal = { textColor = color }
-        }, GUILayout.Width(40f));
+        if (statusBadgeStyle == null)
+            statusBadgeStyle = new GUIStyle(EditorStyles.miniBoldLabel) { alignment = TextAnchor.MiddleRight };
+        statusBadgeStyle.normal.textColor = color;
+        GUILayout.Label(text, statusBadgeStyle, GUILayout.Width(40f));
     }
 
     private int CountEnabledModules()
@@ -495,46 +412,12 @@ public partial class DiNeOpticoreEditor : Editor
 
     private int DrawToolbar(int selected, string[] options)
     {
-        EditorGUILayout.BeginHorizontal();
-        int next = selected;
-        for (int i = 0; i < options.Length; i++)
-        {
-            Color previous = GUI.backgroundColor;
-            GUI.backgroundColor = i == selected ? ColAccent : new Color(0.50f, 0.50f, 0.50f, 1f);
-            GUIStyle style = new GUIStyle(GUI.skin.button)
-            {
-                fontStyle = i == selected ? FontStyle.Bold : FontStyle.Normal,
-                fontSize = 12,
-                normal = { textColor = i == selected ? Color.white : new Color(0.82f, 0.82f, 0.82f) }
-            };
-            if (GUILayout.Button(options[i], style, GUILayout.Height(35f)))
-                next = i;
-            GUI.backgroundColor = previous;
-        }
-        EditorGUILayout.EndHorizontal();
-        return next;
+        return DiNeEditorUI.DrawToolbar(selected, options);
     }
 
     private static void DrawHorizontalLine()
     {
-        Rect rect = EditorGUILayout.GetControlRect(false, 1f);
-        EditorGUI.DrawRect(rect, ColLine);
-        GUILayout.Space(4f);
+        GUILayout.Space(DiNeEditorUI.CardSpacing);
     }
 
-    private readonly struct BackgroundColorScope : System.IDisposable
-    {
-        private readonly Color _previous;
-
-        public BackgroundColorScope(Color next)
-        {
-            _previous = GUI.backgroundColor;
-            GUI.backgroundColor = next;
-        }
-
-        public void Dispose()
-        {
-            GUI.backgroundColor = _previous;
-        }
-    }
 }

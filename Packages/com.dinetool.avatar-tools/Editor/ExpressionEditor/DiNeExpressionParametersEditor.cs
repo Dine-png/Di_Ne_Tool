@@ -66,7 +66,6 @@ namespace DiNeTool.ExpressionEditor
                 restoreListFocus = false;
             }
             HandleKeyboard();
-            // The requested compact SDK+ arrangement intentionally omits the large tool identity block.
             // Horizontal scrolling preserves its single-row controls in narrow Inspector panels.
             if (EditorGUIUtility.currentViewWidth < TableMinimumWidth + 32)
             {
@@ -80,7 +79,7 @@ namespace DiNeTool.ExpressionEditor
             else parameterList.DoLayoutList();
 
             if (HasCleanupCandidates())
-                using (new EditorGUILayout.HorizontalScope(EditorStyles.helpBox))
+                using (new EditorGUILayout.HorizontalScope(DiNeEditorUI.CardStyle))
                 {
                     GUILayout.Label(C("Cleanup invalid, blank and duplicate parameters",
                         "유효하지 않은 항목, 빈 이름과 중복 파라미터 정리", "無効・空の名前・重複パラメータを整理"), GUILayout.ExpandWidth(true));
@@ -88,7 +87,7 @@ namespace DiNeTool.ExpressionEditor
                         RunGuiAction(CleanupParameters);
                 }
 
-            using (new EditorGUILayout.HorizontalScope(EditorStyles.helpBox))
+            using (new EditorGUILayout.HorizontalScope(DiNeEditorUI.CardStyle))
             {
                 EditorGUI.BeginChangeCheck();
                 var source = (VRCExpressionParameters)EditorGUILayout.ObjectField(C("Merge Parameters", "파라미터 병합", "パラメータを統合",
@@ -299,7 +298,7 @@ namespace DiNeTool.ExpressionEditor
                 if (synced != null && !synced.boolValue) continue;
                 cost += type != null && type.intValue == (int)VRCExpressionParameters.ValueType.Bool ? 1 : 8;
             }
-            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
             {
                 GUILayout.Label(T("Total Memory", "전체 메모리", "合計メモリ"), centered);
                 using (new EditorGUILayout.HorizontalScope())

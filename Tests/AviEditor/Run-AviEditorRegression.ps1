@@ -19,7 +19,7 @@ New-Item -ItemType Directory -Force -Path $scripts, $packages, $settings | Out-N
 # Compile the actual window and supporting implementation in an isolated project.
 Get-ChildItem -LiteralPath (Join-Path $PackageSource 'Editor/AviEditor') -Filter '*.cs' -File |
     ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $scripts -Force }
-foreach ($relative in @('Editor/Core/DiNePresetAssetSelector.cs', 'Editor/Core/DiNeAviHeadPreview.cs',
+foreach ($relative in @('Editor/Core/DiNeEditorUI.cs', 'Editor/Core/DiNePresetAssetSelector.cs', 'Editor/Core/DiNeAviHeadPreview.cs',
     'Editor/Core/DiNeAvatarHeadFraming.cs', 'Editor/Core/DiNeGuidedTutorial.cs',
     'Editor/Core/DiNeTutorialBubble.cs', 'Runtime/DiNePackageAssets.cs')) {
     Copy-Item -LiteralPath (Join-Path $PackageSource $relative) -Destination $scripts -Force

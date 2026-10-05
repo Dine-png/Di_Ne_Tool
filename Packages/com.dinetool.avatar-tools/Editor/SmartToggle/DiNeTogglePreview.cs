@@ -15,7 +15,6 @@ public static class DiNeTogglePreview
     private static Editor activeEditor;
     private static int activeSlot = -1;
     private static bool previewOn;
-    private static GUIStyle selectedButtonStyle;
 
     static DiNeTogglePreview()
     {
@@ -100,18 +99,13 @@ public static class DiNeTogglePreview
     public static void DrawStateControls(Editor editor, int slot)
     {
         if (!IsActive(editor, slot)) return;
-        if (selectedButtonStyle == null)
-            selectedButtonStyle = new GUIStyle(GUI.skin.button) { fontStyle = FontStyle.Bold, normal = { textColor = Color.white } };
         int language = Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", 0), 0, 2);
         using (new EditorGUILayout.HorizontalScope())
         {
             GUILayout.Label(language == 1 ? "미리보기 상태" : language == 2 ? "プレビュー状態" : "Preview State", EditorStyles.boldLabel);
-            Color previous = GUI.backgroundColor;
-            GUI.backgroundColor = previewOn ? new Color(0.30f, 0.82f, 0.76f) : previous;
-            if (GUILayout.Button("ON", previewOn ? selectedButtonStyle : GUI.skin.button, GUILayout.Height(24)) && !previewOn) SetState(true);
-            GUI.backgroundColor = !previewOn ? new Color(0.30f, 0.82f, 0.76f) : previous;
-            if (GUILayout.Button("OFF", !previewOn ? selectedButtonStyle : GUI.skin.button, GUILayout.Height(24)) && previewOn) SetState(false);
-            GUI.backgroundColor = previous;
+            int selected = previewOn ? 0 : 1;
+            int next = DiNeEditorUI.DrawToolbar(selected, new[] { "ON", "OFF" }, DiNeEditorUI.CompactButtonHeight);
+            if (next != selected) SetState(next == 0);
         }
     }
 }

@@ -7,6 +7,10 @@ This document is the mandatory visual and interaction standard for Di Ne Tool's 
 
 When the two references differ, prefer the Lighting Designer implementation for newly written inspectors and the Multi Dresser implementation for large editor windows.
 
+The shared implementation is `Editor/Core/DiNeEditorUI.cs`. All tool windows, major custom inspectors, and auxiliary tool windows must use its `DrawHeader`, `DrawLanguageToolbar`, `DrawToolbar`, `Button`, and `CardStyle` helpers for these shared elements. Keep tool-specific wrappers only for localization, tutorial anchors, or workflow state. Do not duplicate the shared header styles, selected-tab textures, or language-button rendering in individual tools.
+
+`DrawHeader` and `DrawLanguageToolbar` do not add the surrounding language spacing: callers add 5 px between them and 15 px after the language toolbar. Cards use `DiNeEditorUI.CardStyle`, with `CardSpacing` between major sections. Functional previews (radial menus, animation grids, texture canvases) retain the styling that communicates their content and state.
+
 ## Scope
 
 Apply this standard whenever:

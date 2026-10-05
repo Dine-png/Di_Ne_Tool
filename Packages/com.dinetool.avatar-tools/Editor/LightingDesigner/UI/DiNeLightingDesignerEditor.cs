@@ -9,7 +9,6 @@ using VRC.SDK3.Avatars.ScriptableObjects;
 [CustomEditor(typeof(DiNeLightingDesigner))]
 public sealed partial class DiNeLightingDesignerEditor : Editor
 {
-    private static readonly Color MintActive = new Color(0.30f, 0.82f, 0.76f);
     private const string SettingsPresetPreferenceKey = "DiNe.LightingDesigner.SettingsPreset";
 
     // Light Limit Changer의 기본 흐름과 같은 범위: 밝기 + 자주 쓰는 추가 제어만 먼저 보여준다.
@@ -37,8 +36,6 @@ public sealed partial class DiNeLightingDesignerEditor : Editor
     private DiNeLightingDesignerPreset _settingsPreset;
     private string[] _settingsPresetPaths = new string[0];
     private int _settingsPresetIndex = -1;
-    private Texture2D _windowIcon;
-    private Font _titleFont;
     private int _settingsMode;
     private bool _showExcludes;
     private bool _showMenuPresets;
@@ -59,8 +56,6 @@ public sealed partial class DiNeLightingDesignerEditor : Editor
     private void OnEnable()
     {
         _designer = (DiNeLightingDesigner)target;
-        _windowIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
-        _titleFont = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
         _designer.EnsureDefaults();
         RefreshSettingsPresetList();
         EditorApplication.projectChanged += OnProjectChanged;
@@ -95,28 +90,24 @@ public sealed partial class DiNeLightingDesignerEditor : Editor
 
         DrawDesignerHeader();
         GUILayout.Space(5f);
-        int languageIndex = DrawCustomToolbar(
-            (int)CurrentLanguage,
-            DiNeLightingLocalization.LanguageButtonLabels,
-            35f);
-        CurrentLanguage = (DiNeLightingLanguage)languageIndex;
+        DiNeEditorUI.DrawLanguageToolbar((int)CurrentLanguage);
         GUILayout.Space(15f);
         DrawTutorialControls();
 
         DrawSettingsPreset();
-        EditorGUILayout.Space(8f);
+        EditorGUILayout.Space(DiNeEditorUI.CardSpacing);
         DrawModeTabs();
         if (tutorial.IsActive && tutorialCourse < 5 && _settingsMode != (tutorialCourse < 2 ? 0 : 1)
             && tutorial.CurrentStepId != "avatar" && tutorial.CurrentStepId != "targets" && tutorial.CurrentStepId != "automatic")
             tutorial.Draw(tutorial.CurrentStepId, GUILayoutUtility.GetLastRect());
-        EditorGUILayout.Space(8f);
+        EditorGUILayout.Space(DiNeEditorUI.CardSpacing);
 
         if (_settingsMode == 0)
             DrawSimpleSettings();
         else
             DrawAdvancedSettings();
 
-        EditorGUILayout.Space(8f);
+        EditorGUILayout.Space(DiNeEditorUI.CardSpacing);
         DrawStatus();
 
         if (serializedObject.ApplyModifiedProperties())
@@ -128,72 +119,20 @@ public sealed partial class DiNeLightingDesignerEditor : Editor
 
     private void DrawDesignerHeader()
     {
-        GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
-        EditorGUILayout.BeginVertical("box");
-        EditorGUILayout.BeginHorizontal();
-        GUILayout.FlexibleSpace();
-        GUIStyle titleStyle = new GUIStyle(EditorStyles.label)
-        {
-            font = _titleFont,
-            alignment = TextAnchor.MiddleCenter,
-            fontStyle = FontStyle.Bold,
-            fontSize = 36
-        };
-        float iconSize = 72f;
-        GUILayout.Label(_windowIcon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
-        GUILayout.Space(6f);
-        GUILayout.Label("Lighting Designer", titleStyle, GUILayout.Height(iconSize));
-        GUILayout.FlexibleSpace();
-        EditorGUILayout.EndHorizontal();
-
-        GUILayout.Space(4f);
-        string description = T(
+        DiNeEditorUI.DrawHeader("Lighting Designer", T(
             "lilToon과 Poiyomi 아바타의 라이트 제한과 색감을 메뉴에서 손쉽게 조절합니다.",
             "Adjust lilToon and Poiyomi avatar light limits and colors from the VRChat menu.",
-            "lilToonとPoiyomiアバターのライト制限と色味をVRChatメニューから調整します。");
-        GUILayout.Label(description, new GUIStyle(EditorStyles.wordWrappedLabel)
-        {
-            alignment = TextAnchor.MiddleCenter,
-            fontSize = 12,
-            normal = { textColor = new Color(0.8f, 0.8f, 0.8f) }
-        });
-
-        GUILayout.Space(5f);
-        EditorGUILayout.EndVertical();
+            "lilToonとPoiyomiアバターのライト制限と色味をVRChatメニューから調整します。"));
     }
 
     private static int DrawCustomToolbar(int selected, string[] options, float height)
     {
-        EditorGUILayout.BeginHorizontal();
-        int newSelected = selected;
-        for (int i = 0; i < options.Length; i++)
-        {
-            var previousBackground = GUI.backgroundColor;
-            GUI.backgroundColor = i == selected
-                ? new Color(0.30f, 0.82f, 0.76f)
-                : new Color(0.5f, 0.5f, 0.5f, 1f);
-            GUIStyle style = new GUIStyle(GUI.skin.button)
-            {
-                fontStyle = i == selected ? FontStyle.Bold : FontStyle.Normal,
-                fontSize = 12,
-                normal =
-                {
-                    textColor = i == selected
-                        ? Color.white
-                        : new Color(0.8f, 0.8f, 0.8f)
-                }
-            };
-            if (GUILayout.Button(options[i], style, GUILayout.Height(height)))
-                newSelected = i;
-            GUI.backgroundColor = previousBackground;
-        }
-        EditorGUILayout.EndHorizontal();
-        return newSelected;
+        return DiNeEditorUI.DrawToolbar(selected, options, height);
     }
 
     private void DrawSettingsPreset()
     {
-        using (new EditorGUILayout.VerticalScope("GroupBox"))
+        using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
         {
             GUILayout.Label(T("설정 프리셋", "Settings Preset", "設定プリセット"), EditorStyles.boldLabel);
             int selected = DiNePresetAssetSelector.DrawPopup(
@@ -239,7 +178,7 @@ public sealed partial class DiNeLightingDesignerEditor : Editor
 
             if (GUILayout.Button(
                 T("＋ 새 프리셋으로 저장", "＋ Save as New Preset", "＋ 新規プリセットとして保存"),
-                GUILayout.Height(26f)))
+                GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
             {
                 SaveNewPreset();
                 tutorial.NotifyAction("settings-save");
@@ -265,7 +204,7 @@ public sealed partial class DiNeLightingDesignerEditor : Editor
 
     private void DrawSimpleSettings()
     {
-        using (new EditorGUILayout.VerticalScope("GroupBox"))
+        using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
         {
             GUILayout.Label(T("기본 동작", "General", "基本動作"), EditorStyles.boldLabel);
 
@@ -297,8 +236,8 @@ public sealed partial class DiNeLightingDesignerEditor : Editor
             }
         }
 
-        EditorGUILayout.Space(8f);
-        using (new EditorGUILayout.VerticalScope("GroupBox"))
+        EditorGUILayout.Space(DiNeEditorUI.CardSpacing);
+        using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
         {
             GUILayout.Label(T("조명 밝기", "Lighting Brightness", "ライティング明るさ"), EditorStyles.boldLabel);
             EditorGUILayout.LabelField(
@@ -312,8 +251,8 @@ public sealed partial class DiNeLightingDesignerEditor : Editor
             DrawControlCard(DiNeLightingControl.LightMin);
         }
 
-        EditorGUILayout.Space(8f);
-        using (new EditorGUILayout.VerticalScope("GroupBox"))
+        EditorGUILayout.Space(DiNeEditorUI.CardSpacing);
+        using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
         {
             GUILayout.Label(T("추가 제어", "Additional Controls", "追加制御"), EditorStyles.boldLabel);
             EditorGUILayout.LabelField(
@@ -333,7 +272,7 @@ public sealed partial class DiNeLightingDesignerEditor : Editor
 
     private void DrawAdvancedSettings()
     {
-        using (new EditorGUILayout.VerticalScope("GroupBox"))
+        using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
         {
             GUILayout.Label(T("심화 제어 항목", "Advanced Controls", "詳細制御項目"), EditorStyles.boldLabel);
             EditorGUILayout.LabelField(
@@ -350,11 +289,11 @@ public sealed partial class DiNeLightingDesignerEditor : Editor
             DrawTextureBakeNotice(AdvancedControls);
         }
 
-        EditorGUILayout.Space(8f);
+        EditorGUILayout.Space(DiNeEditorUI.CardSpacing);
         DrawTargetOptions();
-        EditorGUILayout.Space(8f);
+        EditorGUILayout.Space(DiNeEditorUI.CardSpacing);
         DrawMenuPresets();
-        EditorGUILayout.Space(8f);
+        EditorGUILayout.Space(DiNeEditorUI.CardSpacing);
         DrawGroups();
     }
 
@@ -365,7 +304,7 @@ public sealed partial class DiNeLightingDesignerEditor : Editor
         if (element == null || def == null) return;
 
         var enabled = element.FindPropertyRelative("enabled");
-        using (new EditorGUILayout.VerticalScope("GroupBox"))
+        using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
         {
             string displayName = DiNeLightingLocalization.ControlName(control);
             string tooltip = DiNeLightingLocalization.ControlTooltip(control);
@@ -503,7 +442,7 @@ public sealed partial class DiNeLightingDesignerEditor : Editor
 
     private void DrawTargetOptions()
     {
-        using (new EditorGUILayout.VerticalScope("GroupBox"))
+        using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
         {
             GUILayout.Label(T("대상", "Targets", "対象"), EditorStyles.boldLabel);
             TutorialProperty(
@@ -534,7 +473,7 @@ public sealed partial class DiNeLightingDesignerEditor : Editor
         var presetsProperty = serializedObject.FindProperty("presets");
         Rect fallbackRect = default;
 
-        using (new EditorGUILayout.VerticalScope("GroupBox"))
+        using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
         {
             using (new EditorGUILayout.HorizontalScope())
             {
@@ -595,7 +534,7 @@ public sealed partial class DiNeLightingDesignerEditor : Editor
             {
                 var element = presetsProperty.GetArrayElementAtIndex(i);
 
-                using (new EditorGUILayout.VerticalScope("GroupBox"))
+                using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
                 {
                     using (new EditorGUILayout.HorizontalScope())
                     {
@@ -680,7 +619,7 @@ public sealed partial class DiNeLightingDesignerEditor : Editor
         var groupsProperty = serializedObject.FindProperty("groups");
         Rect fallbackRect = default;
 
-        using (new EditorGUILayout.VerticalScope("GroupBox"))
+        using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
         {
             using (new EditorGUILayout.HorizontalScope())
             {
@@ -730,7 +669,7 @@ public sealed partial class DiNeLightingDesignerEditor : Editor
             {
                 var element = groupsProperty.GetArrayElementAtIndex(i);
 
-                using (new EditorGUILayout.VerticalScope("GroupBox"))
+                using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
                 {
                     using (new EditorGUILayout.HorizontalScope())
                     {
@@ -802,7 +741,7 @@ public sealed partial class DiNeLightingDesignerEditor : Editor
 
     private void DrawStatus()
     {
-        using (new EditorGUILayout.VerticalScope("GroupBox"))
+        using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
         {
             GUILayout.Label(T("상태", "Status", "状態"), EditorStyles.boldLabel);
 
@@ -1035,11 +974,7 @@ public sealed partial class DiNeLightingDesignerEditor : Editor
 
     private static bool MintButton(string label, float height)
     {
-        Color previous = GUI.backgroundColor;
-        GUI.backgroundColor = MintActive;
-        bool clicked = GUILayout.Button(label, GUILayout.Height(height));
-        GUI.backgroundColor = previous;
-        return clicked;
+        return DiNeEditorUI.Button(label, height);
     }
 
 }
@@ -1062,9 +997,9 @@ public sealed partial class DiNeLightingDesignerPresetEditor : Editor
         DrawPresetHeader();
         presetTutorial.DrawControls();
 
-        EditorGUILayout.Space(8f);
+        EditorGUILayout.Space(DiNeEditorUI.CardSpacing);
         var preset = (DiNeLightingDesignerPreset)target;
-        using (new EditorGUILayout.VerticalScope("GroupBox"))
+        using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
         {
             GUILayout.Label(
                 DiNeLightingLocalization.T("저장된 설정", "Saved Settings", "保存済み設定"),

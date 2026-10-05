@@ -307,7 +307,7 @@ public partial class DiNeMultiSupporter
         try
         {
             GUI.enabled = true;
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
             TutorialExpanded = EditorGUILayout.Foldout(TutorialExpanded, new GUIContent(
                 Localized("Tutorial", "튜토리얼", "チュートリアル"),
                 Localized("Collapse or expand the instructions. Collapsing pauses guidance and keeps your current step.",
@@ -317,7 +317,7 @@ public partial class DiNeMultiSupporter
             if (!TutorialExpanded)
             {
                 EditorGUILayout.EndVertical();
-                GUILayout.Space(8);
+                GUILayout.Space(DiNeEditorUI.CardSpacing);
                 return;
             }
             if (tutorialActive)
@@ -330,18 +330,18 @@ public partial class DiNeMultiSupporter
             EditorGUILayout.BeginHorizontal();
             if (!tutorialActive)
             {
-                GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+                GUI.backgroundColor = DiNeEditorUI.Mint;
                 if (GUILayout.Button(new GUIContent(Localized("Start guided tutorial", "말풍선 튜토리얼 시작", "吹き出しチュートリアルを開始"),
-                        Localized("Build and preview a wardrobe using your current avatar.", "현재 아바타로 옷장을 구성하고 미리보는 방법을 안내합니다.", "現在のアバターで衣装メニューの設定とプレビューを学びます。")), GUILayout.Height(30)))
+                        Localized("Build and preview a wardrobe using your current avatar.", "현재 아바타로 옷장을 구성하고 미리보는 방법을 안내합니다.", "現在のアバターで衣装メニューの設定とプレビューを学びます。")), GUILayout.Height(DiNeEditorUI.ButtonHeight)))
                     EditorApplication.delayCall += () => { if (this != null && target != null && TutorialExpanded) StartTutorial(); };
             }
             else
             {
                 if (GUILayout.Button(new GUIContent(Localized("Restart", "처음부터", "最初から"),
-                        Localized("Return to the first explanation.", "첫 설명부터 다시 시작합니다.", "最初の説明に戻ります。")), GUILayout.Height(24)))
+                        Localized("Return to the first explanation.", "첫 설명부터 다시 시작합니다.", "最初の説明に戻ります。")), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
                     QueueTutorialStep(TutorialStep.Welcome);
                 if (GUILayout.Button(new GUIContent(Localized("End tutorial", "튜토리얼 종료", "終了"),
-                        Localized("End guidance and restore the current preview.", "안내를 종료하고 현재 미리보기를 복원합니다.", "案内を終了して現在のプレビューを元に戻します。")), GUILayout.Height(24)))
+                        Localized("End guidance and restore the current preview.", "안내를 종료하고 현재 미리보기를 복원합니다.", "案内を終了して現在のプレビューを元に戻します。")), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
                     EditorApplication.delayCall += () => { if (this != null && target != null && TutorialExpanded) StopTutorial(); };
             }
             EditorGUILayout.EndHorizontal();
@@ -349,7 +349,7 @@ public partial class DiNeMultiSupporter
             Rect anchor = GUILayoutUtility.GetLastRect();
             DrawTutorialBubble(TutorialStep.Welcome, anchor);
             DrawTutorialBubble(TutorialStep.Complete, anchor);
-            GUILayout.Space(8);
+            GUILayout.Space(DiNeEditorUI.CardSpacing);
         }
         finally { GUI.backgroundColor = previous; GUI.changed = previousChanged; GUI.enabled = previousEnabled; }
     }
@@ -415,7 +415,7 @@ public partial class DiNeMultiSupporter
         using (new EditorGUI.DisabledScope(EditorApplication.isPlayingOrWillChangePlaymode))
         {
             bool confirmed = GUILayout.Button(new GUIContent(Localized("Confirm category", "카테고리 확인", "カテゴリーを確認"),
-                    Localized("Confirm a nonempty, unique category name.", "비어 있지 않고 중복되지 않는 카테고리 이름을 확인합니다.", "空白でなく重複しないカテゴリー名を確認します。")), GUILayout.Height(24));
+                    Localized("Confirm a nonempty, unique category name.", "비어 있지 않고 중복되지 않는 카테고리 이름을 확인합니다.", "空白でなく重複しないカテゴリー名を確認します。")), GUILayout.Height(DiNeEditorUI.CompactButtonHeight));
             Rect anchor = GUILayoutUtility.GetLastRect();
             if (confirmed)
             {
@@ -434,7 +434,7 @@ public partial class DiNeMultiSupporter
             if (GUILayout.Button(new GUIContent(Localized("Use an all-OFF default", "모두 OFF인 기본 상태 만들기", "すべてOFFの初期状態を作成"),
                     Localized("Add an empty default slot, then drag the outfit that should create a menu button.",
                         "빈 기본 상태 칸을 만든 다음, 메뉴 버튼으로 사용할 의상을 드래그하세요.",
-                        "空の初期状態を作成してから、メニューボタン用の衣装をドラッグします。")), GUILayout.Height(24)))
+                        "空の初期状態を作成してから、メニューボタン用の衣装をドラッグします。")), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
             {
                 serializedObject.ApplyModifiedProperties();
                 Undo.RecordObject(gen, "Add Multi Dresser Default State");

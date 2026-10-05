@@ -12,10 +12,7 @@ public partial class DiNeShapeKeyFreezer : EditorWindow
     private float clipTime = 0.0f;
 
     private string[] UI_TEXT;
-    private Texture2D windowIcon;
     private Texture2D tabIcon;
-    private Font      titleFont;
-
     // Legacy tool menu intentionally hidden.
     public static void ShowWindow()
     {
@@ -26,9 +23,7 @@ public partial class DiNeShapeKeyFreezer : EditorWindow
 
     void OnEnable()
     {
-        windowIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
         tabIcon    = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe_Icon.png");
-        titleFont  = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
         titleContent = new GUIContent("ShapeKey", tabIcon);
         language = (LanguagePreset)Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", 0), 0, 2);
         SetLanguage(language);
@@ -59,58 +54,27 @@ public partial class DiNeShapeKeyFreezer : EditorWindow
     {
         var sharedLanguage = (LanguagePreset)Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", 0), 0, 2);
         if (language != sharedLanguage) { language = sharedLanguage; SetLanguage(language); }
-        GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
-
-        // ─── 타이틀 바 ───
-        EditorGUILayout.BeginVertical("box");
-        EditorGUILayout.BeginHorizontal();
-        GUILayout.FlexibleSpace();
-        GUIStyle titleStyle = new GUIStyle(EditorStyles.label)
-        {
-            font      = titleFont,
-            alignment = TextAnchor.MiddleCenter,
-            fontStyle = FontStyle.Bold,
-            fontSize  = 36,
-            normal    = new GUIStyleState() { textColor = Color.white }
-        };
-        float iconSize = 72f;
-        GUILayout.Label(windowIcon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
-        GUILayout.Space(6);
-        GUILayout.Label("ShapeKey Freezer", titleStyle, GUILayout.Height(iconSize));
-        GUILayout.FlexibleSpace();
-        EditorGUILayout.EndHorizontal();
-
-        GUILayout.Space(4);
-        string desc = "";
+        string desc;
         switch (language)
         {
             case LanguagePreset.Korean: desc = "애니메이션 클립의 쉐이프키 값을 고정시켜 저장합니다."; break;
             case LanguagePreset.Japanese: desc = "アニメーションクリップのシェイプキー値を固定して保存します。"; break;
             default: desc = "Freeze and save BlendShape (ShapeKey) values from an animation clip."; break;
         }
-        GUILayout.Label(desc, new GUIStyle(EditorStyles.wordWrappedLabel) 
-            { alignment = TextAnchor.MiddleCenter, fontSize = 12, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } });
-
-        GUILayout.Space(5);
-        EditorGUILayout.EndVertical();
-
-        GUILayout.Space(5);
-
-        // ─── 언어 선택 ───
+        DiNeEditorUI.DrawHeader("ShapeKey Freezer", desc);
+        GUILayout.Space(5f);
         int currentLangIndex = (int)language;
-        string[] langButtons = { "English", "한국어", "日本語" };
-        int newLangIndex = DrawCustomToolbar(currentLangIndex, langButtons, 35);
+        int newLangIndex = DiNeEditorUI.DrawLanguageToolbar(currentLangIndex);
         if (newLangIndex != currentLangIndex)
         {
             language = (LanguagePreset)newLangIndex;
-            EditorPrefs.SetInt("DiNeLang", newLangIndex);
             SetLanguage(language);
         }
-        GUILayout.Space(15);
+        GUILayout.Space(15f);
         tutorial.DrawControls();
 
         // ─── 오브젝트 / 클립 선택 ───
-        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         EditorGUILayout.LabelField(UI_TEXT[0], EditorStyles.boldLabel);
         GUILayout.Space(3);
         EditorGUI.BeginChangeCheck();
@@ -123,12 +87,12 @@ public partial class DiNeShapeKeyFreezer : EditorWindow
         tutorial.Draw("clip", GUILayoutUtility.GetLastRect());
         EditorGUILayout.EndVertical();
 
-        GUILayout.Space(5);
+        GUILayout.Space(DiNeEditorUI.CardSpacing);
 
         // ─── 슬라이더 + 버튼 ───
         EditorGUI.BeginDisabledGroup(targetObject == null || animationClip == null);
 
-        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         EditorGUILayout.LabelField(UI_TEXT[3], EditorStyles.boldLabel);
         GUILayout.Space(3);
 
@@ -155,11 +119,10 @@ public partial class DiNeShapeKeyFreezer : EditorWindow
 
         EditorGUILayout.EndVertical();
 
-        GUILayout.Space(5);
+        GUILayout.Space(DiNeEditorUI.CardSpacing);
 
         var prevBg = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
-        if (GUILayout.Button(UI_TEXT[4], new GUIStyle(GUI.skin.button) { fontStyle = FontStyle.Bold, normal = { textColor = Color.white } }, GUILayout.Height(38)))
+        if (DiNeEditorUI.Button(UI_TEXT[4]))
         {
             SampleBlendShapesOnly();
             Debug.Log($"[DiNe ShapeKey Freezer] {targetObject.name} — {UI_TEXT[5]}");
@@ -173,7 +136,7 @@ public partial class DiNeShapeKeyFreezer : EditorWindow
         tutorial.Draw("apply");
         tutorial.Draw("undo");
 
-        GUILayout.Space(5);
+        GUILayout.Space(DiNeEditorUI.CardSpacing);
 
         // ─── 안내 메시지 ───
         EditorGUILayout.HelpBox(UI_TEXT[6], MessageType.Info);
@@ -265,25 +228,7 @@ public partial class DiNeShapeKeyFreezer : EditorWindow
 
     private int DrawCustomToolbar(int selected, string[] options, float height)
     {
-        EditorGUILayout.BeginHorizontal();
-        int newSelected = selected;
-        for (int i = 0; i < options.Length; i++)
-        {
-            var prevBg = GUI.backgroundColor;
-            GUI.backgroundColor = (i == selected) ? new Color(0.30f, 0.82f, 0.76f) : new Color(0.5f, 0.5f, 0.5f, 1f);
-            GUIStyle style = new GUIStyle(GUI.skin.button) { 
-                fontStyle = (i == selected) ? FontStyle.Bold : FontStyle.Normal,
-                fontSize = 12,
-                normal = { textColor = (i == selected) ? Color.white : new Color(0.8f, 0.8f, 0.8f) }
-            };
-            if (GUILayout.Button(options[i], style, GUILayout.Height(height)))
-            {
-                newSelected = i;
-            }
-            GUI.backgroundColor = prevBg;
-        }
-        EditorGUILayout.EndHorizontal();
-        return newSelected;
+        return DiNeEditorUI.DrawToolbar(selected, options, height);
     }
 }
 #endif

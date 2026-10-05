@@ -21,7 +21,7 @@ namespace DiNeTool.AssetCleaner
     public partial class DiNeAssetCleanerWindow : EditorWindow
     {
         // ── DiNeTool 스타일 컬러 ─────────────────────────────────────────────────
-        private static readonly Color ColAccent  = new Color(0.30f, 0.82f, 0.76f);
+        private static readonly Color ColAccent  = DiNeEditorUI.Mint;
         private static readonly Color ColDanger  = new Color(0.60f, 0.25f, 0.25f);
         private static readonly Color ColWarn    = new Color(0.72f, 0.55f, 0.18f);
         private static readonly Color ColLine    = new Color(0.30f, 0.30f, 0.35f, 0.8f);
@@ -60,9 +60,7 @@ namespace DiNeTool.AssetCleaner
         private readonly List<string> _ignoreFolders = new List<string>(); // 보호 폴더 (이 안은 검사 제외)
         private bool _filterFoldout;
 
-        private Texture2D _windowIcon, _tabIcon;
-        private Font      _titleFont;
-
+        private Texture2D _tabIcon;
         // ── 씬 목록 ──────────────────────────────────────────────────────────────
         private class SceneItem { public string Path; public string Name; public bool Selected; }
         private readonly List<SceneItem> _scenes = new List<SceneItem>();
@@ -106,7 +104,7 @@ namespace DiNeTool.AssetCleaner
 
         // 캐시된 GUI 스타일 / 아이콘
         private GUIStyle _foldoutStyle, _folderStyle, _fileStyle, _metaStyle;
-        private GUIStyle _sectionStyle, _miniBtnStyle, _titleStyle, _descStyle, _bigBtnStyle;
+        private GUIStyle _sectionStyle, _bigBtnStyle;
         private Texture _sceneIcon, _folderIcon;
 
         [MenuItem("DiNe/EX/Asset Cleaner", false, 102)]
@@ -119,9 +117,7 @@ namespace DiNeTool.AssetCleaner
 
         private void OnEnable()
         {
-            _windowIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
             _tabIcon    = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe_Icon.png");
-            _titleFont  = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
             titleContent = new GUIContent("Cleaner", _tabIcon);
             wantsMouseMove = true; // 호버 프리뷰 갱신용
             LoadPrefs();
@@ -149,7 +145,7 @@ namespace DiNeTool.AssetCleaner
             DrawSceneSection();
             if (!tutorialScenesBefore.SequenceEqual(_scenes.Where(s => s.Selected).Select(s => s.Path))) guidedTutorial.NotifyAction("Scenes");
             guidedTutorial.Draw("Scenes");
-            GUILayout.Space(2);
+            GUILayout.Space(DiNeEditorUI.CardSpacing);
             DrawFilterSection();
             GUILayout.Space(4);
             DrawAnalyzeButton();
@@ -185,97 +181,68 @@ namespace DiNeTool.AssetCleaner
 
         private void DrawHeader()
         {
-            var prevBg = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
-            EditorGUILayout.BeginVertical("box");
-            GUI.backgroundColor = prevBg;
-
-            EditorGUILayout.BeginHorizontal();
-            GUILayout.FlexibleSpace();
-            const float iconSize = 72f;
-            if (_windowIcon != null)
-                GUILayout.Label(_windowIcon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
-            GUILayout.Space(6);
-            GUILayout.Label("Asset Cleaner", _titleStyle, GUILayout.Height(iconSize));
-            GUILayout.FlexibleSpace();
-            EditorGUILayout.EndHorizontal();
-
-            GUILayout.Space(4);
-            GUILayout.Label(T(DESC), _descStyle);
-            GUILayout.Space(5);
-            EditorGUILayout.EndVertical();
+            DiNeEditorUI.DrawHeader("Asset Cleaner", T(DESC));
         }
 
         private void DrawLangBar()
         {
-            int next = DrawCustomToolbar(L, new[] { "English", "한국어", "日本語" }, 35);
+            GUILayout.Space(5f);
+            int next = DiNeEditorUI.DrawLanguageToolbar(L);
             if (next != L) { _lang = (Lang)next; SavePrefs(); }
+            GUILayout.Space(15f);
         }
 
         private int DrawCustomToolbar(int selected, string[] options, float height)
         {
-            EditorGUILayout.BeginHorizontal();
-            int newSelected = selected;
-            for (int i = 0; i < options.Length; i++)
-            {
-                var prevBg = GUI.backgroundColor;
-                GUI.backgroundColor = (i == selected) ? ColAccent : new Color(0.5f, 0.5f, 0.5f, 1f);
-                var style = new GUIStyle(GUI.skin.button)
-                {
-                    fontStyle = (i == selected) ? FontStyle.Bold : FontStyle.Normal,
-                    fontSize = 12,
-                    normal = { textColor = (i == selected) ? Color.white : new Color(0.8f, 0.8f, 0.8f) }
-                };
-                if (GUILayout.Button(options[i], style, GUILayout.Height(height)))
-                    newSelected = i;
-                GUI.backgroundColor = prevBg;
-            }
-            EditorGUILayout.EndHorizontal();
-            return newSelected;
+            return DiNeEditorUI.DrawToolbar(selected, options, height);
         }
 
         // ── 1) 씬 선택 ────────────────────────────────────────────────────────────
         private void DrawSceneSection()
         {
-            int selCount = _scenes.Count(s => s.Selected);
-            SectionLabel(Tf(SCENE_SEL, selCount, _scenes.Count));
-
-            EditorGUILayout.BeginHorizontal();
-            if (MiniButton(T(SEL_ALL), ColAccent)) _scenes.ForEach(s => s.Selected = true);
-            if (MiniButton(T(DESEL_ALL), ColDanger)) _scenes.ForEach(s => s.Selected = false);
-            GUILayout.FlexibleSpace();
-            if (MiniButton(T(REFRESH), ColAccent, 140)) RefreshSceneList();
-            EditorGUILayout.EndHorizontal();
-
-            if (_scenes.Count == 0)
+            using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
             {
-                EditorGUILayout.HelpBox(T(NO_SCENES), MessageType.Info);
-                guidedTutorial.Anchor("Scenes", GUILayoutUtility.GetLastRect());
-                return;
-            }
+                int selCount = _scenes.Count(s => s.Selected);
+                SectionLabel(Tf(SCENE_SEL, selCount, _scenes.Count));
 
-            // 씬이 많아도 창 높이의 일부만 차지하도록 제한한다.
-            // (제한을 넘으면 목록 자체가 스크롤되므로 아래 버튼들이 화면 밖으로 밀리지 않는다)
-            float maxH = Mathf.Clamp(position.height * 0.22f, 72f, 220f);
-            float h = Mathf.Clamp(_scenes.Count * 18f + 8f, 72f, maxH);
-            guidedTutorial.BeginScrollScope();
-            _sceneScroll = EditorGUILayout.BeginScrollView(_sceneScroll, "box", GUILayout.Height(h));
-            foreach (var s in _scenes)
-            {
-                EditorGUILayout.BeginHorizontal(GUILayout.Height(16));
-                s.Selected = EditorGUILayout.Toggle(s.Selected, GUILayout.Width(16));
-                Icon16(_sceneIcon);
-                GUILayout.Label(s.Name, _fileStyle, GUILayout.Height(16));
+                EditorGUILayout.BeginHorizontal();
+                if (MiniButton(T(SEL_ALL), ColAccent)) _scenes.ForEach(s => s.Selected = true);
+                if (MiniButton(T(DESEL_ALL), ColDanger)) _scenes.ForEach(s => s.Selected = false);
                 GUILayout.FlexibleSpace();
-                GUILayout.Label(FoldFromAssets(s.Path), _metaStyle);
+                if (MiniButton(T(REFRESH), ColAccent, 140)) RefreshSceneList();
                 EditorGUILayout.EndHorizontal();
-            }
-            EditorGUILayout.EndScrollView();
-            guidedTutorial.EndScrollScope(GUILayoutUtility.GetLastRect());
-            guidedTutorial.Anchor("Scenes", GUILayoutUtility.GetLastRect());
 
-            if (selCount > 0 && selCount < _scenes.Count)
-                EditorGUILayout.HelpBox(T(PARTIAL), MessageType.Warning);
+                if (_scenes.Count == 0)
+                {
+                    EditorGUILayout.HelpBox(T(NO_SCENES), MessageType.Info);
+                    guidedTutorial.Anchor("Scenes", GUILayoutUtility.GetLastRect());
+                    return;
+                }
+
+                // 씬이 많아도 창 높이의 일부만 차지하도록 제한한다.
+                // (제한을 넘으면 목록 자체가 스크롤되므로 아래 버튼들이 화면 밖으로 밀리지 않는다)
+                float maxH = Mathf.Clamp(position.height * 0.22f, 72f, 220f);
+                float h = Mathf.Clamp(_scenes.Count * 18f + 8f, 72f, maxH);
+                guidedTutorial.BeginScrollScope();
+                _sceneScroll = EditorGUILayout.BeginScrollView(_sceneScroll, "box", GUILayout.Height(h));
+                foreach (var s in _scenes)
+                {
+                    EditorGUILayout.BeginHorizontal(GUILayout.Height(16));
+                    s.Selected = EditorGUILayout.Toggle(s.Selected, GUILayout.Width(16));
+                    Icon16(_sceneIcon);
+                    GUILayout.Label(s.Name, _fileStyle, GUILayout.Height(16));
+                    GUILayout.FlexibleSpace();
+                    GUILayout.Label(FoldFromAssets(s.Path), _metaStyle);
+                    EditorGUILayout.EndHorizontal();
+                }
+                EditorGUILayout.EndScrollView();
+                guidedTutorial.EndScrollScope(GUILayoutUtility.GetLastRect());
+                guidedTutorial.Anchor("Scenes", GUILayoutUtility.GetLastRect());
+
+                if (selCount > 0 && selCount < _scenes.Count)
+                    EditorGUILayout.HelpBox(T(PARTIAL), MessageType.Warning);
+
+            }
         }
 
         // ── 1.5) 종류 필터 + 보호 폴더 ───────────────────────────────────────────
@@ -292,7 +259,7 @@ namespace DiNeTool.AssetCleaner
             }
             if (!_filterFoldout) return;
 
-            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
 
             GUILayout.Label(T(FILTER_HINT), _metaStyle);
             EditorGUILayout.BeginHorizontal();
@@ -411,7 +378,7 @@ namespace DiNeTool.AssetCleaner
             {
                 var prev = GUI.backgroundColor;
                 GUI.backgroundColor = ColAccent;
-                if (GUILayout.Button(T(ANALYZE), _bigBtnStyle, GUILayout.Height(30)))
+                if (DiNeEditorUI.Button(T(ANALYZE)))
                 {
                     Analyze();
                     guidedTutorial.NotifyAction("Analyze");
@@ -440,16 +407,10 @@ namespace DiNeTool.AssetCleaner
                 : Tf(SUMMARY, _totalCount, FormatBytes(_totalBytes)));
             EditorGUILayout.HelpBox(SafetyNoticeLabel(), MessageType.Warning);
 
-            var prevBg = GUI.backgroundColor;
-            GUI.backgroundColor = _unusedRootFoldersOnly
-                ? ColAccent
-                : new Color(0.5f, 0.5f, 0.5f, 1f);
-            bool toggleRootFolderMode = GUILayout.Button(
+            bool toggleRootFolderMode = DiNeEditorUI.SegmentButton(
                 new GUIContent(T(ROOT_ONLY), T(ROOT_ONLY_TIP)),
-                _miniBtnStyle,
-                GUILayout.Height(24));
+                _unusedRootFoldersOnly, DiNeEditorUI.CompactButtonHeight);
             guidedTutorial.Anchor("RootFolders", GUILayoutUtility.GetLastRect());
-            GUI.backgroundColor = prevBg;
             if (toggleRootFolderMode)
                 SetUnusedRootFoldersOnly(!_unusedRootFoldersOnly);
 
@@ -1305,13 +1266,9 @@ namespace DiNeTool.AssetCleaner
 
         private bool MiniButton(string label, Color color, float width = 0)
         {
-            var prev = GUI.backgroundColor;
-            GUI.backgroundColor = color;
-            bool clicked = width > 0
-                ? GUILayout.Button(label, _miniBtnStyle, GUILayout.Height(22), GUILayout.Width(width))
-                : GUILayout.Button(label, _miniBtnStyle, GUILayout.Height(22));
-            GUI.backgroundColor = prev;
-            return clicked;
+            return width > 0
+                ? GUILayout.Button(label, GUILayout.Height(DiNeEditorUI.CompactButtonHeight), GUILayout.Width(width))
+                : GUILayout.Button(label, GUILayout.Height(DiNeEditorUI.CompactButtonHeight));
         }
 
         private static void HLine()
@@ -1329,12 +1286,7 @@ namespace DiNeTool.AssetCleaner
             _folderStyle  = new GUIStyle(EditorStyles.label) { fontStyle = FontStyle.Bold };
             _fileStyle    = new GUIStyle(EditorStyles.label);
             _metaStyle    = new GUIStyle(EditorStyles.miniLabel) { alignment = TextAnchor.MiddleRight, normal = { textColor = ColSubText } };
-            _sectionStyle = new GUIStyle(EditorStyles.boldLabel) { fontSize = 11, normal = { textColor = ColAccent } };
-            _miniBtnStyle = new GUIStyle(GUI.skin.button) { fontSize = 11, normal = { textColor = Color.white } };
-            _titleStyle   = new GUIStyle(EditorStyles.label)
-            { font = _titleFont, alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold, fontSize = 36, normal = { textColor = Color.white } };
-            _descStyle    = new GUIStyle(EditorStyles.wordWrappedLabel)
-            { alignment = TextAnchor.MiddleCenter, fontSize = 12, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } };
+            _sectionStyle = EditorStyles.boldLabel;
             _bigBtnStyle  = new GUIStyle(GUI.skin.button) { fontSize = 13, fontStyle = FontStyle.Bold, normal = { textColor = Color.white } };
             _sceneIcon    = EditorGUIUtility.IconContent("SceneAsset Icon").image;
             _folderIcon   = EditorGUIUtility.IconContent("Folder Icon").image;

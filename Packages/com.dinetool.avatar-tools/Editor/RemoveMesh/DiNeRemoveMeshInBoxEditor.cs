@@ -8,13 +8,9 @@ public partial class DiNeRemoveMeshInBoxEditor : Editor
 {
     private enum LanguagePreset { English, Korean, Japanese }
 
-    private static readonly Color ColAccent = new Color(0.30f, 0.82f, 0.76f);
-    private static readonly Color ColLine = new Color(0.30f, 0.30f, 0.35f, 0.8f);
     private static readonly Color BoxWire = new Color(0.95f, 0.40f, 0.40f, 0.9f);
 
     private LanguagePreset _language = LanguagePreset.Korean;
-    private Texture2D _windowIcon;
-    private Font _titleFont;
 
     private SerializedProperty _removeInBox;
     private SerializedProperty _boxes;
@@ -32,8 +28,6 @@ public partial class DiNeRemoveMeshInBoxEditor : Editor
 
     private void OnEnable()
     {
-        _windowIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
-        _titleFont = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
         _removeInBox = serializedObject.FindProperty("removeInBox");
         _boxes = serializedObject.FindProperty("boxes");
         if (!EditorPrefs.HasKey("DiNeLang") && EditorPrefs.HasKey("DiNeOpticore_ComponentLang"))
@@ -98,11 +92,11 @@ public partial class DiNeRemoveMeshInBoxEditor : Editor
             SerializedProperty size = box.FindPropertyRelative("size");
             SerializedProperty rotation = box.FindPropertyRelative("rotation");
 
-            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
             EditorGUILayout.BeginHorizontal();
             GUILayout.Label($"#{i + 1}", EditorStyles.miniBoldLabel, GUILayout.Width(28f));
             GUILayout.FlexibleSpace();
-            if (GUILayout.Button("✕", GUILayout.Width(24f)))
+            if (GUILayout.Button("✕", GUILayout.Width(24f), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
                 removeIndex = i;
             if (i == 0) tutorial.Anchor("delete", GUILayoutUtility.GetLastRect());
             EditorGUILayout.EndHorizontal();
@@ -135,7 +129,7 @@ public partial class DiNeRemoveMeshInBoxEditor : Editor
         }
 
         GUILayout.Space(4f);
-        if (GUILayout.Button(L("Add Box", "박스 추가", "ボックス追加")))
+        if (DiNeEditorUI.Button(L("Add Box", "박스 추가", "ボックス追加")))
         {
             int idx = _boxes.arraySize;
             _boxes.arraySize++;
@@ -235,52 +229,20 @@ public partial class DiNeRemoveMeshInBoxEditor : Editor
 
     private void DrawHeaderBar()
     {
-        EditorGUILayout.BeginVertical("box");
-        EditorGUILayout.BeginHorizontal();
-        GUILayout.FlexibleSpace();
-        if (_windowIcon != null)
-            GUILayout.Label(_windowIcon, GUILayout.Width(72f), GUILayout.Height(72f));
-        if (tutorialTitleStyle == null) tutorialTitleStyle = new GUIStyle(EditorStyles.label)
-        {
-            font = _titleFont,
-            fontSize = 36,
-            fontStyle = FontStyle.Bold,
-            alignment = TextAnchor.MiddleCenter,
-            normal = { textColor = Color.white }
-        };
-        GUILayout.Space(6f);
-        GUILayout.Label("Remove Mesh In Box", tutorialTitleStyle, GUILayout.Height(72f));
-        GUILayout.FlexibleSpace();
-        EditorGUILayout.EndHorizontal();
-        if (tutorialDescriptionStyle == null) tutorialDescriptionStyle = new GUIStyle(EditorStyles.wordWrappedLabel)
-        { fontSize = 12, alignment = TextAnchor.MiddleCenter, normal = { textColor = new Color(.8f, .8f, .8f) } };
-        GUILayout.Label(L("Remove polygons within a chosen region.", "선택한 영역의 폴리곤을 제거합니다.", "選択した範囲のポリゴンを削除します。"), tutorialDescriptionStyle);
-        EditorGUILayout.EndVertical();
+        DiNeEditorUI.DrawHeader("Remove Mesh In Box", L(
+            "Remove polygons within a chosen region.",
+            "선택한 영역의 폴리곤을 제거합니다.",
+            "選択した範囲のポリゴンを削除します。"));
     }
 
     private void DrawLanguageBar()
     {
-        EditorGUILayout.BeginHorizontal();
-        string[] options = { "English", "한국어", "日本語" };
-        for (int i = 0; i < options.Length; i++)
-        {
-            Color prev = GUI.backgroundColor;
-            GUI.backgroundColor = (int)_language == i ? ColAccent : new Color(0.5f, 0.5f, 0.5f);
-            if (GUILayout.Button(options[i], GUILayout.Height(35f)))
-            {
-                _language = (LanguagePreset)i;
-                EditorPrefs.SetInt("DiNeLang", i);
-            }
-            GUI.backgroundColor = prev;
-        }
-        EditorGUILayout.EndHorizontal();
+        _language = (LanguagePreset)DiNeEditorUI.DrawLanguageToolbar((int)_language);
     }
 
     private static void DrawHorizontalLine()
     {
-        Rect rect = EditorGUILayout.GetControlRect(false, 1f);
-        EditorGUI.DrawRect(rect, ColLine);
-        GUILayout.Space(4f);
+        GUILayout.Space(DiNeEditorUI.CardSpacing);
     }
 }
 #endif

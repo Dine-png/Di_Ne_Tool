@@ -6,8 +6,7 @@ using UnityEngine;
 
 public partial class DiNeAnimationTool : EditorWindow
 {
-    private static readonly Color Mint = new Color(.30f, .82f, .76f, 1f);
-    private static readonly Color UnselectedTab = new Color(.50f, .50f, .50f, 1f);
+    private static Color Mint => DiNeEditorUI.Mint;
     [SerializeField] private GameObject targetAvatarRoot;
     [SerializeField] private AnimationClip animationClip;
     [SerializeField] private float clipTime;
@@ -19,9 +18,7 @@ public partial class DiNeAnimationTool : EditorWindow
     [SerializeField] private bool playPreview;
     private double previousUpdate;
     private GameObject previousAvatar;
-    private Texture2D windowIcon, tabIcon;
-    private Font titleFont;
-    private GUIStyle titleStyle, descriptionStyle, selectedStyle, unselectedStyle;
+    private Texture2D tabIcon;
     private RenderTexture previewTexture;
     private DiNeAnimationPreview preview;
     private AnimationClip transientPreviewClip;
@@ -56,9 +53,7 @@ public partial class DiNeAnimationTool : EditorWindow
 
     private void OnEnable()
     {
-        windowIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
         tabIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe_Icon.png");
-        titleFont = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
         titleContent = new GUIContent("Animation Tool", tabIcon);
         minSize = new Vector2(420f, 520f);
         playPreview = false;
@@ -80,7 +75,6 @@ public partial class DiNeAnimationTool : EditorWindow
         Undo.undoRedoPerformed -= OnUndoRedo;
         AssemblyReloadEvents.beforeAssemblyReload -= ReleaseSessionPreview;
         ReleaseSessionPreview();
-        titleStyle = descriptionStyle = selectedStyle = unselectedStyle = null;
     }
 
     private void OnPlayModeChanged(PlayModeStateChange state)
@@ -103,39 +97,24 @@ public partial class DiNeAnimationTool : EditorWindow
         Repaint();
     }
 
-    private void EnsureStyles()
-    {
-        if (titleStyle != null) return;
-        titleStyle = new GUIStyle(EditorStyles.label) { font = titleFont, fontSize = 36,
-            fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-        titleStyle.normal.textColor = Color.white;
-        descriptionStyle = new GUIStyle(EditorStyles.label) { fontSize = 12,
-            alignment = TextAnchor.MiddleCenter, wordWrap = true };
-        descriptionStyle.normal.textColor = new Color(.8f, .8f, .8f, 1f);
-        selectedStyle = new GUIStyle(GUI.skin.button) { fontStyle = FontStyle.Bold, fontSize = 12 };
-        selectedStyle.normal.textColor = Color.white;
-        unselectedStyle = new GUIStyle(GUI.skin.button) { fontSize = 12 };
-        unselectedStyle.normal.textColor = new Color(.8f, .8f, .8f, 1f);
-    }
-
     private void OnGUI()
     {
-        EnsureStyles();
         DrawHeader();
         GUILayout.Space(5f);
-        int lang = DrawToolbar(LanguageIndex, new[] { "English", "한국어", "日本語" }, 35);
-        if (lang != LanguageIndex) { EditorPrefs.SetInt("DiNeLang", lang); status = ""; repairStatus = null; Repaint(); }
+        int previousLanguage = LanguageIndex;
+        int lang = DiNeEditorUI.DrawLanguageToolbar(previousLanguage);
+        if (lang != previousLanguage) { status = ""; repairStatus = null; Repaint(); }
         GUILayout.Space(15f);
         int tab = DrawToolbar(selectedTab, new[] { Tr("Preview / Pose", "미리보기·포즈", "プレビュー・ポーズ"),
             Tr("Expressions / FX", "표정·제스처", "表情・ジェスチャー"),
             Tr("Repair", "연결 복구", "接続修復") }, 35);
         if (tab != selectedTab) { selectedTab = tab; playPreview = false; previewDirty = true; }
-        GUILayout.Space(8f);
+        GUILayout.Space(DiNeEditorUI.CardSpacing);
         BeginTutorialFrame();
         try
         {
             _tutorial.DrawControls();
-            GUILayout.Space(8f);
+            GUILayout.Space(DiNeEditorUI.CardSpacing);
             DrawAvatarCard();
             if (EditorApplication.isPlayingOrWillChangePlaymode)
             {
@@ -159,59 +138,27 @@ public partial class DiNeAnimationTool : EditorWindow
 
     private void DrawHeader()
     {
-        Color old = GUI.backgroundColor;
-        try
-        {
-            GUI.backgroundColor = new Color(.90f, .90f, .90f, 1f);
-            EditorGUILayout.BeginVertical("box");
-            EditorGUILayout.BeginHorizontal();
-            GUILayout.FlexibleSpace();
-            if (windowIcon != null) GUILayout.Label(windowIcon, GUILayout.Width(72f), GUILayout.Height(72f));
-            GUILayout.Space(6f);
-            GUILayout.Label("Animation Tool", titleStyle, GUILayout.Height(72f));
-            GUILayout.FlexibleSpace();
-            EditorGUILayout.EndHorizontal();
-            GUILayout.Space(4f);
-            GUILayout.Label(Tr("Preview poses, create expressions and repair animation links.",
-                "포즈를 미리 보고 표정을 만들며 애니메이션 연결을 복구합니다.",
-                "ポーズのプレビュー、表情の作成、アニメーション接続の修復。"), descriptionStyle);
-            GUILayout.Space(5f);
-            EditorGUILayout.EndVertical();
-        }
-        finally { GUI.backgroundColor = old; }
+        DiNeEditorUI.DrawHeader("Animation Tool", Tr(
+            "Preview poses, create expressions and repair animation links.",
+            "포즈를 미리 보고 표정을 만들며 애니메이션 연결을 복구합니다.",
+            "ポーズのプレビュー、表情の作成、アニメーション接続の修復。"));
     }
 
     private int DrawToolbar(int selected, string[] labels, int height)
     {
-        EditorGUILayout.BeginHorizontal();
-        int nextSelected = selected;
-        for (int i = 0; i < labels.Length; i++)
-        {
-            Color old = GUI.backgroundColor;
-            try
-            {
-                // Tint the native button skin, as in the other Di Ne toolbars.
-                GUI.backgroundColor = i == selected ? Mint : UnselectedTab;
-                if (GUILayout.Button(labels[i], i == selected ? selectedStyle : unselectedStyle, GUILayout.Height(height))) nextSelected = i;
-            }
-            finally { GUI.backgroundColor = old; }
-        }
-        EditorGUILayout.EndHorizontal();
-        return nextSelected;
+        return DiNeEditorUI.DrawToolbar(selected, labels, height);
     }
 
     private void BeginCard(string title)
     {
-        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         EditorGUILayout.LabelField(title, EditorStyles.boldLabel);
         GUILayout.Space(3f);
     }
-    private void EndCard() { EditorGUILayout.EndVertical(); GUILayout.Space(8f); }
+    private void EndCard() { EditorGUILayout.EndVertical(); GUILayout.Space(DiNeEditorUI.CardSpacing); }
     private bool PrimaryButton(string label, int height = 30)
     {
-        Color old = GUI.backgroundColor;
-        try { GUI.backgroundColor = Mint; return GUILayout.Button(label, GUILayout.Height(height)); }
-        finally { GUI.backgroundColor = old; }
+        return DiNeEditorUI.Button(label, height);
     }
     private void SetStatus(string message, bool error = false) { status = message; statusIsError = error; Repaint(); }
 
@@ -226,7 +173,7 @@ public partial class DiNeAnimationTool : EditorWindow
         TutorialAnchor("avatar");
         if (EditorGUI.EndChangeCheck() || previousAvatar != targetAvatarRoot) RefreshAvatar();
         using (new EditorGUI.DisabledScope(targetAvatarRoot == null))
-            if (GUILayout.Button(new GUIContent("↺", Tr("Refresh avatar and capture its current pose.", "아바타를 새로고침하고 현재 포즈를 기록합니다.", "アバターを更新し現在のポーズを記録します。")), GUILayout.Width(28), GUILayout.Height(24))) RefreshAvatar();
+            if (GUILayout.Button(new GUIContent("↺", Tr("Refresh avatar and capture its current pose.", "아바타를 새로고침하고 현재 포즈를 기록합니다.", "アバターを更新し現在のポーズを記録します。")), GUILayout.Width(28), GUILayout.Height(DiNeEditorUI.CompactButtonHeight))) RefreshAvatar();
         EditorGUILayout.EndHorizontal();
         TutorialDraw("avatar");
         if (targetAvatarRoot == null) EditorGUILayout.HelpBox(Tr("Assign an avatar to preview and edit animations.", "아바타를 지정해 애니메이션을 미리 보고 편집하세요.", "アバターを指定してアニメーションをプレビュー・編集します。"), MessageType.Info);
@@ -286,7 +233,7 @@ public partial class DiNeAnimationTool : EditorWindow
         using (new EditorGUI.DisabledScope(targetAvatarRoot == null || animationClip == null))
         {
             EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button(playPreview ? Tr("Pause", "일시 정지", "一時停止") : Tr("Play", "재생", "再生"), GUILayout.Width(72), GUILayout.Height(24))) playPreview = !playPreview;
+            if (GUILayout.Button(playPreview ? Tr("Pause", "일시 정지", "一時停止") : Tr("Play", "재생", "再生"), GUILayout.Width(72), GUILayout.Height(DiNeEditorUI.CompactButtonHeight))) playPreview = !playPreview;
             EditorGUI.BeginChangeCheck();
             clipTime = EditorGUILayout.Slider(clipTime, 0f, animationClip != null ? animationClip.length : 1f);
             TutorialAnchor("animation-time");
@@ -304,15 +251,15 @@ public partial class DiNeAnimationTool : EditorWindow
         using (new EditorGUI.DisabledScope(!CanApply() || animationClip == null))
         {
             EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button(Tr("Shape Keys", "쉐이프키", "シェイプキー"), GUILayout.Height(30))) ApplyShapeKeys();
-            if (GUILayout.Button(Tr("Pose", "포즈", "ポーズ"), GUILayout.Height(30))) ApplyPose();
+            if (GUILayout.Button(Tr("Shape Keys", "쉐이프키", "シェイプキー"), GUILayout.Height(DiNeEditorUI.ButtonHeight))) ApplyShapeKeys();
+            if (GUILayout.Button(Tr("Pose", "포즈", "ポーズ"), GUILayout.Height(DiNeEditorUI.ButtonHeight))) ApplyPose();
             if (PrimaryButton(Tr("Apply Both", "모두 적용", "両方を適用"))) ApplyBoth();
             EditorGUILayout.EndHorizontal();
             TutorialAnchor("animation-apply");
             TutorialDraw("animation-apply");
         }
         using (new EditorGUI.DisabledScope(!CanApply() || !hasSnapshot))
-            if (GUILayout.Button(Tr("Restore Captured Pose and Shape Keys", "기록한 포즈·쉐이프키로 복원", "記録したポーズ・シェイプキーに復元"), GUILayout.Height(30))) RestoreToOriginal();
+            if (GUILayout.Button(Tr("Restore Captured Pose and Shape Keys", "기록한 포즈·쉐이프키로 복원", "記録したポーズ・シェイプキーに復元"), GUILayout.Height(DiNeEditorUI.ButtonHeight))) RestoreToOriginal();
         TutorialAnchor("animation-restore");
         TutorialDraw("animation-restore");
         if (targetAvatarRoot != null && EditorUtility.IsPersistent(targetAvatarRoot))

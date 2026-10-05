@@ -190,7 +190,7 @@ namespace DiNeTool.ExpressionEditor
 
         private void DrawNavigation()
         {
-            using (new EditorGUILayout.HorizontalScope(EditorStyles.helpBox))
+            using (new EditorGUILayout.HorizontalScope(DiNeEditorUI.CardStyle))
             {
                 using (new EditorGUI.DisabledScope(visitedIndex <= 0))
                 {
@@ -447,7 +447,7 @@ namespace DiNeTool.ExpressionEditor
 
         private void DrawSubmenu(SerializedProperty control)
         {
-            using (new EditorGUILayout.HorizontalScope(EditorStyles.helpBox))
+            using (new EditorGUILayout.HorizontalScope(DiNeEditorUI.CardStyle))
             {
                 var submenu = control.FindPropertyRelative("subMenu");
                 EditorGUILayout.PropertyField(submenu, C("Submenu", "서브메뉴", "サブメニュー"));
@@ -487,7 +487,7 @@ namespace DiNeTool.ExpressionEditor
                     RunGuiAction(() => RepairPuppetFields(selected, type));
                 return;
             }
-            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
             {
                 if (expected != 1)
                 {
@@ -534,13 +534,13 @@ namespace DiNeTool.ExpressionEditor
             }
             Remember("ControlAxes", GUILayoutUtility.GetLastRect());
             if (expected == 1 || Compact) return;
-            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
             {
                 GUILayout.Label(T("Customization", "사용자 지정", "カスタマイズ"), centered);
                 for (int index = 0; index < labels.arraySize; index++)
                 {
                     var label = labels.GetArrayElementAtIndex(index);
-                    using (new EditorGUILayout.HorizontalScope(EditorStyles.helpBox))
+                    using (new EditorGUILayout.HorizontalScope(DiNeEditorUI.CardStyle))
                     {
                         using (new EditorGUILayout.VerticalScope())
                         {

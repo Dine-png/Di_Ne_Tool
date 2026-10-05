@@ -6,30 +6,22 @@ using System.Linq;
 public partial class DiNeToggleAnimator : EditorWindow
 {
     // ─── DiNe Brand Colors ──────────────────────────────────────
-    private static readonly Color ColMint     = new Color(0.30f, 0.82f, 0.76f);
-    private static readonly Color ColMintDark = new Color(0.18f, 0.55f, 0.51f);
-    private static readonly Color ColDark     = new Color(0.21f, 0.21f, 0.24f);
-    private static readonly Color ColDeep     = new Color(0.14f, 0.14f, 0.16f);
-    private static readonly Color ColPanel    = new Color(0.22f, 0.22f, 0.25f);
-    private static readonly Color ColSidebar  = new Color(0.17f, 0.17f, 0.20f);
+    private static readonly Color ColMint     = DiNeEditorUI.Mint;
     private static readonly Color ColOn       = new Color(0.16f, 0.62f, 0.33f);
     private static readonly Color ColOff      = new Color(0.65f, 0.18f, 0.18f);
     private static readonly Color ColUnset    = new Color(0.27f, 0.27f, 0.30f);
-    private static readonly Color ColHeaderBg = new Color(0.16f, 0.16f, 0.19f);
 
     // ─── Language ───────────────────────────────────────────────
     private enum Lang { English, Korean, Japanese }
     private Lang _lang = Lang.Korean;
 
     // ─── Layout ─────────────────────────────────────────────────
-    private const float SIDEBAR_W  = 42f;
-    private const float LANG_W     = 28f;   
     private const float LABEL_W    = 190f;
-    
-    private const float COL_W      = 130f;  
-    private const float ROW_H      = 20f;   
+
+    private const float COL_W      = 130f;
+    private const float ROW_H      = 20f;
     private const float HEADER_H   = 24f;
-    
+
     private const float DEL_W      = 22f;
 
     // ─── Data Structures ────────────────────────────────────────
@@ -39,7 +31,7 @@ public partial class DiNeToggleAnimator : EditorWindow
         public string path;
         public string propName;
         public bool IsBlendShape => propName != null && propName.StartsWith("blendShape.");
-        
+
         public string ShortName
         {
             get
@@ -60,9 +52,9 @@ public partial class DiNeToggleAnimator : EditorWindow
     // ─── Data ───────────────────────────────────────────────────
     private GameObject          _avatarRoot;
     private List<AnimationClip> _clips = new List<AnimationClip>();
-    private List<RowData>       _rows  = new List<RowData>();  
-    private List<List<float?>>  _grid  = new List<List<float?>>(); 
-    
+    private List<RowData>       _rows  = new List<RowData>();
+    private List<List<float?>>  _grid  = new List<List<float?>>();
+
     // ─── UI State ───────────────────────────────────────────────
     private int     _previewClipIdx = -1;
     private Vector2 _gridScroll;
@@ -71,9 +63,7 @@ public partial class DiNeToggleAnimator : EditorWindow
     private bool    _lockSelection = false;
 
     // ─── Assets ─────────────────────────────────────────────────
-    private Font      _titleFont;
-    private Texture2D _iconTex;        
-    private Texture2D _sidebarLogoTex; 
+    private Texture2D _iconTex;
 
     // ─── Menu ───────────────────────────────────────────────────
     // Temporarily disabled from the DiNe menu.
@@ -85,13 +75,11 @@ public partial class DiNeToggleAnimator : EditorWindow
 
     void OnEnable()
     {
-        _titleFont = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
         _iconTex        = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe_Icon.png");
-        _sidebarLogoTex = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
         titleContent = new GUIContent("Toggle Animator", _iconTex);
 
         Selection.selectionChanged += OnSelectionChange;
-        OnSelectionChange(); 
+        OnSelectionChange();
     }
 
     void OnDisable()
@@ -104,14 +92,14 @@ public partial class DiNeToggleAnimator : EditorWindow
         _lang == Lang.Korean ? kr : _lang == Lang.Japanese ? jp : en;
 
     // ────────────────────────────────────────────────────────────
-    //  Selection Sync Logic 
+    //  Selection Sync Logic
     // ────────────────────────────────────────────────────────────
     private void OnSelectionChange()
     {
         if (_lockSelection) return;
 
         var newClips = Selection.objects.OfType<AnimationClip>().ToList();
-        
+
         if (!_clips.SequenceEqual(newClips))
         {
             _previewClipIdx = -1;
@@ -135,7 +123,7 @@ public partial class DiNeToggleAnimator : EditorWindow
 
         for (int i = _rows.Count - 1; i >= 0; i--)
         {
-            if (string.IsNullOrEmpty(_rows[i].propName)) 
+            if (string.IsNullOrEmpty(_rows[i].propName))
             {
                 _rows.RemoveAt(i);
                 if (i < _grid.Count) _grid.RemoveAt(i);
@@ -179,32 +167,21 @@ public partial class DiNeToggleAnimator : EditorWindow
         _lang = (Lang)Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", 0), 0, 2);
         ValidateData();
 
-        var prevBg    = GUI.backgroundColor;
+        var prevBg = GUI.backgroundColor;
         var prevColor = GUI.color;
-
-        float winH = position.height;
-        Rect sidebarRect = new Rect(0, 0, SIDEBAR_W, winH);
-        EditorGUI.DrawRect(sidebarRect, ColSidebar);
-        EditorGUI.DrawRect(new Rect(SIDEBAR_W - 1, 0, 1, winH), new Color(0.30f, 0.82f, 0.76f, 0.35f));
-
-        if (_sidebarLogoTex != null)
-        {
-            float iSz = SIDEBAR_W - 8f;
-            GUI.DrawTexture(new Rect(4, 5, iSz, iSz), _sidebarLogoTex, ScaleMode.ScaleToFit, true);
-        }
-
-        DrawSidebarTitle("Toggle\nAnimator", winH); 
-
-        float langX = SIDEBAR_W;
-        EditorGUI.DrawRect(new Rect(langX, 0, LANG_W, winH), new Color(0.19f, 0.19f, 0.22f));
-        EditorGUI.DrawRect(new Rect(langX + LANG_W - 1, 0, 1, winH), new Color(0.30f, 0.82f, 0.76f, 0.18f));
-        DrawLangButtons(langX, winH, prevBg);
-
-        Rect mainRect = new Rect(SIDEBAR_W + LANG_W, 0, position.width - SIDEBAR_W - LANG_W, winH);
-        GUILayout.BeginArea(mainRect);
         tutorial.BeginFrame();
-        try { DrawMainContent(prevBg); }
-        finally { tutorial.EndFrame(); GUILayout.EndArea(); GUI.backgroundColor = prevBg; GUI.color = prevColor; }
+        try
+        {
+            DiNeEditorUI.DrawHeader("Toggle Animator", T(
+                "Edit object toggles and BlendShape values across selected animation clips.",
+                "선택한 애니메이션 클립의 오브젝트 토글과 쉐이프키 값을 편집합니다.",
+                "選択したアニメーションクリップのオブジェクト切り替えとシェイプキー値を編集します。"));
+            GUILayout.Space(5f);
+            _lang = (Lang)DiNeEditorUI.DrawLanguageToolbar((int)_lang);
+            GUILayout.Space(15f);
+            DrawMainContent(prevBg);
+        }
+        finally { tutorial.EndFrame(); GUI.backgroundColor = prevBg; GUI.color = prevColor; }
     }
 
     private void DrawMainContent(Color prevBg)
@@ -215,7 +192,7 @@ public partial class DiNeToggleAnimator : EditorWindow
         tutorial.DrawControls();
 
         DrawSetupSection(prevBg);
-        GUILayout.Space(5);
+        GUILayout.Space(DiNeEditorUI.CardSpacing);
 
         if (_clips.Count > 0)
         {
@@ -238,88 +215,14 @@ public partial class DiNeToggleAnimator : EditorWindow
         GUILayout.Space(2);
         DrawStatusBar();
 
-        HandleGameObjectDrop(); 
+        HandleGameObjectDrop();
 
-        }
-    }
-
-    private void DrawSidebarTitle(string text, float winH)
-    {
-        var style = new GUIStyle(EditorStyles.label)
-        {
-            font      = _titleFont,
-            fontSize  = 19,
-            fontStyle = FontStyle.Bold,
-            alignment = TextAnchor.MiddleCenter,
-            normal    = { textColor = new Color(0.50f, 0.50f, 0.54f) },
-        };
-
-        float totalHeight = 0;
-        float lineSpacing = 18f;
-        float paragraphSpacing = 8f;
-
-        foreach (char ch in text)
-        {
-            if (ch == '\n') totalHeight += paragraphSpacing;
-            else totalHeight += lineSpacing;
-        }
-
-        float startY = 46f + (winH - 46f - totalHeight) * 0.5f;
-        float y = startY;
-
-        foreach (char ch in text)
-        {
-            if (ch == '\n') { y += paragraphSpacing; continue; }
-            GUI.Label(new Rect(0, y, SIDEBAR_W, lineSpacing), ch.ToString(), style);
-            y += lineSpacing; 
-        }
-    }
-
-    private void DrawLangButtons(float x, float winH, Color prevBg)
-    {
-        Lang[] langs = { Lang.English, Lang.Korean, Lang.Japanese };
-        
-        string[] labelsEn = { "E\nN\nG", "K\nO\nR", "J\nP\nN" };
-        string[] labelsKr = { "영\n어", "한\n국\n어", "일\n본\n어" };
-        string[] labelsJp = { "英\n語", "韓\n国\n語", "日\n本\n語" };
-
-        string[] currentLabels = _lang == Lang.Korean ? labelsKr : (_lang == Lang.Japanese ? labelsJp : labelsEn);
-
-        float padding = 4f;
-        float btnH = (winH - (padding * 4f)) / 3f;
-        float startY = padding; 
-
-        for (int i = 0; i < 3; i++)
-        {
-            bool active = _lang == langs[i];
-            GUI.backgroundColor = active ? ColMint : ColDark;
-            
-            var style = new GUIStyle(GUI.skin.button)
-            {
-                fontSize  = 11,
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                normal    = { textColor = active ? ColDeep : new Color(0.55f, 0.55f, 0.58f) },
-                hover     = { textColor = active ? ColDeep : Color.white },
-                wordWrap  = false 
-            };
-            
-            Rect btnRect = new Rect(x + 2, startY + i * (btnH + padding), LANG_W - 4, btnH);
-            
-            if (GUI.Button(btnRect, currentLabels[i], style))
-            {
-                _lang = langs[i];
-                EditorPrefs.SetInt("DiNeLang", i);
-            }
-            
-            GUI.backgroundColor = prevBg;
         }
     }
 
     private void DrawSetupSection(Color prevBg)
     {
-        GUI.backgroundColor = ColPanel;
-        EditorGUILayout.BeginVertical(GUI.skin.box);
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         GUI.backgroundColor = prevBg;
 
         EditorGUILayout.BeginHorizontal();
@@ -332,16 +235,14 @@ public partial class DiNeToggleAnimator : EditorWindow
             tutorial.NotifyAction("root");
         }
         tutorial.Anchor("root", GUILayoutUtility.GetLastRect());
-        
+
         GUILayout.FlexibleSpace();
-        
-        GUI.backgroundColor = _lockSelection ? ColMint : ColDark;
-        if (GUILayout.Button(T("Lock Selection", "선택 유지 (Lock)", "選択維持 (Lock)"), 
-            new GUIStyle(GUI.skin.button) { fontSize = 11, fontStyle = FontStyle.Bold, normal = { textColor = _lockSelection ? ColDeep : Color.white } }, 
-            GUILayout.Width(130), GUILayout.Height(20)))
+
+        if (DiNeEditorUI.SegmentButton(T("Lock Selection", "선택 유지 (Lock)", "選択維持 (Lock)"),
+            _lockSelection, DiNeEditorUI.CompactButtonHeight, GUILayout.Width(130)))
         {
             _lockSelection = !_lockSelection;
-            if (!_lockSelection) OnSelectionChange(); 
+            if (!_lockSelection) OnSelectionChange();
             tutorial.NotifyAction("lock");
         }
         tutorial.Anchor("lock", GUILayoutUtility.GetLastRect());
@@ -358,8 +259,7 @@ public partial class DiNeToggleAnimator : EditorWindow
     // ────────────────────────────────────────────────────────────
     private void DrawGrid(Color prevBg)
     {
-        GUI.backgroundColor = ColPanel;
-        EditorGUILayout.BeginVertical(GUI.skin.box);
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         GUI.backgroundColor = prevBg;
 
         tutorial.BeginScrollScope();
@@ -376,16 +276,7 @@ public partial class DiNeToggleAnimator : EditorWindow
             string cname  = _clips[c] != null ? _clips[c].name : $"Clip {c + 1}";
             bool   isPrev = _previewClipIdx == c;
 
-            GUI.backgroundColor = isPrev ? ColMint : ColHeaderBg;
-            if (GUILayout.Button(cname,
-                new GUIStyle(GUI.skin.button)
-                {
-                    fontSize  = 10, fontStyle = FontStyle.Bold, wordWrap = false,
-                    alignment = TextAnchor.MiddleCenter,
-                    normal    = { textColor = isPrev ? ColDeep : new Color(0.80f, 0.82f, 0.80f) },
-                    hover     = { textColor = isPrev ? ColDeep : Color.white },
-                },
-                GUILayout.Width(COL_W), GUILayout.Height(HEADER_H)))
+            if (DiNeEditorUI.SegmentButton(cname, isPrev, HEADER_H, GUILayout.Width(COL_W)))
             {
                 if (isPrev) _previewClipIdx = -1;
                 else        { _previewClipIdx = c; PreviewClip(c); }
@@ -432,7 +323,7 @@ public partial class DiNeToggleAnimator : EditorWindow
         {
             fontSize  = 10, fontStyle = FontStyle.Bold,
             alignment = TextAnchor.MiddleCenter,
-            padding   = new RectOffset(0, 0, 0, 0), 
+            padding   = new RectOffset(0, 0, 0, 0),
             normal    = { textColor = Color.white },
             hover     = { textColor = Color.white },
         };
@@ -465,7 +356,7 @@ public partial class DiNeToggleAnimator : EditorWindow
                     GUI.backgroundColor = ColUnset;
                     if (GUILayout.Button("—", cellBtnStyle, GUILayout.Width(COL_W), GUILayout.Height(ROW_H)))
                     {
-                        _grid[r][c] = isBlendShape ? 100f : 1f; 
+                        _grid[r][c] = isBlendShape ? 100f : 1f;
                         SaveClip(c);
                         UpdatePreview(r, c);
                         tutorial.NotifyAction("unset");
@@ -482,9 +373,9 @@ public partial class DiNeToggleAnimator : EditorWindow
                         // 토글 (ON/OFF)
                         bool isOn = state.Value > 0.5f;
                         GUI.backgroundColor = isOn ? ColOn : ColOff;
-                        
+
                         Rect btnRect = GUILayoutUtility.GetRect(new GUIContent(isOn ? "ON" : "OFF"), cellBtnStyle, GUILayout.Width(COL_W), GUILayout.Height(ROW_H));
-                        
+
                         if (Event.current.type == EventType.ContextClick && btnRect.Contains(Event.current.mousePosition))
                         {
                             _grid[r][c] = null;
@@ -507,7 +398,7 @@ public partial class DiNeToggleAnimator : EditorWindow
                     {
                         // 쉐이프키
                         GUILayout.BeginHorizontal(GUILayout.Width(COL_W));
-                        
+
                         EditorGUI.BeginChangeCheck();
                         float val = EditorGUILayout.FloatField(state.Value, GUILayout.Width(COL_W - 20f), GUILayout.Height(ROW_H));
                         if (EditorGUI.EndChangeCheck())
@@ -529,7 +420,7 @@ public partial class DiNeToggleAnimator : EditorWindow
                         }
                         if (!shapeAnchor) { tutorial.Anchor("shape-clear", GUILayoutUtility.GetLastRect()); shapeAnchor = true; }
                         GUI.backgroundColor = prevBg;
-                        
+
                         GUILayout.EndHorizontal();
                     }
                 }
@@ -568,7 +459,7 @@ public partial class DiNeToggleAnimator : EditorWindow
         tutorial.Draw("delete-row");
 
         GUILayout.Space(4);
-        EditorGUILayout.EndScrollView(); 
+        EditorGUILayout.EndScrollView();
         tutorial.EndScrollScope(GUILayoutUtility.GetLastRect());
 
         Rect goDropRect = GUILayoutUtility.GetRect(0, 34f, GUILayout.ExpandWidth(true));
@@ -602,7 +493,6 @@ public partial class DiNeToggleAnimator : EditorWindow
     // ────────────────────────────────────────────────────────────
     private void DrawBottomBar(Color prevBg)
     {
-        GUI.backgroundColor = ColDark;
         var bs = new GUIStyle(GUI.skin.button)
         {
             fontSize  = 11, fontStyle = FontStyle.Bold,
@@ -689,11 +579,11 @@ public partial class DiNeToggleAnimator : EditorWindow
     private void HandleCellClick(int r, int c)
     {
         float? cur  = _grid[r][c];
-        
+
         float? next;
-        if (Event.current.button == 1) 
-            next = null; 
-        else 
+        if (Event.current.button == 1)
+            next = null;
+        else
         {
             bool isOn = cur.HasValue && cur.Value > 0.5f;
             next = isOn ? 0f : 1f;
@@ -739,7 +629,7 @@ public partial class DiNeToggleAnimator : EditorWindow
     {
         var t = _avatarRoot.transform.Find(row.path);
         if (t == null && !string.IsNullOrEmpty(row.path)) return;
-        if (t == null && string.IsNullOrEmpty(row.path)) t = _avatarRoot.transform; 
+        if (t == null && string.IsNullOrEmpty(row.path)) t = _avatarRoot.transform;
 
         if (row.IsBlendShape)
         {
@@ -867,19 +757,19 @@ public partial class DiNeToggleAnimator : EditorWindow
             if (clip == null) continue;
 
             var binding = EditorCurveBinding.FloatCurve(
-                rowToRemove.path, 
-                rowToRemove.IsBlendShape ? typeof(SkinnedMeshRenderer) : typeof(GameObject), 
+                rowToRemove.path,
+                rowToRemove.IsBlendShape ? typeof(SkinnedMeshRenderer) : typeof(GameObject),
                 rowToRemove.propName);
 
             Undo.RecordObject(clip, "Toggle Animator Auto-Save (Remove Row)");
-            AnimationUtility.SetEditorCurve(clip, binding, null); 
+            AnimationUtility.SetEditorCurve(clip, binding, null);
             EditorUtility.SetDirty(clip);
         }
 
-        _rows.RemoveAt(r); 
-        _grid.RemoveAt(r); 
+        _rows.RemoveAt(r);
+        _grid.RemoveAt(r);
 
-        SaveAll(); 
+        SaveAll();
     }
 
     // ────────────────────────────────────────────────────────────
@@ -890,7 +780,7 @@ public partial class DiNeToggleAnimator : EditorWindow
         for (int r = 0; r < _rows.Count; r++)
             for (int c = 0; c < _clips.Count; c++)
                 if (_grid[r][c] == null) _grid[r][c] = v;
-        
+
         SaveAll();
     }
 
@@ -930,13 +820,13 @@ public partial class DiNeToggleAnimator : EditorWindow
     private void SaveAll()
     {
         for (int c = 0; c < _clips.Count; c++) SaveClipData(c);
-        AssetDatabase.SaveAssets(); 
+        AssetDatabase.SaveAssets();
     }
 
     private void SaveClip(int c)
     {
         SaveClipData(c);
-        AssetDatabase.SaveAssets(); 
+        AssetDatabase.SaveAssets();
     }
 
     private void SaveClipData(int c)
@@ -949,23 +839,23 @@ public partial class DiNeToggleAnimator : EditorWindow
         {
             var row = _rows[r];
             float? st = _grid[r][c];
-            
+
             var binding = EditorCurveBinding.FloatCurve(
-                row.path, 
-                row.IsBlendShape ? typeof(SkinnedMeshRenderer) : typeof(GameObject), 
+                row.path,
+                row.IsBlendShape ? typeof(SkinnedMeshRenderer) : typeof(GameObject),
                 row.propName);
 
-            if (st.HasValue) 
+            if (st.HasValue)
             {
                 AnimationUtility.SetEditorCurve(clip, binding, AnimationCurve.Constant(0f, 0f, st.Value));
-            } 
-            else 
+            }
+            else
             {
                 AnimationUtility.SetEditorCurve(clip, binding, null);
             }
         }
 
-        EditorUtility.SetDirty(clip); 
+        EditorUtility.SetDirty(clip);
     }
 
     // ────────────────────────────────────────────────────────────

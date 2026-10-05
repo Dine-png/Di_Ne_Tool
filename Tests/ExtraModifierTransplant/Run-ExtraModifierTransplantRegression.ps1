@@ -51,7 +51,7 @@ try {
     $obsoleteProbe = Join-Path $probes 'DiNeTransplantRejectAddition.cs'
     if (Test-Path -LiteralPath $obsoleteProbe) { Remove-Item -LiteralPath $obsoleteProbe }
     $windowFiles = @('DiNeExtraModifierWindow.cs', 'DiNeExtraModifierWindow.Transplant.cs', 'DiNeExtraModifierWindow.Tutorial.cs', 'DiNeVrmUtility.cs', 'DiNeVrmMaterialConverter.cs', 'DiNeVrmPreflight.cs', 'DiNeUniVrmBridge.cs')
-    $tutorialFiles = @('DiNeGuidedTutorial.cs', 'DiNeTutorialBubble.cs')
+    $tutorialFiles = @('DiNeEditorUI.cs', 'DiNeGuidedTutorial.cs', 'DiNeTutorialBubble.cs')
     if ($CompileWindow) {
         foreach ($name in $windowFiles) {
             Copy-Item -LiteralPath (Join-Path $PackageSource ('Editor/ExtraModifier/' + $name)) -Destination $scripts -Force

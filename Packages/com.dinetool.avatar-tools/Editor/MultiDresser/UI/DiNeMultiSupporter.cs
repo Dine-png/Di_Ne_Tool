@@ -6,11 +6,9 @@ using System.Collections.Generic;
 [CustomEditor(typeof(DiNeMultiDresser))]
 public partial class DiNeMultiSupporter : Editor
 {
-    private Texture2D windowIcon;
     private Texture2D dresserPresetIcon;
     private Texture2D hairPresetIcon;
     private Texture2D accPresetIcon;
-    private Font      titleFont;
     private int selectedLayerIndex = 0;
     private int selectedContentTab;
     private string ContentTabSessionKey => $"DiNe.MultiDresser.ContentTab.{target.GetInstanceID()}";
@@ -22,9 +20,8 @@ public partial class DiNeMultiSupporter : Editor
     private readonly HashSet<string> savedShapeKeyNames = new HashSet<string>();
     private DiNeToggleMenuChoices toggleMenuChoices;
     private string toggleTargetStatus;
-    private GUIStyle cachedPreviewStyle, cachedDragHintStyle, cachedTitleStyle, cachedDescriptionStyle;
+    private GUIStyle cachedPreviewStyle, cachedDragHintStyle;
     private GUIStyle cachedToggleDropStyle;
-    private GUIStyle cachedSelectedTabStyle, cachedNormalTabStyle;
     private sealed class ShapeSyncCache
     {
         public int buttonCount;
@@ -91,11 +88,10 @@ public partial class DiNeMultiSupporter : Editor
     }
 
     private enum Language { English, Korean, Japanese }
-    private static readonly string[] LangButtonLabels = { "English", "한국어", "日本語" };
 
     private Language currentLanguage
     {
-        get 
+        get
         {
             int val = EditorPrefs.GetInt("DiNeLang", 0);
             if (val < 0 || val >= 3) val = 0;
@@ -324,11 +320,9 @@ public partial class DiNeMultiSupporter : Editor
         EditorApplication.projectChanged += InvalidateEditorCaches;
         Undo.undoRedoPerformed += InvalidateEditorCaches;
         InitializePreviewCleanupHooks();
-        windowIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
         dresserPresetIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/MultiDresser/DNDresser.png");
         hairPresetIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/MultiDresser/DNHair.png");
         accPresetIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/MultiDresser/DNAcc.png");
-        titleFont  = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
         DiNeMultiDresser gen = (DiNeMultiDresser)target;
         if(gen.rootTransform == null) gen.TryAutoAssignFXController();
 
@@ -375,20 +369,20 @@ public partial class DiNeMultiSupporter : Editor
         DrawHeader("Multi Dresser");
 
         GUILayout.Space(5);
-        int langIndex = DrawCustomToolbar((int)currentLanguage, LangButtonLabels, 35); 
+        int langIndex = DiNeEditorUI.DrawLanguageToolbar((int)currentLanguage);
         if ((int)currentLanguage != langIndex) currentLanguage = (Language)langIndex;
-        var lang = text[currentLanguage]; 
+        var lang = text[currentLanguage];
 
         GUILayout.Space(15);
         if (selectedContentTab == 1) independentTutorial.DrawControls();
         else DrawTutorialControls();
 
-        EditorGUILayout.BeginVertical("GroupBox");
-        EditorGUILayout.LabelField(lang["globalSettings"], EditorStyles.boldLabel);
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
+        GUILayout.Label(lang["globalSettings"], EditorStyles.boldLabel, GUILayout.MinWidth(0f));
 
         EditorGUILayout.BeginHorizontal();
         Transform before = root.objectReferenceValue as Transform;
-        Transform after = EditorGUILayout.ObjectField(lang["avatarRoot"], before, typeof(Transform), true) as Transform;
+        Transform after = EditorGUILayout.ObjectField(lang["avatarRoot"], before, typeof(Transform), true, GUILayout.MinWidth(0f)) as Transform;
         Rect avatarRootAnchor = GUILayoutUtility.GetLastRect();
 
         if (GUILayout.Button(new GUIContent("↺", lang["refreshTooltip"]), GUILayout.Width(30), GUILayout.Height(20)))
@@ -418,9 +412,9 @@ public partial class DiNeMultiSupporter : Editor
         if (!gen.ValidateAssignment(out string validationMessage))
         {
             EditorGUILayout.Space(2);
-            EditorGUILayout.HelpBox(validationMessage, MessageType.Error);
-            GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
-            if (GUILayout.Button("아바타 기준으로 FX/메뉴 재배정 (↺)", GUILayout.Height(24)))
+            EditorGUILayout.HelpBox(LocalizeAssignmentValidation(validationMessage), MessageType.Error);
+            GUI.backgroundColor = DiNeEditorUI.Mint;
+            if (DiNeEditorUI.Button(Localized("Reassign FX/Menu from Avatar (↺)", "아바타 기준으로 FX/메뉴 재배정 (↺)", "アバターからFX/メニューを再設定 (↺)"), DiNeEditorUI.CompactButtonHeight))
             {
                 Undo.RecordObject(gen, "Refresh Multi Dresser Bindings");
                 // 임시(__Temp) 에셋이 남아있으면 먼저 원본으로 복원한 뒤 재배정한다.
@@ -436,16 +430,16 @@ public partial class DiNeMultiSupporter : Editor
 
         EditorGUILayout.BeginHorizontal();
         GUILayout.Label(lang["fxController"], GUILayout.Width(110));
-        controller.objectReferenceValue = EditorGUILayout.ObjectField(controller.objectReferenceValue, typeof(RuntimeAnimatorController), false);
+        controller.objectReferenceValue = EditorGUILayout.ObjectField(controller.objectReferenceValue, typeof(RuntimeAnimatorController), false, GUILayout.MinWidth(0f));
         EditorGUILayout.EndHorizontal();
 
         EditorGUILayout.BeginHorizontal();
         GUILayout.Label(lang["expressionMenu"], GUILayout.Width(110));
-        exMenu.objectReferenceValue = EditorGUILayout.ObjectField(exMenu.objectReferenceValue, typeof(VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionsMenu), false);
+        exMenu.objectReferenceValue = EditorGUILayout.ObjectField(exMenu.objectReferenceValue, typeof(VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionsMenu), false, GUILayout.MinWidth(0f));
         EditorGUILayout.EndHorizontal();
 
         EditorGUILayout.EndVertical();
-        GUILayout.Space(8);
+        GUILayout.Space(DiNeEditorUI.CardSpacing);
         int nextContentTab = DrawCustomToolbar(selectedContentTab, new[] {
             Localized("Wardrobe", "옷장", "衣装"),
             Localized("Independent Toggles", "독립 토글", "独立トグル")
@@ -456,7 +450,7 @@ public partial class DiNeMultiSupporter : Editor
             // Finish delayed text editing while the old page is still drawn this event.
             GUI.FocusControl(null);
         }
-        GUILayout.Space(8);
+        GUILayout.Space(DiNeEditorUI.CardSpacing);
         if (selectedContentTab == 0) DrawWardrobeSection(gen, shapeKeyTargets, layers, lang);
         else DrawSimpleToggleUI(gen);
 
@@ -528,7 +522,7 @@ public partial class DiNeMultiSupporter : Editor
     private void DrawWardrobeSection(DiNeMultiDresser gen, SerializedProperty shapeKeyTargets,
         SerializedProperty layers, Dictionary<string, string> lang)
     {
-        EditorGUILayout.BeginVertical("GroupBox");
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         EditorGUILayout.LabelField(lang["shapeKeyTargets"], EditorStyles.boldLabel);
         if (DrawGlobalShapeKeyTargets(shapeKeyTargets, lang))
         {
@@ -546,7 +540,7 @@ public partial class DiNeMultiSupporter : Editor
         EditorGUILayout.EndVertical();
         DrawTutorialBubble(TutorialStep.ShapeKeys, tutorialShapeTargetAnchor);
 
-        EditorGUILayout.Space(8);
+        GUILayout.Space(DiNeEditorUI.CardSpacing);
         EditorGUILayout.LabelField(lang["layerCategory"], EditorStyles.boldLabel);
 
         if (layers.arraySize == 0)
@@ -571,8 +565,8 @@ public partial class DiNeMultiSupporter : Editor
         selectedLayerIndex = DrawCustomToolbar(selectedLayerIndex, tabNames.ToArray(), 35);
         Rect categoryTabsAnchor = GUILayoutUtility.GetLastRect();
 
-        GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
-        if (GUILayout.Button("+", GUILayout.Width(40), GUILayout.Height(35)))
+        GUI.backgroundColor = DiNeEditorUI.Mint;
+        if (GUILayout.Button("+", GUILayout.Width(40), GUILayout.Height(DiNeEditorUI.ToolbarHeight)))
         {
             layers.InsertArrayElementAtIndex(layers.arraySize);
             var newLayerProp = layers.GetArrayElementAtIndex(layers.arraySize - 1);
@@ -622,7 +616,7 @@ public partial class DiNeMultiSupporter : Editor
         // 레이어 전환 시 미리보기 해제
         if (previewLayerIndex >= 0 && previewLayerIndex != index) ClearPreview();
 
-        EditorGUILayout.BeginVertical("helpBox"); 
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         GUILayout.Space(5);
         EditorGUILayout.BeginHorizontal();
 
@@ -638,10 +632,13 @@ public partial class DiNeMultiSupporter : Editor
         DrawLayerIconPresetButton(layerIcon, "ACC", accPresetIcon);
         EditorGUILayout.EndVertical();
 
-        EditorGUILayout.BeginVertical();
+        // Keep icon presets and the category name readable in a narrow Inspector.
+        bool narrowCategory = EditorGUIUtility.currentViewWidth < 400f;
+        if (narrowCategory) EditorGUILayout.EndHorizontal();
+        EditorGUILayout.BeginVertical(GUILayout.MinWidth(0f));
         GUILayout.Space(5);
-        EditorGUILayout.LabelField(lang["catName"], EditorStyles.boldLabel);
-        layerName.stringValue = EditorGUILayout.TextField(layerName.stringValue, GUILayout.Height(25)); 
+        GUILayout.Label(lang["catName"], EditorStyles.boldLabel, GUILayout.MinWidth(0f));
+        layerName.stringValue = EditorGUILayout.TextField(layerName.stringValue, GUILayout.MinWidth(0f), GUILayout.Height(25));
         Rect categoryNameAnchor = GUILayoutUtility.GetLastRect();
         Rect categoryConfirmAnchor = DrawTutorialCategoryAction(gen);
         if (categoryConfirmAnchor.width > 0f)
@@ -655,7 +652,7 @@ public partial class DiNeMultiSupporter : Editor
         if (layers.arraySize > 1)
         {
             GUI.backgroundColor = new Color(1f, 0.7f, 0.7f);
-            if (GUILayout.Button(lang["delCat"], GUILayout.Width(80), GUILayout.Height(24)))
+            if (GUILayout.Button(lang["delCat"], GUILayout.Width(80), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
             {
                 layers.DeleteArrayElementAtIndex(index);
                 if (serializedObject.ApplyModifiedProperties()) toggleMenuChoices?.Invalidate();
@@ -668,18 +665,18 @@ public partial class DiNeMultiSupporter : Editor
         EditorGUILayout.EndHorizontal();
         EditorGUILayout.EndVertical();
 
-        EditorGUILayout.EndHorizontal();
+        if (!narrowCategory) EditorGUILayout.EndHorizontal();
         GUILayout.Space(5);
-        EditorGUILayout.EndVertical(); 
+        EditorGUILayout.EndVertical();
         DrawTutorialBubble(TutorialStep.Category, categoryNameAnchor);
 
-        EditorGUILayout.Space(8);
+        GUILayout.Space(DiNeEditorUI.CardSpacing);
 
         // 파티클 오브젝트 (레이어 공통)
         SerializedProperty particleProp = layerProp.FindPropertyRelative("particleObject");
-        EditorGUILayout.BeginHorizontal("helpBox");
+        EditorGUILayout.BeginHorizontal(DiNeEditorUI.CardStyle);
         GUILayout.Label(lang["particle"], GUILayout.Width(120));
-        particleProp.objectReferenceValue = EditorGUILayout.ObjectField(particleProp.objectReferenceValue, typeof(GameObject), true);
+        particleProp.objectReferenceValue = EditorGUILayout.ObjectField(particleProp.objectReferenceValue, typeof(GameObject), true, GUILayout.MinWidth(0f));
         EditorGUILayout.EndHorizontal();
 
         EditorGUILayout.Space(5);
@@ -701,10 +698,10 @@ public partial class DiNeMultiSupporter : Editor
             Rect insertRect = GUILayoutUtility.GetRect(0, 4, GUILayout.ExpandWidth(true));
             if (evt.type == EventType.Repaint && draggedItemIndex >= 0 && dragTargetIndex == i)
                 EditorGUI.DrawRect(new Rect(insertRect.x, insertRect.y + 1, insertRect.width, 2),
-                                   new Color(0.3f, 0.82f, 0.9f));
+                                   DiNeEditorUI.Mint);
 
             // ── 아이템 helpBox ──
-            EditorGUILayout.BeginVertical("helpBox");
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
 
             // 헤더 행: [grip] [레이블] [X]
             EditorGUILayout.BeginHorizontal();
@@ -713,7 +710,7 @@ public partial class DiNeMultiSupporter : Editor
             if (evt.type == EventType.Repaint)
             {
                 Color lc = (draggedItemIndex == i)
-                    ? new Color(0.3f, 0.82f, 0.9f)
+                    ? DiNeEditorUI.Mint
                     : new Color(0.6f, 0.6f, 0.6f);
                 float lx = handleRect.x + 2f;
                 float ly = handleRect.center.y - 3f;
@@ -724,17 +721,17 @@ public partial class DiNeMultiSupporter : Editor
             EditorGUIUtility.AddCursorRect(handleRect, MouseCursor.Pan);
 
             string headerLabel = (i == 0) ? lang["defaultState"] : $"{lang["menuButton"]} {i}";
-            EditorGUILayout.LabelField(headerLabel, EditorStyles.boldLabel);
+            GUILayout.Label(headerLabel, EditorStyles.boldLabel, GUILayout.MinWidth(0f));
             Rect stateLabelAnchor = GUILayoutUtility.GetLastRect();
 
             // ── 미리보기 토글 ──
             bool isPreviewing = (previewLayerIndex == index && previewButtonIndex == i);
-            GUI.backgroundColor = isPreviewing ? new Color(0.3f, 0.82f, 0.9f) : new Color(0.55f, 0.55f, 0.55f);
+            GUI.backgroundColor = isPreviewing ? DiNeEditorUI.Mint : new Color(0.55f, 0.55f, 0.55f);
             GUIStyle previewStyle = cachedPreviewStyle ?? (cachedPreviewStyle = new GUIStyle(GUI.skin.button) { fontSize = 11, normal = { textColor = Color.white } });
             string previewLabel = currentLanguage == Language.Korean
                 ? "미리보기"
                 : currentLanguage == Language.Japanese ? "プレビュー" : "Preview";
-            bool previewClicked = GUILayout.Button(previewLabel, previewStyle, GUILayout.Width(76), GUILayout.Height(24));
+            bool previewClicked = GUILayout.Button(previewLabel, previewStyle, GUILayout.Width(76), GUILayout.Height(DiNeEditorUI.CompactButtonHeight));
             Rect previewAnchor = GUILayoutUtility.GetLastRect();
             if (previewClicked)
             {
@@ -752,7 +749,7 @@ public partial class DiNeMultiSupporter : Editor
             }
             GUI.backgroundColor = Color.white;
 
-            if (GUILayout.Button("×", GUILayout.Width(30), GUILayout.Height(24)))
+            if (GUILayout.Button("×", GUILayout.Width(30), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
             {
                 ClearPreview();
                 if (i < currentLayerData.icons.Count)
@@ -827,7 +824,7 @@ public partial class DiNeMultiSupporter : Editor
 
                     Color previousRemoveColor = GUI.backgroundColor;
                     GUI.backgroundColor = new Color(1f, 0.7f, 0.7f);
-                    if (GUILayout.Button(lang["emptyBtnRemove"], GUILayout.Height(24)))
+                    if (GUILayout.Button(lang["emptyBtnRemove"], GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
                         pendingEmptyButtonRemoval = i;
                     GUI.backgroundColor = previousRemoveColor;
                 }
@@ -838,7 +835,7 @@ public partial class DiNeMultiSupporter : Editor
                 icon.objectReferenceValue = EditorGUI.ObjectField(
                     iconRect, icon.objectReferenceValue, typeof(Texture2D), false);
 
-                GUILayout.Space(8);
+                GUILayout.Space(DiNeEditorUI.CardSpacing);
                 EditorGUILayout.BeginVertical(GUILayout.MinHeight(76));
                 GUILayout.Label(lang["menuName"], EditorStyles.miniBoldLabel);
                 l.stringValue = EditorGUILayout.TextField(l.stringValue, GUILayout.Height(22));
@@ -855,7 +852,7 @@ public partial class DiNeMultiSupporter : Editor
                 Rect regenerateIconRect = new Rect(editIconRect.xMax + iconActionGap, iconActionsRect.y, iconActionWidth, iconActionsRect.height);
                 Rect renameIconRect = new Rect(regenerateIconRect.xMax + iconActionGap, iconActionsRect.y, iconActionWidth, iconActionsRect.height);
                 Color previousIconButtonColor = GUI.backgroundColor;
-                GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+                GUI.backgroundColor = DiNeEditorUI.Mint;
                 if (GUI.Button(editIconRect, editIconLabel))
                 {
                     if (serializedObject.ApplyModifiedProperties()) toggleMenuChoices?.Invalidate();
@@ -925,7 +922,7 @@ public partial class DiNeMultiSupporter : Editor
 
                 Rect subDrop = GUILayoutUtility.GetRect(0, 22, GUILayout.ExpandWidth(true));
                 Color subOriginalColor = GUI.backgroundColor;
-                GUI.backgroundColor = new Color(0.6f, 0.9f, 1f);
+                GUI.backgroundColor = DiNeEditorUI.Mint;
                 GUI.Box(subDrop, lang["linkDragHint"], EditorStyles.helpBox);
                 GUI.backgroundColor = subOriginalColor;
 
@@ -966,7 +963,7 @@ public partial class DiNeMultiSupporter : Editor
         Rect lastInsertRect = GUILayoutUtility.GetRect(0, 4, GUILayout.ExpandWidth(true));
         if (evt.type == EventType.Repaint && draggedItemIndex >= 0 && dragTargetIndex == targets.arraySize)
             EditorGUI.DrawRect(new Rect(lastInsertRect.x + 28, lastInsertRect.y + 1, lastInsertRect.width - 28, 2),
-                               new Color(0.3f, 0.82f, 0.9f));
+                               DiNeEditorUI.Mint);
 
         // ── 의상 추가 드래그 영역 (하단) ──
         EditorGUILayout.Space(4);
@@ -978,7 +975,7 @@ public partial class DiNeMultiSupporter : Editor
         });
         Rect dropArea = GUILayoutUtility.GetRect(0, 36, GUILayout.ExpandWidth(true));
         Color dropOrigColor = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.6f, 0.9f, 1f);
+        GUI.backgroundColor = DiNeEditorUI.Mint;
         GUI.Box(dropArea, lang["mainDragHint"], dragHintStyle);
         GUI.backgroundColor = dropOrigColor;
         // An empty category has no default-state card yet.
@@ -1774,14 +1771,14 @@ public partial class DiNeMultiSupporter : Editor
         Rect dropArea = GUILayoutUtility.GetRect(0, 30, GUILayout.ExpandWidth(true));
         tutorialShapeTargetAnchor = dropArea;
         Color originalColor = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.6f, 0.9f, 1f); 
+        GUI.backgroundColor = DiNeEditorUI.Mint;
         GUI.Box(dropArea, lang["skDragHint"], EditorStyles.helpBox);
         GUI.backgroundColor = originalColor;
 
         HandleDragDrop(dropArea, (objs) => {
             foreach(var o in objs) {
                  bool exists = false;
-                 for(int k=0; k<shapeKeyTargets.arraySize; k++) 
+                 for(int k=0; k<shapeKeyTargets.arraySize; k++)
                      if(shapeKeyTargets.GetArrayElementAtIndex(k).objectReferenceValue == o) exists = true;
                  if(!exists) {
                     int idx = shapeKeyTargets.arraySize;
@@ -1798,6 +1795,34 @@ public partial class DiNeMultiSupporter : Editor
     private string Localized(string en, string ko, string ja)
         => currentLanguage == Language.Korean ? ko : currentLanguage == Language.Japanese ? ja : en;
 
+    // Runtime validation owns the conditions; the Inspector translates only their presentation.
+    private string LocalizeAssignmentValidation(string message)
+    {
+        switch (message)
+        {
+            case "아바타(VRCAvatarDescriptor)를 찾을 수 없습니다. 멀티 드레서가 아바타 하위에 있는지 확인하세요.":
+                return Localized("No avatar (VRCAvatarDescriptor) was found. Make sure Multi Dresser is inside the avatar hierarchy.",
+                    message, "アバター（VRCAvatarDescriptor）が見つかりません。Multi Dresserがアバター階層内にあるか確認してください。");
+            case "아바타의 FX 레이어에 Animator Controller가 비어 있습니다. 아바타에 FX 컨트롤러를 먼저 설정하세요.":
+                return Localized("The avatar's FX layer has no Animator Controller. Assign an FX controller to the avatar first.",
+                    message, "アバターのFXレイヤーにAnimator Controllerがありません。先にアバターのFXコントローラーを設定してください。");
+            case "할당된 FX Controller가 없습니다. 새로고침(↺) 버튼을 눌러 아바타의 FX를 다시 가져오세요.":
+                return Localized("No FX Controller is assigned. Press Refresh (↺) to retrieve the avatar's FX controller again.",
+                    message, "FX Controllerが割り当てられていません。更新（↺）を押してアバターのFXコントローラーを取得し直してください。");
+            case "할당된 FX Controller가 아바타 내부의 FX와 다릅니다.\n이대로 업로드하면 잘못된 FX를 덮어쓸 수 있으니, 새로고침(↺) 버튼을 눌러 재배정하세요.":
+                return Localized("The assigned FX Controller differs from the avatar's FX controller.\nUploading as-is may overwrite the wrong FX controller. Press Refresh (↺) to reassign it.",
+                    message, "割り当てたFX ControllerがアバターのFXと異なります。\nこのままアップロードすると別のFXを上書きする可能性があります。更新（↺）を押して再設定してください。");
+            case "임시 빌드용 FX가 아바타에 남아 있습니다(복원 실패).\n원본 FX로 교체한 뒤 새로고침(↺) 버튼을 눌러 재배정하세요.":
+                return Localized("Temporary build FX remains on the avatar because restoration failed.\nRestore the original FX controller, then press Refresh (↺) to reassign it.",
+                    message, "復元に失敗したため、ビルド用の一時FXがアバターに残っています。\n元のFXに戻してから更新（↺）を押して再設定してください。");
+            case "할당된 Expression Menu가 아바타 내부의 메뉴와 다릅니다.\n새로고침(↺) 버튼을 눌러 재배정하세요.":
+                return Localized("The assigned Expression Menu differs from the avatar's menu.\nPress Refresh (↺) to reassign it.",
+                    message, "割り当てたExpression Menuがアバターのメニューと異なります。\n更新（↺）を押して再設定してください。");
+            default:
+                return message;
+        }
+    }
+
     private void InvalidateEditorCaches()
     {
         toggleMenuChoices?.Invalidate();
@@ -1807,7 +1832,7 @@ public partial class DiNeMultiSupporter : Editor
 
     private void DrawSimpleToggleUI(DiNeMultiDresser gen)
     {
-        using (new EditorGUILayout.VerticalScope("GroupBox"))
+        using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
         {
             GUILayout.Label(Localized("Independent On/Off Toggles", "독립 On/Off 토글", "独立On/Offトグル"), EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(Localized("Switch all target objects together with one button.",
@@ -1817,7 +1842,7 @@ public partial class DiNeMultiSupporter : Editor
             for (int i = 0; i < groups.arraySize; i++)
             {
                 var group = groups.GetArrayElementAtIndex(i);
-                using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+                using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
                 {
                     using (new EditorGUILayout.HorizontalScope())
                     {
@@ -1825,13 +1850,13 @@ public partial class DiNeMultiSupporter : Editor
                         GUILayout.Label(new GUIContent(title, title), EditorStyles.boldLabel, GUILayout.MinWidth(0), GUILayout.ExpandWidth(true));
                         bool previewing = DiNeTogglePreview.IsActive(this, i);
                         Color previewColor = GUI.backgroundColor;
-                        if (previewing) GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+                        if (previewing) GUI.backgroundColor = DiNeEditorUI.Mint;
                         using (new EditorGUI.DisabledScope(EditorApplication.isPlayingOrWillChangePlaymode))
                         if (GUILayout.Button(new GUIContent(previewing ? Localized("Stop", "종료", "終了")
                             : Localized("Preview", "미리보기", "プレビュー"),
                             previewing ? Localized("End preview and restore the original states", "미리보기를 종료하고 원래 상태로 복원", "プレビューを終了して元の状態に戻す")
                                 : Localized("Preview all target objects together", "대상 오브젝트들을 함께 미리보기", "対象オブジェクトをまとめてプレビュー")),
-                            GUILayout.Width(76), GUILayout.Height(24)))
+                            GUILayout.Width(76), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
                         {
                             if (previewing) DiNeTogglePreview.Clear();
                             else
@@ -1849,7 +1874,7 @@ public partial class DiNeMultiSupporter : Editor
                         }
                         if (i == 0) { independentTutorial.Anchor("preview", GUILayoutUtility.GetLastRect()); independentTutorial.Anchor("restore", GUILayoutUtility.GetLastRect()); independentTutorial.Anchor("state", GUILayoutUtility.GetLastRect()); }
                         GUI.backgroundColor = previewColor;
-                        if (GUILayout.Button(new GUIContent("×", Localized("Remove Toggle", "토글 삭제", "トグル削除")), GUILayout.Width(24), GUILayout.Height(24)))
+                        if (GUILayout.Button(new GUIContent("×", Localized("Remove Toggle", "토글 삭제", "トグル削除")), GUILayout.Width(24), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
                         {
                             DiNeTogglePreview.ClearForOwner(this);
                             groups.DeleteArrayElementAtIndex(i);
@@ -1892,7 +1917,7 @@ public partial class DiNeMultiSupporter : Editor
                                 else SetToggleTargetStatus(0);
                                 if (i == 0) { serializedObject.ApplyModifiedProperties(); independentTutorial.NotifyAction("targets"); }
                             }
-                            if (GUILayout.Button(new GUIContent("×", Localized("Remove Object", "대상 삭제", "対象を削除")), GUILayout.Width(24), GUILayout.Height(24)))
+                            if (GUILayout.Button(new GUIContent("×", Localized("Remove Object", "대상 삭제", "対象を削除")), GUILayout.Width(24), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
                             {
                                 DiNeTogglePreview.ClearForOwner(this);
                                 item.objectReferenceValue = null;
@@ -1913,7 +1938,7 @@ public partial class DiNeMultiSupporter : Editor
                     var dropLabel = new GUIContent(Localized("Drag objects here to add", "오브젝트를 여기에 드래그해 추가", "ここにオブジェクトをドラッグして追加"));
                     Rect drop = GUILayoutUtility.GetRect(dropLabel, dropStyle, GUILayout.ExpandWidth(true), GUILayout.MinHeight(48));
                     Color dropColor = GUI.backgroundColor;
-                    GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
+                    GUI.backgroundColor = DiNeEditorUI.Mint;
                     GUI.Box(drop, dropLabel, dropStyle);
                     GUI.backgroundColor = dropColor;
                     int groupIndex = i;
@@ -1922,8 +1947,8 @@ public partial class DiNeMultiSupporter : Editor
                 }
             }
             Color previous = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
-            if (GUILayout.Button(Localized("Add Independent Toggle", "독립 토글 추가", "独立トグルを追加"), GUILayout.Height(30)))
+            GUI.backgroundColor = DiNeEditorUI.Mint;
+            if (DiNeEditorUI.Button(Localized("Add Independent Toggle", "독립 토글 추가", "独立トグルを追加")))
             {
                 if (serializedObject.ApplyModifiedProperties()) toggleMenuChoices?.Invalidate();
                 DiNeIndependentToggleEditing.Create(gen);
@@ -2137,8 +2162,8 @@ public partial class DiNeMultiSupporter : Editor
         foldout = EditorGUILayout.Foldout(foldout, lang["matSwap"], true);
         Rect materialFoldoutAnchor = GUILayoutUtility.GetLastRect();
         Color previousColor = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.7f, 0.9f, 0.7f);
-        if (GUILayout.Button(lang["addMatSwap"], GUILayout.Width(60), GUILayout.Height(20)))
+        GUI.backgroundColor = DiNeEditorUI.Mint;
+        if (DiNeEditorUI.Button(lang["addMatSwap"], DiNeEditorUI.CompactButtonHeight, GUILayout.Width(60)))
         {
             swapList.entries.Add(new DiNeMultiDresser.MaterialSwapEntry());
             foldout = true;
@@ -2166,7 +2191,7 @@ public partial class DiNeMultiSupporter : Editor
         for (int e = 0; e < swapList.entries.Count; e++)
         {
             var entry = swapList.entries[e];
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
 
             // Renderer 행
             EditorGUILayout.BeginHorizontal();
@@ -2287,33 +2312,10 @@ public partial class DiNeMultiSupporter : Editor
 
     private void DrawHeader(string titleText)
     {
-        GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
-        EditorGUILayout.BeginVertical("box");
-        EditorGUILayout.BeginHorizontal();
-        GUILayout.FlexibleSpace();
-        GUIStyle titleStyle = cachedTitleStyle ?? (cachedTitleStyle = new GUIStyle(EditorStyles.label) { font = titleFont, alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold, fontSize = 36 });
-        float iconSize = 72f;
-        GUILayout.Label(windowIcon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
-        GUILayout.Space(6);
-        GUILayout.Label(titleText, titleStyle, GUILayout.Height(iconSize));
-        GUILayout.FlexibleSpace();
-        EditorGUILayout.EndHorizontal();
-
-        GUILayout.Space(4);
-        string desc = "";
-        switch (currentLanguage)
-        {
-            case Language.Korean: desc = "여러 개의 의상과 액세서리를 손쉽게 켜고 끌 수 있는 FX 토글을 생성합니다."; break;
-            case Language.Japanese: desc = "複数の衣装やアクセサリーを簡単に切り替えるFXトグルを生成します。"; break;
-            default: desc = "Generates FX toggles to easily turn multiple clothing and accessories on/off."; break;
-        }
-        if (cachedDescriptionStyle == null)
-            cachedDescriptionStyle = new GUIStyle(EditorStyles.wordWrappedLabel)
-                { alignment = TextAnchor.MiddleCenter, fontSize = 12, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } };
-        GUILayout.Label(desc, cachedDescriptionStyle);
-
-        GUILayout.Space(5);
-        EditorGUILayout.EndVertical();
+        DiNeEditorUI.DrawHeader(titleText, Localized(
+            "Generates FX toggles to easily turn multiple clothing and accessories on/off.",
+            "여러 개의 의상과 액세서리를 손쉽게 켜고 끌 수 있는 FX 토글을 생성합니다.",
+            "複数の衣装やアクセサリーを簡単に切り替えるFXトグルを生成します。"));
     }
 
     private void DrawLayerIconPresetButton(SerializedProperty layerIcon, string label, Texture2D presetIcon)
@@ -2331,27 +2333,7 @@ public partial class DiNeMultiSupporter : Editor
 
     private int DrawCustomToolbar(int selected, string[] options, float height)
     {
-        EditorGUILayout.BeginHorizontal();
-        int newSelected = selected;
-        for (int i = 0; i < options.Length; i++)
-        {
-            var prevBg = GUI.backgroundColor;
-            GUI.backgroundColor = (i == selected) ? new Color(0.30f, 0.82f, 0.76f) : new Color(0.5f, 0.5f, 0.5f, 1f);
-            if (cachedSelectedTabStyle == null)
-                cachedSelectedTabStyle = new GUIStyle(GUI.skin.button) { fontStyle = FontStyle.Bold,
-                    fontSize = 12, normal = { textColor = Color.white } };
-            if (cachedNormalTabStyle == null)
-                cachedNormalTabStyle = new GUIStyle(GUI.skin.button) { fontSize = 12,
-                    normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } };
-            GUIStyle style = i == selected ? cachedSelectedTabStyle : cachedNormalTabStyle;
-            if (GUILayout.Button(options[i], style, GUILayout.Height(height)))
-            {
-                newSelected = i;
-            }
-            GUI.backgroundColor = prevBg;
-        }
-        EditorGUILayout.EndHorizontal();
-        return newSelected;
+        return DiNeEditorUI.DrawToolbar(selected, options, height);
     }
 
 }

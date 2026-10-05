@@ -49,6 +49,7 @@ if (!$needsToggleEditor) {
     }
 }
 Copy-Item -LiteralPath (Join-Path $PackageSource 'Runtime/DiNePackageAssets.cs') -Destination $scripts -Force
+Copy-Item -LiteralPath (Join-Path $PackageSource 'Editor/Core/DiNeEditorUI.cs') -Destination $scripts -Force
 Copy-Item -LiteralPath $InspectorSource -Destination (Join-Path $scripts 'DiNeMultiSupporter.cs') -Force
 Copy-Item -LiteralPath $TutorialSource -Destination (Join-Path $scripts 'DiNeMultiSupporter.Tutorial.cs') -Force
 Copy-Item -LiteralPath (Join-Path $PackageSource 'Editor/Core/DiNeTutorialBubble.cs') -Destination $scripts -Force

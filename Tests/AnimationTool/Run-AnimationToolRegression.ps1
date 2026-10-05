@@ -44,7 +44,7 @@ try {
         Copy-Item -LiteralPath $file.FullName -Destination $copy -Force
         $productionFiles.Add([PSCustomObject]@{ RelativePath = 'Editor/AnimationTool/' + $file.Name; Source = $file.FullName; CompiledCopy = $copy })
     }
-    foreach ($relative in @('Runtime/DiNePackageAssets.cs', 'Editor/Core/DiNeGuidedTutorial.cs', 'Editor/Core/DiNeTutorialBubble.cs', 'Editor/Core/DiNeAviHeadPreview.cs', 'Editor/Core/DiNeAvatarHeadFraming.cs', 'Editor/Core/DiNePresetAssetSelector.cs')) {
+    foreach ($relative in @('Runtime/DiNePackageAssets.cs', 'Editor/Core/DiNeEditorUI.cs', 'Editor/Core/DiNeGuidedTutorial.cs', 'Editor/Core/DiNeTutorialBubble.cs', 'Editor/Core/DiNeAviHeadPreview.cs', 'Editor/Core/DiNeAvatarHeadFraming.cs', 'Editor/Core/DiNePresetAssetSelector.cs')) {
         $source = Join-Path $PackageSource $relative
         if (!(Test-Path -LiteralPath $source)) { throw "Missing production helper: $relative" }
         $copy = Join-Path $scripts ([IO.Path]::GetFileName($relative))

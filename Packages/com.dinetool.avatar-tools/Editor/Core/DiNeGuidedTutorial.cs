@@ -48,6 +48,7 @@ public sealed class DiNeGuidedTutorial
     private int controlGeneration;
     private bool active, wasComplete, focusPending, drawn, frameOpen, suspended, aborted;
     private bool lastExpanded;
+    private float overviewWidth;
     private DiNeTutorialBubble.Anchor controlsAnchor;
 
     public bool IsActive => active && OwnsSession;
@@ -180,7 +181,7 @@ public sealed class DiNeGuidedTutorial
         try
         {
             GUI.enabled = true;
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
             IsExpanded = EditorGUILayout.Foldout(IsExpanded, new GUIContent(L("Tutorial", "튜토리얼", "チュートリアル"),
                 L("Collapse or expand the instructions. Collapsing pauses guidance and keeps your current step.",
                     "튜토리얼 안내를 접거나 펼칩니다. 접어 두면 현재 단계를 유지한 채 안내를 잠시 숨깁니다.",
@@ -193,15 +194,27 @@ public sealed class DiNeGuidedTutorial
             if (IsActive) EditorGUILayout.LabelField($"{index + 2} / {steps.Length + 2} · {CourseName}", EditorStyles.miniLabel);
             else if (!string.IsNullOrWhiteSpace(CourseOverview))
             {
-                EditorGUILayout.LabelField(CourseOverview, EditorStyles.wordWrappedLabel);
+                var overview = new GUIContent(CourseOverview);
+                var overviewStyle = EditorStyles.wordWrappedLabel;
+                float width = overviewWidth > 0f ? overviewWidth : Mathf.Max(1f, EditorGUIUtility.currentViewWidth - 32f);
+                // Keep the final wrapped line clear of the action row, including fallback-font text.
+                float height = overviewStyle.CalcHeight(overview, width) + EditorGUIUtility.singleLineHeight;
+                Rect overviewRect = GUILayoutUtility.GetRect(overview, overviewStyle,
+                    GUILayout.Height(height), GUILayout.ExpandWidth(true));
+                if (Event.current.type == EventType.Repaint && !Mathf.Approximately(overviewWidth, overviewRect.width))
+                {
+                    // Nested inspectors and scroll views can be narrower than currentViewWidth.
+                    overviewWidth = overviewRect.width;
+                    Repaint();
+                }
+                GUI.Label(overviewRect, overview, overviewStyle);
                 GUILayout.Space(5);
             }
             EditorGUILayout.BeginHorizontal();
             if (!IsActive)
             {
-                GUI.backgroundColor = new Color(0.30f, 0.82f, 0.76f);
-                if (GUILayout.Button(new GUIContent(L("Start guided tutorial", "말풍선 튜토리얼 시작", "吹き出しチュートリアルを開始"),
-                    CourseName), GUILayout.Height(30))) ScheduleControl(Start);
+                if (DiNeEditorUI.Button(new GUIContent(L("Start guided tutorial", "말풍선 튜토리얼 시작", "吹き出しチュートリアルを開始"),
+                    CourseName))) ScheduleControl(Start);
             }
             else
             {

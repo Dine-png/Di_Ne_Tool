@@ -6,8 +6,8 @@ using System.Collections.Generic;
 /// <summary>Inline tutorial guidance anchored to an existing IMGUI control.</summary>
 public static class DiNeTutorialBubble
 {
-    private static readonly Color Mint = new Color(0.30f, 0.82f, 0.76f, 1f);
-    private static readonly Color CardTint = new Color(0.50f, 0.50f, 0.50f, 1f);
+    private static readonly Color Mint = DiNeEditorUI.Mint;
+    private static readonly Color CardTint = DiNeEditorUI.Inactive;
     private static readonly Color DimColor = new Color(0f, 0f, 0f, 0.56f);
     private const float TailHeight = 8f;
     private const float BorderWidth = 1.5f;
@@ -330,7 +330,7 @@ public static class DiNeTutorialBubble
     {
         if (cardStyle != null && cachedProSkin == EditorGUIUtility.isProSkin) return;
         cachedProSkin = EditorGUIUtility.isProSkin;
-        cardStyle = new GUIStyle(EditorStyles.helpBox)
+        cardStyle = new GUIStyle(DiNeEditorUI.CardStyle)
         {
             margin = new RectOffset(0, 0, 0, 0),
             padding = new RectOffset(10, 10, 8, 8)
@@ -340,7 +340,7 @@ public static class DiNeTutorialBubble
         bodyStyle = new GUIStyle(EditorStyles.wordWrappedLabel) { richText = false };
         bodyStyle.normal.textColor = Color.white;
         hintStyle = new GUIStyle(EditorStyles.miniLabel) { wordWrap = true, richText = false };
-        hintStyle.normal.textColor = new Color(0.80f, 0.80f, 0.80f, 1f);
+        hintStyle.normal.textColor = DiNeEditorUI.MutedText;
     }
 
     private static void DrawBorder(Rect rect)

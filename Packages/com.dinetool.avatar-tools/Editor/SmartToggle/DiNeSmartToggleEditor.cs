@@ -7,13 +7,8 @@ using VRC.SDK3.Avatars.Components;
 [CustomEditor(typeof(DiNeSmartToggle))]
 public sealed partial class DiNeSmartToggleEditor : Editor
 {
-    private static readonly Color Mint = new Color(0.30f, 0.82f, 0.76f);
-    private static readonly string[] Languages = { "English", "한국어", "日本語" };
     private SerializedProperty displayName, parameterName, defaultOn, saved, menuPlacement, groupName, icon;
     private DiNeToggleMenuChoices menuChoices;
-    private Texture2D brandIcon;
-    private Font titleFont;
-    private GUIStyle titleStyle, descriptionStyle, selectedStyle, normalStyle;
     private int Language => Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", 0), 0, 2);
     private string T(string en, string ko, string ja) => Language == 1 ? ko : Language == 2 ? ja : en;
 
@@ -82,8 +77,6 @@ public sealed partial class DiNeSmartToggleEditor : Editor
         menuPlacement = serializedObject.FindProperty("menuPlacement");
         groupName = serializedObject.FindProperty("groupName");
         icon = serializedObject.FindProperty("icon");
-        brandIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
-        titleFont = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
     }
 
     private void OnDisable()
@@ -105,26 +98,21 @@ public sealed partial class DiNeSmartToggleEditor : Editor
     {
         serializedObject.Update();
         var toggle = (DiNeSmartToggle)target;
-        EnsureStyles();
         DrawSmartToggleHeader();
         GUILayout.Space(5);
-        int language = Language;
-        int nextLanguage = DrawSegments(language, Languages, 35);
-        if (nextLanguage != language) EditorPrefs.SetInt("DiNeLang", nextLanguage);
+        DiNeEditorUI.DrawLanguageToolbar(Language);
         GUILayout.Space(15);
         tutorial.DrawControls();
 
-        using (new EditorGUILayout.VerticalScope("GroupBox"))
+        using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
         {
             using (new EditorGUILayout.HorizontalScope())
             {
                 GUILayout.Label(T("Toggle Settings", "토글 설정", "トグル設定"), EditorStyles.boldLabel);
                 bool previewing = DiNeTogglePreview.IsActive(this, 0);
-                Color previous = GUI.backgroundColor;
-                if (previewing) GUI.backgroundColor = Mint;
                 using (new EditorGUI.DisabledScope(EditorApplication.isPlayingOrWillChangePlaymode || EditorUtility.IsPersistent(toggle)))
-                if (GUILayout.Button(previewing ? T("End Preview", "미리보기 종료", "プレビュー終了")
-                    : T("Preview", "미리보기", "プレビュー"), GUILayout.Height(24)))
+                if (DiNeEditorUI.SegmentButton(previewing ? T("End Preview", "미리보기 종료", "プレビュー終了")
+                    : T("Preview", "미리보기", "プレビュー"), previewing, DiNeEditorUI.CompactButtonHeight))
                 {
                     if (previewing) DiNeTogglePreview.Clear();
                     else
@@ -137,7 +125,6 @@ public sealed partial class DiNeSmartToggleEditor : Editor
                 tutorial.Anchor("preview-start", GUILayoutUtility.GetLastRect());
                 tutorial.Anchor("preview-stop", GUILayoutUtility.GetLastRect());
                 tutorial.Anchor("preview-state", GUILayoutUtility.GetLastRect());
-                GUI.backgroundColor = previous;
             }
             tutorial.Draw("preview-start");
             tutorial.Draw("preview-stop");
@@ -153,8 +140,8 @@ public sealed partial class DiNeSmartToggleEditor : Editor
             TutorialProperty(defaultOn, new GUIContent(T("Default On", "기본 ON", "初期ON")), "default");
             TutorialProperty(saved, new GUIContent(T("Save Value", "값 저장", "値を保存")), "saved");
         }
-        GUILayout.Space(8);
-        using (new EditorGUILayout.VerticalScope("GroupBox"))
+        GUILayout.Space(DiNeEditorUI.CardSpacing);
+        using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
         {
             GUILayout.Label(T("Menu Placement", "메뉴 위치", "メニュー配置"), EditorStyles.boldLabel);
             if (menuChoices.Draw(toggle.GetComponentInParent<VRCAvatarDescriptor>(true),
@@ -163,24 +150,21 @@ public sealed partial class DiNeSmartToggleEditor : Editor
                 menuPlacement.enumValueIndex = (int)DiNeSmartToggle.MenuPlacement.ExistingMenu;
             tutorial.Draw("menu", GUILayoutUtility.GetLastRect());
         }
-        GUILayout.Space(8);
-        using (new EditorGUILayout.VerticalScope("GroupBox"))
+        GUILayout.Space(DiNeEditorUI.CardSpacing);
+        using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
         {
             GUILayout.Label(T("Menu Icon", "메뉴 아이콘", "メニューアイコン"), EditorStyles.boldLabel);
             TutorialProperty(icon, new GUIContent(T("Icon", "아이콘", "アイコン")), "icon");
-            Color previous = GUI.backgroundColor;
-            GUI.backgroundColor = Mint;
-            if (GUILayout.Button(T("Edit Icon", "아이콘 편집", "アイコン編集"), GUILayout.Height(30)))
+            if (DiNeEditorUI.Button(T("Edit Icon", "아이콘 편집", "アイコン編集")))
             {
                 serializedObject.ApplyModifiedProperties();
                 DiNeScreenSaver.DiNeScreenSaver.OpenIconEditor(toggle);
                 tutorial.NotifyAction("icon-edit");
             }
             tutorial.Draw("icon-edit", GUILayoutUtility.GetLastRect());
-            GUI.backgroundColor = previous;
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button(T("Generate / Reuse", "자동 생성 / 재사용", "自動生成 / 再利用"), GUILayout.Height(30)))
+                if (GUILayout.Button(T("Generate / Reuse", "자동 생성 / 재사용", "自動生成 / 再利用"), GUILayout.Height(DiNeEditorUI.ButtonHeight)))
                 {
                     serializedObject.ApplyModifiedProperties();
                     DiNeSmartToggleGenerator.EnsureIcon(toggle);
@@ -188,7 +172,7 @@ public sealed partial class DiNeSmartToggleEditor : Editor
                     tutorial.NotifyAction("icon-generate");
                 }
                 tutorial.Anchor("icon-generate", GUILayoutUtility.GetLastRect());
-                if (GUILayout.Button(T("Regenerate", "재생성", "再生成"), GUILayout.Height(30)))
+                if (GUILayout.Button(T("Regenerate", "재생성", "再生成"), GUILayout.Height(DiNeEditorUI.ButtonHeight)))
                 {
                     serializedObject.ApplyModifiedProperties();
                     DiNeSmartToggleGenerator.RegenerateIcon(toggle);
@@ -208,7 +192,7 @@ public sealed partial class DiNeSmartToggleEditor : Editor
             PrefabUtility.RecordPrefabInstancePropertyModifications(toggle);
             EditorUtility.SetDirty(toggle);
         }
-        GUILayout.Space(8);
+        GUILayout.Space(DiNeEditorUI.CardSpacing);
         var avatar = toggle.GetComponentInParent<VRCAvatarDescriptor>(true);
         EditorGUILayout.HelpBox(avatar == null
             ? T("Place this object under a VRCAvatarDescriptor.", "VRCAvatarDescriptor가 있는 아바타 안에 배치하세요.", "VRCAvatarDescriptorのあるアバター内に配置してください。")
@@ -235,50 +219,17 @@ public sealed partial class DiNeSmartToggleEditor : Editor
         return true;
     }
 
-    private void EnsureStyles()
-    {
-        if (titleStyle != null) return;
-        titleStyle = new GUIStyle(EditorStyles.label) { font = titleFont, fontSize = 36,
-            fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-        descriptionStyle = new GUIStyle(EditorStyles.wordWrappedLabel) { fontSize = 12,
-            alignment = TextAnchor.MiddleCenter, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } };
-        selectedStyle = new GUIStyle(GUI.skin.button) { fontStyle = FontStyle.Bold, normal = { textColor = Color.white } };
-        normalStyle = new GUIStyle(GUI.skin.button) { normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } };
-    }
-
     private void DrawSmartToggleHeader()
     {
-        Color previous = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f);
-        using (new EditorGUILayout.VerticalScope("box"))
-        {
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                GUILayout.FlexibleSpace();
-                GUILayout.Label(brandIcon, GUILayout.Width(72), GUILayout.Height(72));
-                GUILayout.Space(6);
-                GUILayout.Label("Smart Toggle", titleStyle, GUILayout.Height(72));
-                GUILayout.FlexibleSpace();
-            }
-            GUILayout.Label(T("Create an On/Off button for the selected object.", "선택한 오브젝트의 On/Off 버튼을 간단하게 만듭니다.",
-                "選択したオブジェクトのOn/Offボタンを簡単に作成します。"), descriptionStyle);
-        }
-        GUI.backgroundColor = previous;
+        DiNeEditorUI.DrawHeader("Smart Toggle", T(
+            "Create an On/Off button for the selected object.",
+            "선택한 오브젝트의 On/Off 버튼을 간단하게 만듭니다.",
+            "選択したオブジェクトのOn/Offボタンを簡単に作成します。"));
     }
 
     private int DrawSegments(int selected, string[] labels, float height)
     {
-        using (new EditorGUILayout.HorizontalScope())
-        {
-            for (int i = 0; i < labels.Length; i++)
-            {
-                Color previous = GUI.backgroundColor;
-                GUI.backgroundColor = selected == i ? Mint : new Color(0.5f, 0.5f, 0.5f);
-                if (GUILayout.Button(labels[i], selected == i ? selectedStyle : normalStyle, GUILayout.Height(height))) selected = i;
-                GUI.backgroundColor = previous;
-            }
-        }
-        return selected;
+        return DiNeEditorUI.DrawToolbar(selected, labels, height);
     }
 }
 #endif

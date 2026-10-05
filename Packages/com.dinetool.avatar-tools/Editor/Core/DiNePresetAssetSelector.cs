@@ -12,7 +12,7 @@ using UnityEngine;
 /// </summary>
 internal static class DiNePresetAssetSelector
 {
-    private static readonly Color PopupGray = new Color(0.50f, 0.50f, 0.50f, 1f);
+    private static readonly Color PopupGray = DiNeEditorUI.Inactive;
 
     public static string[] FindPresetPaths<T>() where T : UnityEngine.Object
     {

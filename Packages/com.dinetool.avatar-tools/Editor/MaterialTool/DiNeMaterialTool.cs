@@ -150,12 +150,9 @@ public partial class DiNeMaterialTool : EditorWindow
     //  Colors
     // ══════════════════════════════════════════════════════════════════════════
     private static readonly Color ColCard    = new Color(0.21f, 0.21f, 0.24f);
-    private static readonly Color ColAccent  = new Color(0.30f, 0.82f, 0.76f);
-    private static readonly Color ColAction  = new Color(0.30f, 0.82f, 0.76f);
-    private static readonly Color ColApply   = new Color(0.30f, 0.82f, 0.76f);
-    private static readonly Color ColSelect  = new Color(0.30f, 0.82f, 0.76f);
+    private static readonly Color ColAccent  = DiNeEditorUI.Mint;
+    private static readonly Color ColApply   = DiNeEditorUI.Mint;
     private static readonly Color ColDanger  = new Color(0.60f, 0.25f, 0.25f);
-    private static readonly Color ColWarn    = new Color(0.72f, 0.55f, 0.18f);
     private static readonly Color ColText    = new Color(0.88f, 0.88f, 0.92f);
     private static readonly Color ColSubText = new Color(0.58f, 0.58f, 0.63f);
     private static readonly Color ColLine    = new Color(0.30f, 0.30f, 0.35f, 0.8f);
@@ -243,9 +240,7 @@ public partial class DiNeMaterialTool : EditorWindow
     // ══════════════════════════════════════════════════════════════════════════
     //  State — Common
     // ══════════════════════════════════════════════════════════════════════════
-    private Texture2D _windowIcon;
     private Texture2D _tabIcon;
-    private Font      _titleFont;
     private GameObject _targetObject;
     private bool _includeChildren = true;
     private bool _includeInactive = true;
@@ -378,9 +373,7 @@ public partial class DiNeMaterialTool : EditorWindow
 
     void OnEnable()
     {
-        _windowIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
         _tabIcon    = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe_Icon.png");
-        _titleFont  = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
         titleContent = new GUIContent("Material", _tabIcon);
         if (_dietEnabled == null || _dietEnabled.Length != SECTIONS.Length)
         {
@@ -452,53 +445,26 @@ public partial class DiNeMaterialTool : EditorWindow
     // ══════════════════════════════════════════════════════════════════════════
     private void DrawHeader()
     {
-        var previousBackground = GUI.backgroundColor;
-        GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
-        EditorGUILayout.BeginVertical("box");
-        GUI.backgroundColor = previousBackground;
-        
-        EditorGUILayout.BeginHorizontal();
-        GUILayout.FlexibleSpace();
-        var style = new GUIStyle(EditorStyles.label)
-        {
-            font = _titleFont, alignment = TextAnchor.MiddleCenter,
-            fontStyle = FontStyle.Bold, fontSize = 36,
-            normal = { textColor = Color.white }
-        };
-        float iconSize = 72f;
-        GUILayout.Label(_windowIcon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
-        GUILayout.Space(6);
-        GUILayout.Label("Material Tool", style, GUILayout.Height(iconSize));
-        GUILayout.FlexibleSpace();
-        EditorGUILayout.EndHorizontal();
-
-        GUILayout.Space(4);
-        string desc = "";
+        string desc;
         switch (_lang)
         {
             case Lang.Korean: desc = "빠르고 간편하게 마테리얼과 릴툰 프리셋을 일괄 적용/수정하는 도구입니다."; break;
             case Lang.Japanese: desc = "マテリアルとlilToonプリセットを素早く適用・変更するためのツールです。"; break;
-            default:      desc = "A tool to quickly apply and modify materials and lilToon presets."; break;
+            default: desc = "A tool to quickly apply and modify materials and lilToon presets."; break;
         }
-        GUILayout.Label(desc, new GUIStyle(EditorStyles.wordWrappedLabel) 
-            { alignment = TextAnchor.MiddleCenter, fontSize = 12, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } });
-
-        GUILayout.Space(5);
-        EditorGUILayout.EndVertical();
+        DiNeEditorUI.DrawHeader("Material Tool", desc);
     }
 
     private void DrawLangBar()
     {
-        int idx = L;
-        GUILayout.Space(5);
-        int next = DrawCustomToolbar(idx, new[] { "English", "한국어", "日本語" }, 35);
-        if (next != idx)
+        GUILayout.Space(5f);
+        int next = DiNeEditorUI.DrawLanguageToolbar(L);
+        if (next != L)
         {
             _lang = (Lang)next;
-            EditorPrefs.SetInt("DiNeLang", next);
             SaveSettings();
         }
-        GUILayout.Space(15);
+        GUILayout.Space(15f);
     }
 
     private void DrawModeSelector()
@@ -516,29 +482,12 @@ public partial class DiNeMaterialTool : EditorWindow
 
     private int DrawCustomToolbar(int selected, string[] options, float height)
     {
-        EditorGUILayout.BeginHorizontal();
-        int newSelected = selected;
-        for (int i = 0; i < options.Length; i++)
-        {
-            var prevBg = GUI.backgroundColor;
-            GUI.backgroundColor = (i == selected) ? new Color(0.30f, 0.82f, 0.76f) : new Color(0.5f, 0.5f, 0.5f, 1f);
-            GUIStyle style = new GUIStyle(GUI.skin.button) { 
-                fontStyle = (i == selected) ? FontStyle.Bold : FontStyle.Normal,
-                fontSize = 12,
-                normal = { textColor = (i == selected) ? Color.white : new Color(0.8f, 0.8f, 0.8f) }
-            };
-            if (GUILayout.Button(options[i], style, GUILayout.Height(height)))
-            {
-                newSelected = i;
-            }
-            GUI.backgroundColor = prevBg;
-        }
-        EditorGUILayout.EndHorizontal();
-        return newSelected;
+        return DiNeEditorUI.DrawToolbar(selected, options, height);
     }
 
     private void DrawTargetSettings()
     {
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         SectionLabel(T(2));
         GUILayout.Space(4);
 
@@ -546,8 +495,7 @@ public partial class DiNeMaterialTool : EditorWindow
         _targetObject = (GameObject)EditorGUILayout.ObjectField(T(3), _targetObject, typeof(GameObject), true);
         TutorialAnchor("target");
         var prev = GUI.backgroundColor;
-        GUI.backgroundColor = ColAction;
-        if (GUILayout.Button("↺", GUILayout.Width(28), GUILayout.Height(18)))
+        if (GUILayout.Button("↺", GUILayout.Width(28), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
             AutoScan();
         TutorialAnchor("refresh");
         GUI.backgroundColor = prev;
@@ -589,6 +537,7 @@ public partial class DiNeMaterialTool : EditorWindow
         }
         
         GUILayout.Space(4);
+        EditorGUILayout.EndVertical();
     }
 
     private void AutoScan()
@@ -632,90 +581,78 @@ public partial class DiNeMaterialTool : EditorWindow
 
     private void DrawPresetLibrary()
     {
-        EditorGUILayout.BeginHorizontal();
-        SectionLabel(T(8));
-        GUILayout.FlexibleSpace();
-        if (_libReady)
+        using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
         {
-            GUILayout.Label($"{_library.Count} {T(12)}", new GUIStyle(EditorStyles.miniLabel)
-                { normal = { textColor = ColSubText } });
-            GUILayout.Space(6);
-        }
-        var prev = GUI.backgroundColor;
-        GUI.backgroundColor = ColAction;
-        if (GUILayout.Button(T(9), EditorStyles.miniButton, GUILayout.Width(90), GUILayout.Height(20)))
-            ScanLibrary();
-        TutorialAnchor("library-scan");
-        GUI.backgroundColor = prev;
-        EditorGUILayout.EndHorizontal();
-        GUILayout.Space(4);
-
-        if (!_libReady) { DrawCenteredHint(T(11)); GUILayout.Space(6); return; }
-        TutorialDraw("library-scan");
-
-        // Category tabs
-        var usedCats = _library.Select(p => p.CategoryIdx).Distinct().OrderBy(x => x).ToList();
-        var tabLabels = new List<string> { T(10) };
-        var tabValues = new List<int> { -1 };
-        foreach (var ci in usedCats)
-        {
-            tabLabels.Add(ci >= 0 && ci < CategoryNames.Length ? CategoryNames[ci] : "Other");
-            tabValues.Add(ci);
-        }
-        int curTab = tabValues.IndexOf(_catFilter);
-        if (curTab < 0) curTab = 0;
-
-        EditorGUILayout.BeginHorizontal();
-        for (int ti = 0; ti < tabLabels.Count; ti++)
-        {
-            bool active = (ti == curTab);
-            int catVal = tabValues[ti];
-            Color tabCol = active
-                ? (catVal >= 0 && catVal < CategoryColors.Length ? CategoryColors[catVal] : ColAccent)
-                : new Color(0.22f, 0.22f, 0.25f);
-            var btn = new GUIStyle(EditorStyles.miniButton)
+            EditorGUILayout.BeginHorizontal();
+            SectionLabel(T(8));
+            GUILayout.FlexibleSpace();
+            if (_libReady)
             {
-                fontStyle = active ? FontStyle.Bold : FontStyle.Normal,
-                normal = { textColor = active ? Color.white : new Color(0.70f, 0.70f, 0.75f) }
-            };
-            var p = GUI.backgroundColor;
-            GUI.backgroundColor = tabCol;
-            if (GUILayout.Button(tabLabels[ti], btn, GUILayout.Height(22)))
-            { _catFilter = catVal; _libScroll = Vector2.zero; }
-            GUI.backgroundColor = p;
+                GUILayout.Label($"{_library.Count} {T(12)}", new GUIStyle(EditorStyles.miniLabel)
+                    { normal = { textColor = ColSubText } });
+                GUILayout.Space(6);
+            }
+            var prev = GUI.backgroundColor;
+            if (DiNeEditorUI.Button(T(9), DiNeEditorUI.CompactButtonHeight, GUILayout.Width(90)))
+                ScanLibrary();
+            TutorialAnchor("library-scan");
+            GUI.backgroundColor = prev;
+            EditorGUILayout.EndHorizontal();
+            GUILayout.Space(4);
+
+            if (!_libReady) { DrawCenteredHint(T(11)); GUILayout.Space(6); return; }
+            TutorialDraw("library-scan");
+
+            // Category tabs
+            var usedCats = _library.Select(p => p.CategoryIdx).Distinct().OrderBy(x => x).ToList();
+            var tabLabels = new List<string> { T(10) };
+            var tabValues = new List<int> { -1 };
+            foreach (var ci in usedCats)
+            {
+                tabLabels.Add(ci >= 0 && ci < CategoryNames.Length ? CategoryNames[ci] : "Other");
+                tabValues.Add(ci);
+            }
+            int curTab = tabValues.IndexOf(_catFilter);
+            if (curTab < 0) curTab = 0;
+
+            EditorGUILayout.BeginHorizontal();
+            for (int i = 0; i < tabLabels.Count; i++)
+                if (DiNeEditorUI.SegmentButton(tabLabels[i], i == curTab, DiNeEditorUI.CompactButtonHeight, GUILayout.MinWidth(0f)))
+                { _catFilter = tabValues[i]; _libScroll = Vector2.zero; }
+            EditorGUILayout.EndHorizontal();
+            TutorialAnchor("library-category");
+            TutorialDraw("library-category");
+            GUILayout.Space(4);
+
+            // Search
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label("🔍", GUILayout.Width(18));
+            _search = EditorGUILayout.TextField(_search, EditorStyles.toolbarSearchField);
+            TutorialAnchor("library-search");
+            if (!string.IsNullOrEmpty(_search) && GUILayout.Button("✕", EditorStyles.toolbarButton, GUILayout.Width(20)))
+                _search = "";
+            EditorGUILayout.EndHorizontal();
+            GUILayout.Space(4);
+
+            // List
+            TutorialDraw("library-search");
+            var filtered = _library.Where(p =>
+                (_catFilter < 0 || p.CategoryIdx == _catFilter) &&
+                (string.IsNullOrEmpty(_search) || p.Name.ToLower().Contains(_search.ToLower()))
+            ).ToList();
+
+            // 최소 높이를 120, 최대 높이를 240으로 늘려 약 1.6배 확장
+            float h = Mathf.Clamp(filtered.Count * 36f + 8f, 120f, 240f);
+            _tutorial?.BeginScrollScope();
+            _libScroll = EditorGUILayout.BeginScrollView(_libScroll, GUILayout.Height(h));
+            if (filtered.Count == 0) { GUILayout.Space(20); DrawCenteredHint(T(11)); }
+            else foreach (var e in filtered) DrawPresetRow(e);
+            EditorGUILayout.EndScrollView();
+            _tutorial?.EndScrollScope(GUILayoutUtility.GetLastRect());
+            TutorialAnchor("library-preset");
+            TutorialDraw("library-preset");
+
         }
-        EditorGUILayout.EndHorizontal();
-        TutorialAnchor("library-category");
-        TutorialDraw("library-category");
-        GUILayout.Space(4);
-
-        // Search
-        EditorGUILayout.BeginHorizontal();
-        GUILayout.Label("🔍", GUILayout.Width(18));
-        _search = EditorGUILayout.TextField(_search, EditorStyles.toolbarSearchField);
-        TutorialAnchor("library-search");
-        if (!string.IsNullOrEmpty(_search) && GUILayout.Button("✕", EditorStyles.toolbarButton, GUILayout.Width(20)))
-            _search = "";
-        EditorGUILayout.EndHorizontal();
-        GUILayout.Space(4);
-
-        // List
-        TutorialDraw("library-search");
-        var filtered = _library.Where(p =>
-            (_catFilter < 0 || p.CategoryIdx == _catFilter) &&
-            (string.IsNullOrEmpty(_search) || p.Name.ToLower().Contains(_search.ToLower()))
-        ).ToList();
-
-        // 최소 높이를 120, 최대 높이를 240으로 늘려 약 1.6배 확장
-        float h = Mathf.Clamp(filtered.Count * 36f + 8f, 120f, 240f);
-        _tutorial?.BeginScrollScope();
-        _libScroll = EditorGUILayout.BeginScrollView(_libScroll, GUILayout.Height(h));
-        if (filtered.Count == 0) { GUILayout.Space(20); DrawCenteredHint(T(11)); }
-        else foreach (var e in filtered) DrawPresetRow(e);
-        EditorGUILayout.EndScrollView();
-        _tutorial?.EndScrollScope(GUILayoutUtility.GetLastRect());
-        TutorialAnchor("library-preset");
-        TutorialDraw("library-preset");
     }
 
     private void DrawPresetRow(PresetEntry entry)
@@ -772,8 +709,7 @@ public partial class DiNeMaterialTool : EditorWindow
         Color cc = ci >= 0 && ci < CategoryColors.Length ? CategoryColors[ci] : Color.white;
 
         var prev = GUI.backgroundColor;
-        GUI.backgroundColor = ColCard;
-        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         GUI.backgroundColor = prev;
 
         EditorGUILayout.BeginHorizontal();
@@ -814,18 +750,13 @@ public partial class DiNeMaterialTool : EditorWindow
 
     private void DrawPresetActions()
     {
-        var btn = new GUIStyle(GUI.skin.button)
-            { fontSize = 13, fontStyle = FontStyle.Bold, normal = { textColor = Color.white }, hover = { textColor = Color.white } };
-        var prev = GUI.backgroundColor;
-
         bool canApply = _presetScanned && _selPreset != null && _presetMats.Any(m => m.Selected);
-        GUI.enabled = canApply;
-        GUI.backgroundColor = !canApply ? new Color(0.35f, 0.35f, 0.38f) : _previewOnly ? ColWarn : ColApply;
-        if (GUILayout.Button(_previewOnly ? T(28) : T(14), btn, GUILayout.Height(38)))
-            ApplyPreset();
-        TutorialAnchor("preset-apply");
-        GUI.backgroundColor = prev;
-        GUI.enabled = true;
+        using (new EditorGUI.DisabledScope(!canApply))
+        {
+            if (DiNeEditorUI.Button(_previewOnly ? T(28) : T(14)))
+                ApplyPreset();
+            TutorialAnchor("preset-apply");
+        }
         TutorialDraw("preset-apply");
     }
 
@@ -833,8 +764,7 @@ public partial class DiNeMaterialTool : EditorWindow
     {
         GUILayout.Space(4); HLine();
         var prev = GUI.backgroundColor;
-        GUI.backgroundColor = ColCard;
-        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         GUI.backgroundColor = prev;
 
         int total = _presetMats.Count, sel = _presetMats.Count(m => m.Selected);
@@ -873,85 +803,86 @@ public partial class DiNeMaterialTool : EditorWindow
 
     private void DrawDietSectionPanel()
     {
-        SectionLabel(T(59));
-        GUILayout.Space(4);
-
-        // Select All / Deselect All
-        EditorGUILayout.BeginHorizontal();
-        GUILayout.FlexibleSpace();
-        if (GUILayout.Button(T(60), EditorStyles.miniButton, GUILayout.Width(72)))
-            { for (int i = 0; i < _dietEnabled.Length; i++) _dietEnabled[i] = true; DietScanMaterials(); }
-        if (GUILayout.Button(T(61), EditorStyles.miniButton, GUILayout.Width(72)))
-            { for (int i = 0; i < _dietEnabled.Length; i++) _dietEnabled[i] = false; DietScanMaterials(); }
-        EditorGUILayout.EndHorizontal();
-        GUILayout.Space(4);
-
-        var labelStyle = new GUIStyle(EditorStyles.label) { fontSize = 12, fontStyle = FontStyle.Bold };
-        var subStyle   = new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = ColSubText } };
-        var disStyle   = new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = new Color(0.85f, 0.55f, 0.55f) } };
-
-        for (int i = 0; i < SECTIONS.Length; i++)
+        using (new EditorGUILayout.VerticalScope(DiNeEditorUI.CardStyle))
         {
-            var sec = SECTIONS[i];
-            var prev = GUI.backgroundColor;
-            GUI.backgroundColor = _dietEnabled[i] ? new Color(0.22f, 0.30f, 0.28f) : ColCard;
-            EditorGUILayout.BeginHorizontal("box");
-            GUI.backgroundColor = prev;
-
-            // Section enable toggle
-            bool newEn = GUILayout.Toggle(_dietEnabled[i], "", GUILayout.Width(18));
-            if (i == 0) TutorialAnchor("diet-sections");
-            if (newEn != _dietEnabled[i]) { _dietEnabled[i] = newEn; DietScanMaterials(); }
-
+            SectionLabel(T(59));
             GUILayout.Space(4);
-            // Section name
-            GUILayout.Label(sec.Names[L], _dietEnabled[i] ? labelStyle : subStyle, GUILayout.ExpandWidth(true));
 
-            // Prop count hint
-            GUILayout.Label($"({sec.UiTexCount})", subStyle, GUILayout.Width(28));
-            // Toggle prop indicator
-            if (sec.HasAnyToggle)
-                GUILayout.Label("⚡", new GUIStyle(EditorStyles.miniLabel)
-                    { normal = { textColor = new Color(0.85f, 0.55f, 0.55f) } }, GUILayout.Width(18));
-            else
-                GUILayout.Space(18);
-
+            // Select All / Deselect All
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button(T(60), EditorStyles.miniButton, GUILayout.Width(72)))
+                { for (int i = 0; i < _dietEnabled.Length; i++) _dietEnabled[i] = true; DietScanMaterials(); }
+            if (GUILayout.Button(T(61), EditorStyles.miniButton, GUILayout.Width(72)))
+                { for (int i = 0; i < _dietEnabled.Length; i++) _dietEnabled[i] = false; DietScanMaterials(); }
             EditorGUILayout.EndHorizontal();
-            if (i == 0) TutorialDraw("diet-sections");
+            GUILayout.Space(4);
+
+            var labelStyle = new GUIStyle(EditorStyles.label) { fontSize = 12, fontStyle = FontStyle.Bold };
+            var subStyle   = new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = ColSubText } };
+            var disStyle   = new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = new Color(0.85f, 0.55f, 0.55f) } };
+
+            for (int i = 0; i < SECTIONS.Length; i++)
+            {
+                var sec = SECTIONS[i];
+                var prev = GUI.backgroundColor;
+                GUI.backgroundColor = _dietEnabled[i] ? new Color(0.22f, 0.30f, 0.28f) : ColCard;
+                EditorGUILayout.BeginHorizontal("box");
+                GUI.backgroundColor = prev;
+
+                // Section enable toggle
+                bool newEn = GUILayout.Toggle(_dietEnabled[i], "", GUILayout.Width(18));
+                if (i == 0) TutorialAnchor("diet-sections");
+                if (newEn != _dietEnabled[i]) { _dietEnabled[i] = newEn; DietScanMaterials(); }
+
+                GUILayout.Space(4);
+                // Section name
+                GUILayout.Label(sec.Names[L], _dietEnabled[i] ? labelStyle : subStyle, GUILayout.ExpandWidth(true));
+
+                // Prop count hint
+                GUILayout.Label($"({sec.UiTexCount})", subStyle, GUILayout.Width(28));
+                // Toggle prop indicator
+                if (sec.HasAnyToggle)
+                    GUILayout.Label("⚡", new GUIStyle(EditorStyles.miniLabel)
+                        { normal = { textColor = new Color(0.85f, 0.55f, 0.55f) } }, GUILayout.Width(18));
+                else
+                    GUILayout.Space(18);
+
+                EditorGUILayout.EndHorizontal();
+                if (i == 0) TutorialDraw("diet-sections");
+            }
+
         }
     }
 
     private void DrawDietActionButton()
     {
-        // 버튼 1: 지울 텍스쳐가 있는 마테리얼이 선택된 경우
-        bool canRemove  = _dietScanned && _dietMats.Any(m => m.Selected && m.HasDiet);
-        // 버튼 2: 실제로 끌 수 있는 기능 토글이 있는 마테리얼이 선택된 경우만 활성화
-        // (텍스쳐만 있고 기능이 이미 꺼져있으면 비활성화)
+        bool canRemove = _dietScanned && _dietMats.Any(m => m.Selected && m.HasDiet);
         bool canDisable = _dietScanned && _dietMats.Any(m => m.Selected && HasEnabledToggles(m));
-
-        var btn = new GUIStyle(GUI.skin.button)
-            { fontSize = 13, fontStyle = FontStyle.Bold, normal = { textColor = Color.white }, hover = { textColor = Color.white } };
-        var prev = GUI.backgroundColor;
-
-        EditorGUILayout.BeginHorizontal();
-
-        // 버튼 1: 텍스쳐만 제거
-        GUI.enabled = canRemove;
-        GUI.backgroundColor = _previewOnly ? ColWarn : new Color(0.55f, 0.35f, 0.35f);
-        if (GUILayout.Button(_previewOnly ? T(46) : T(62), btn, GUILayout.Height(36)))
-            ApplyDiet(disableFeatures: false);
-        TutorialAnchor("diet-remove");
-
-        // 버튼 2: 제거 + 기능 끄기
-        GUI.enabled = canDisable;
-        GUI.backgroundColor = _previewOnly ? ColWarn : ColDanger;
-        if (GUILayout.Button(_previewOnly ? T(46) : T(63), btn, GUILayout.Height(36)))
-            ApplyDiet(disableFeatures: true);
-        TutorialAnchor("diet-disable");
-
-        EditorGUILayout.EndHorizontal();
-        GUI.backgroundColor = prev;
-        GUI.enabled = true;
+        var buttonStyle = new GUIStyle(GUI.skin.button)
+            { fontSize = 12, fontStyle = FontStyle.Bold, normal = { textColor = Color.white }, hover = { textColor = Color.white } };
+        Color previousBackground = GUI.backgroundColor;
+        try
+        {
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                using (new EditorGUI.DisabledScope(!canRemove))
+                {
+                    GUI.backgroundColor = _previewOnly ? DiNeEditorUI.Mint : ColDanger;
+                    if (GUILayout.Button(_previewOnly ? T(46) : T(62), buttonStyle, GUILayout.Height(DiNeEditorUI.ButtonHeight)))
+                        ApplyDiet(disableFeatures: false);
+                    TutorialAnchor("diet-remove");
+                }
+                using (new EditorGUI.DisabledScope(!canDisable))
+                {
+                    GUI.backgroundColor = _previewOnly ? DiNeEditorUI.Mint : ColDanger;
+                    if (GUILayout.Button(_previewOnly ? T(46) : T(63), buttonStyle, GUILayout.Height(DiNeEditorUI.ButtonHeight)))
+                        ApplyDiet(disableFeatures: true);
+                    TutorialAnchor("diet-disable");
+                }
+            }
+        }
+        finally { GUI.backgroundColor = previousBackground; }
         TutorialDraw("diet-remove", "diet-disable");
     }
 
@@ -1023,8 +954,7 @@ public partial class DiNeMaterialTool : EditorWindow
         int affected = _dietMats.Count(m => m.HasDiet);
 
         var prev = GUI.backgroundColor;
-        GUI.backgroundColor = ColCard;
-        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         GUI.backgroundColor = prev;
         EditorGUILayout.LabelField(Tf(35, lilCount, affected), new GUIStyle(EditorStyles.boldLabel) { fontSize = 11 });
         GUILayout.Space(5);
@@ -1051,15 +981,13 @@ public partial class DiNeMaterialTool : EditorWindow
         if (!hasAction) info.Selected = false;
 
         var prev = GUI.backgroundColor;
-        GUI.backgroundColor = ColCard;
-        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         GUI.backgroundColor = prev;
 
         // ── Header row ──
         EditorGUILayout.BeginHorizontal();
-        GUI.enabled = info.HasDiet || HasEnabledToggles(info);
-        info.Selected = GUILayout.Toggle(info.Selected, "", GUILayout.Width(20), GUILayout.Height(20));
-        GUI.enabled = true;
+        using (new EditorGUI.DisabledScope(!hasAction))
+            info.Selected = GUILayout.Toggle(info.Selected, "", GUILayout.Width(20), GUILayout.Height(20));
         GUILayout.Space(2);
 
         // Badge
@@ -1156,7 +1084,7 @@ public partial class DiNeMaterialTool : EditorWindow
     // ══════════════════════════════════════════════════════════════════════════
     private void DrawMaterialCard(MaterialInfo info, bool _ = false)
     {
-        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         EditorGUILayout.BeginHorizontal();
         info.Selected = GUILayout.Toggle(info.Selected, "", GUILayout.Width(20), GUILayout.Height(20));
         TutorialAnchor(_mode == ToolMode.PresetApply ? "preset-materials" : "diet-materials");
@@ -1460,8 +1388,7 @@ public partial class DiNeMaterialTool : EditorWindow
 
         // ── 총합 표시 ──
         var prev = GUI.backgroundColor;
-        GUI.backgroundColor = ColCard;
-        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         GUI.backgroundColor = prev;
 
         EditorGUILayout.LabelField(Tf(49, _vramTextures.Count, FormatBytes(_vramTotal)),
@@ -1476,8 +1403,7 @@ public partial class DiNeMaterialTool : EditorWindow
         long selectedVRAM = selectedTextures.Sum(t => t.VRAMBytes);
 
         prev = GUI.backgroundColor;
-        GUI.backgroundColor = ColCard;
-        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         GUI.backgroundColor = prev;
 
         EditorGUILayout.BeginHorizontal();
@@ -1490,8 +1416,6 @@ public partial class DiNeMaterialTool : EditorWindow
         // 선택 / 변경 설정 / 적용을 가능한 한 한 줄에 배치
         bool narrowBulkUI = position.width < 500f;
         bool canApplyBulk = selectedTextures.Count > 0 && (_vramBulkChangeFormat || _vramBulkChangeSize);
-        var bulkButtonStyle = new GUIStyle(GUI.skin.button)
-            { fontStyle = FontStyle.Bold, normal = { textColor = Color.white }, hover = { textColor = Color.white } };
         bool applyBulk = false;
 
         EditorGUILayout.BeginHorizontal();
@@ -1507,8 +1431,7 @@ public partial class DiNeMaterialTool : EditorWindow
             EditorGUI.BeginDisabledGroup(!canApplyBulk);
             prev = GUI.backgroundColor;
             GUI.backgroundColor = ColApply;
-            applyBulk = GUILayout.Button($"{T(78)} ({selectedTextures.Count})", bulkButtonStyle,
-                GUILayout.Width(105), GUILayout.Height(21));
+            applyBulk = DiNeEditorUI.Button($"{T(78)} ({selectedTextures.Count})", DiNeEditorUI.CompactButtonHeight, GUILayout.Width(105));
             TutorialAnchor("vram-bulk-apply");
             GUI.backgroundColor = prev;
             EditorGUI.EndDisabledGroup();
@@ -1538,8 +1461,7 @@ public partial class DiNeMaterialTool : EditorWindow
             EditorGUI.BeginDisabledGroup(!canApplyBulk);
             prev = GUI.backgroundColor;
             GUI.backgroundColor = ColApply;
-            applyBulk = GUILayout.Button($"{T(78)} ({selectedTextures.Count})", bulkButtonStyle,
-                GUILayout.Width(105), GUILayout.Height(21));
+            applyBulk = DiNeEditorUI.Button($"{T(78)} ({selectedTextures.Count})", DiNeEditorUI.CompactButtonHeight, GUILayout.Width(105));
             TutorialAnchor("vram-bulk-apply");
             GUI.backgroundColor = prev;
             EditorGUI.EndDisabledGroup();
@@ -1568,9 +1490,7 @@ public partial class DiNeMaterialTool : EditorWindow
         {
             prev = GUI.backgroundColor;
             GUI.backgroundColor = ColApply;
-            var btnStyle = new GUIStyle(GUI.skin.button)
-                { fontSize = 13, fontStyle = FontStyle.Bold, normal = { textColor = Color.white }, hover = { textColor = Color.white } };
-            if (GUILayout.Button($"{T(50)}  ({optimizable.Count})  → -{FormatBytes(totalSavings)}", btnStyle, GUILayout.Height(38)))
+            if (DiNeEditorUI.Button($"{T(50)}  ({optimizable.Count})  → -{FormatBytes(totalSavings)}"))
                 VRAMOptimizeAll(optimizable);
             TutorialAnchor("vram-optimize-all");
             GUI.backgroundColor = prev;
@@ -1605,8 +1525,7 @@ public partial class DiNeMaterialTool : EditorWindow
     private void DrawVRAMTextureCard(TextureVRAMInfo info)
     {
         var prev = GUI.backgroundColor;
-        GUI.backgroundColor = ColCard;
-        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         GUI.backgroundColor = prev;
 
         // ── 썸네일 + 우측 텍스트 영역 ──
@@ -1719,7 +1638,7 @@ public partial class DiNeMaterialTool : EditorWindow
             var prevColor = GUI.backgroundColor;
             GUI.backgroundColor = ColApply;
             
-            if (GUILayout.Button(optText, new GUIStyle(EditorStyles.miniButton) { fontStyle = FontStyle.Bold, normal = { textColor = Color.white } }, GUILayout.ExpandWidth(false)))
+            if (DiNeEditorUI.Button(optText, DiNeEditorUI.CompactButtonHeight, GUILayout.ExpandWidth(false)))
             {
                 VRAMOptimizeSingle(info);
                 GUIUtility.ExitGUI(); // 리스트 갱신 중 발생하는 GUI 에러 방지
@@ -2433,8 +2352,7 @@ public partial class DiNeMaterialTool : EditorWindow
             return;
         }
         var prevBg = GUI.backgroundColor;
-        GUI.backgroundColor = ColCard;
-        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         GUI.backgroundColor = prevBg;
 
         SectionLabel(Tf(80, selected.Length));
@@ -2571,9 +2489,7 @@ public partial class DiNeMaterialTool : EditorWindow
 
     private void SetStatus(string msg, bool warn) { _status = msg; _statusWarn = warn; }
 
-    private void SectionLabel(string text) =>
-        GUILayout.Label(text, new GUIStyle(EditorStyles.boldLabel)
-            { fontSize = 11, normal = { textColor = ColAccent } });
+    private void SectionLabel(string text) => GUILayout.Label(text, EditorStyles.boldLabel);
 
     private static void DrawCenteredHint(string text) =>
         GUILayout.Label(text, new GUIStyle(EditorStyles.centeredGreyMiniLabel)
@@ -2581,17 +2497,11 @@ public partial class DiNeMaterialTool : EditorWindow
 
     private void DrawSelectButtons(List<MaterialInfo> mats, bool dietMode = false)
     {
-        var selBtn = new GUIStyle(GUI.skin.button)
-            { fontSize = 12, fontStyle = FontStyle.Bold, normal = { textColor = Color.white }, hover = { textColor = Color.white } };
         EditorGUILayout.BeginHorizontal();
-        var prev = GUI.backgroundColor;
-        GUI.backgroundColor = ColSelect;
-        if (GUILayout.Button(T(16), selBtn, GUILayout.Height(28)))
+        if (GUILayout.Button(T(16), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
             mats.ForEach(m => m.Selected = !dietMode || m.HasDiet || HasEnabledToggles(m));
-        GUI.backgroundColor = prev;
-        if (GUILayout.Button(T(17), selBtn, GUILayout.Height(28)))
+        if (GUILayout.Button(T(17), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
             mats.ForEach(m => m.Selected = false);
-        GUI.backgroundColor = prev;
         EditorGUILayout.EndHorizontal();
     }
 

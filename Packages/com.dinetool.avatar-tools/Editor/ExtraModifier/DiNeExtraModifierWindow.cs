@@ -23,8 +23,7 @@ namespace DiNeTool.ExtraModifier.Editor
 
         private const string LanguagePrefKey = "DiNeLang";
 
-        private static readonly Color AccentColor = new Color(0.30f, 0.82f, 0.76f);
-        private static readonly Color InactiveColor = new Color(0.5f, 0.5f, 0.5f);
+        private static Color AccentColor => DiNeEditorUI.Mint;
         private static readonly Color DangerColor = new Color(0.72f, 0.32f, 0.32f);
 
         private static readonly string[][] UiText =
@@ -135,15 +134,7 @@ namespace DiNeTool.ExtraModifier.Editor
         private bool removeEmptyObjectsInAuto;
         private List<DiNeVrmIssue> preflightIssues;
         private Vector2 scroll;
-        private Texture2D windowIcon;
         private Texture2D tabIcon;
-        private Font titleFont;
-        private GUIStyle headerTitleStyle;
-        private GUIStyle headerDescriptionStyle;
-        private static GUIStyle actionButtonStyle;
-        private static GUIStyle selectedToolbarStyle;
-        private static GUIStyle inactiveToolbarStyle;
-        private static GUIStyle sectionLabelStyle;
 
         private int L => (int)language;
         private string T(int index) => UiText[index][L];
@@ -175,13 +166,10 @@ namespace DiNeTool.ExtraModifier.Editor
             // Migrate the window's former preference only when no shared choice exists.
             if (!EditorPrefs.HasKey(LanguagePrefKey) && EditorPrefs.HasKey("DiNeExtraModifier_Language"))
                 EditorPrefs.SetInt(LanguagePrefKey, Mathf.Clamp(EditorPrefs.GetInt("DiNeExtraModifier_Language"), 0, 2));
-            windowIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe.png");
             tabIcon = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe_Icon.png");
-            titleFont = DiNePackageAssets.LoadAsset<Font>("DungGeunMo.ttf");
             titleContent = new GUIContent("Modifier", tabIcon);
             language = (Language)CurrentLanguage;
             if (!EditorPrefs.HasKey(LanguagePrefKey)) EditorPrefs.SetInt(LanguagePrefKey, (int)language);
-            headerTitleStyle = null;
             feature = Feature.Vrm;
             TryUseSelection();
             Selection.selectionChanged += OnSelectionChanged;
@@ -223,7 +211,7 @@ namespace DiNeTool.ExtraModifier.Editor
             DrawFeatureToolbar();
             ConfigureTutorial();
             guidedTutorial.DrawControls();
-            GUILayout.Space(8f);
+            GUILayout.Space(DiNeEditorUI.CardSpacing);
 
             guidedTutorial.BeginScrollScope();
             scroll = EditorGUILayout.BeginScrollView(scroll);
@@ -242,47 +230,12 @@ namespace DiNeTool.ExtraModifier.Editor
 
         private void DrawHeader()
         {
-            var previousColor = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0.9f, 0.9f, 0.9f, 1f);
-            EditorGUILayout.BeginVertical("box");
-            EditorGUILayout.BeginHorizontal();
-            GUILayout.FlexibleSpace();
-
-            const float iconSize = 72f;
-            if (windowIcon != null)
-                GUILayout.Label(windowIcon, GUILayout.Width(iconSize), GUILayout.Height(iconSize));
-            GUILayout.Space(6f);
-
-            if (headerTitleStyle == null)
-                headerTitleStyle = new GUIStyle(EditorStyles.label)
-            {
-                font = titleFont,
-                alignment = TextAnchor.MiddleCenter,
-                fontStyle = FontStyle.Bold,
-                fontSize = 36,
-                normal = { textColor = Color.white }
-            };
-            GUILayout.Label("Extra Modifier", headerTitleStyle, GUILayout.Height(iconSize));
-
-            GUILayout.FlexibleSpace();
-            EditorGUILayout.EndHorizontal();
-            GUILayout.Space(4f);
-            if (headerDescriptionStyle == null)
-                headerDescriptionStyle = new GUIStyle(EditorStyles.wordWrappedLabel)
-            {
-                alignment = TextAnchor.MiddleCenter,
-                fontSize = 12,
-                normal = { textColor = new Color(0.8f, 0.8f, 0.8f) }
-            };
-            GUILayout.Label(T(0), headerDescriptionStyle);
-            GUILayout.Space(5f);
-            EditorGUILayout.EndVertical();
-            GUI.backgroundColor = previousColor;
+            DiNeEditorUI.DrawHeader("Extra Modifier", T(0));
         }
 
         private void DrawLanguageToolbar()
         {
-            var next = DrawToolbar((int)language, new[] { "English", "한국어", "日本語" }, 35f);
+            var next = DiNeEditorUI.DrawLanguageToolbar((int)language);
             if (next == (int)language)
                 return;
 
@@ -301,7 +254,7 @@ namespace DiNeTool.ExtraModifier.Editor
             SectionLabel(T(1));
             GUILayout.Space(4f);
 
-            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
             avatar = (VRCAvatarDescriptor)EditorGUILayout.ObjectField(T(2), avatar, typeof(VRCAvatarDescriptor), true);
             if (avatar == null)
                 EditorGUILayout.HelpBox(T(3), MessageType.Info);
@@ -313,7 +266,7 @@ namespace DiNeTool.ExtraModifier.Editor
             SectionLabel(T(4));
             GUILayout.Space(4f);
 
-            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
             GUILayout.Label(T(17), new GUIStyle(EditorStyles.boldLabel)
             {
                 fontSize = 16,
@@ -330,13 +283,7 @@ namespace DiNeTool.ExtraModifier.Editor
             {
                 var previousColor = GUI.backgroundColor;
                 GUI.backgroundColor = AccentColor;
-                var buttonStyle = new GUIStyle(GUI.skin.button)
-                {
-                    fontStyle = FontStyle.Bold,
-                    fontSize = 13,
-                    normal = { textColor = Color.white }
-                };
-                if (GUILayout.Button(focus == null ? T(8) : T(9), buttonStyle, GUILayout.Height(40f)))
+                if (DiNeEditorUI.Button(focus == null ? T(8) : T(9)))
                     focus = EnableFocus(avatar);
                 GUI.backgroundColor = previousColor;
             }
@@ -382,7 +329,7 @@ namespace DiNeTool.ExtraModifier.Editor
             GUILayout.Space(5f);
             var previousColor = GUI.backgroundColor;
             GUI.backgroundColor = DangerColor;
-            if (GUILayout.Button(T(12), GUILayout.Height(24f)))
+            if (GUILayout.Button(T(12), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
             {
                 Undo.DestroyObjectImmediate(focus);
                 GUIUtility.ExitGUI();
@@ -394,7 +341,7 @@ namespace DiNeTool.ExtraModifier.Editor
         {
             SectionLabel(T(19));
             GUILayout.Space(4f);
-            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
             var tutorialAvatarBefore = vrmAvatar;
             vrmAvatar = (GameObject)EditorGUILayout.ObjectField(T(20), vrmAvatar, typeof(GameObject), true);
             guidedTutorial.Anchor("Avatar", GUILayoutUtility.GetLastRect());
@@ -406,7 +353,7 @@ namespace DiNeTool.ExtraModifier.Editor
 
             using (new EditorGUI.DisabledScope(vrmAvatar == null))
             {
-                if (GUILayout.Button(T(23), GUILayout.Height(28f)))
+                if (GUILayout.Button(T(23), GUILayout.Height(DiNeEditorUI.ButtonHeight)))
                 {
                     var copy = DiNeVrmUtility.CreateWorkingCopy(vrmAvatar);
                     if (copy != null)
@@ -421,10 +368,10 @@ namespace DiNeTool.ExtraModifier.Editor
             guidedTutorial.Draw("Avatar");
             guidedTutorial.Draw("WorkingCopy");
 
-            GUILayout.Space(10f);
+            GUILayout.Space(DiNeEditorUI.CardSpacing);
             SectionLabel(T(24));
             GUILayout.Space(4f);
-            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
             GUILayout.Label(T(25), EditorStyles.wordWrappedLabel);
             var autoNeedsUniVrm = physBoneMode == DiNeVrmPhysBoneMode.Convert;
             if (autoNeedsUniVrm && !DiNeVrmUtility.IsUniVrmAvailable)
@@ -440,7 +387,7 @@ namespace DiNeTool.ExtraModifier.Editor
             {
                 var previousColor = GUI.backgroundColor;
                 GUI.backgroundColor = AccentColor;
-                if (GUILayout.Button(T(26), ActionButtonStyle(), GUILayout.Height(42f)))
+                if (DiNeEditorUI.Button(T(26)))
                 {
                     var options = new DiNeVrmOptions
                     {
@@ -462,22 +409,22 @@ namespace DiNeTool.ExtraModifier.Editor
             guidedTutorial.Draw("AutoOptions");
             guidedTutorial.Draw("AutoApply");
 
-            GUILayout.Space(10f);
+            GUILayout.Space(DiNeEditorUI.CardSpacing);
             DrawVrmActionSection(27, 28, 29, true, () => DiNeVrmUtility.MergeOutfitBones(vrmAvatar));
-            GUILayout.Space(8f);
+            GUILayout.Space(DiNeEditorUI.CardSpacing);
             DrawPhysBoneSection();
-            GUILayout.Space(8f);
+            GUILayout.Space(DiNeEditorUI.CardSpacing);
             DrawVrmActionSection(34, 35, 36, true, () => DiNeVrmUtility.CleanupForVrm(vrmAvatar));
-            GUILayout.Space(8f);
+            GUILayout.Space(DiNeEditorUI.CardSpacing);
             DrawMaterialSection();
-            GUILayout.Space(8f);
+            GUILayout.Space(DiNeEditorUI.CardSpacing);
             DrawVrmActionSection(86, 87, 88, true, () => DiNeVrmUtility.RemoveEmptyObjects(vrmAvatar));
-            GUILayout.Space(10f);
+            GUILayout.Space(DiNeEditorUI.CardSpacing);
             DrawUniVrmSection();
 
             if (!string.IsNullOrEmpty(vrmStatus))
             {
-                GUILayout.Space(10f);
+                GUILayout.Space(DiNeEditorUI.CardSpacing);
                 SectionLabel(T(37));
                 GUILayout.Space(4f);
                 EditorGUILayout.HelpBox(vrmStatus, vrmStatusType);
@@ -489,7 +436,7 @@ namespace DiNeTool.ExtraModifier.Editor
         {
             SectionLabel(T(30));
             GUILayout.Space(4f);
-            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
             GUILayout.Label(T(41), EditorStyles.miniBoldLabel);
 
             var modeIndex = DrawToolbar((int)physBoneMode, new[] { T(42), T(43), T(44) }, 24f);
@@ -505,7 +452,7 @@ namespace DiNeTool.ExtraModifier.Editor
                     {
                         var previousColor = GUI.backgroundColor;
                         GUI.backgroundColor = DangerColor;
-                        if (GUILayout.Button(T(48), GUILayout.Height(30f)))
+                        if (GUILayout.Button(T(48), GUILayout.Height(DiNeEditorUI.ButtonHeight)))
                             ShowVrmReport(DiNeVrmUtility.RemovePhysBones(vrmAvatar));
                         guidedTutorial.Anchor("PhysApply", GUILayoutUtility.GetLastRect());
                         GUI.backgroundColor = previousColor;
@@ -515,7 +462,7 @@ namespace DiNeTool.ExtraModifier.Editor
                 case DiNeVrmPhysBoneMode.Keep:
                     GUILayout.Label(T(47), EditorStyles.wordWrappedLabel);
                     using (new EditorGUI.DisabledScope(true))
-                        GUILayout.Button(T(49), GUILayout.Height(30f));
+                        GUILayout.Button(T(49), GUILayout.Height(DiNeEditorUI.ButtonHeight));
                     guidedTutorial.Anchor("PhysApply", GUILayoutUtility.GetLastRect());
                     break;
 
@@ -525,7 +472,7 @@ namespace DiNeTool.ExtraModifier.Editor
                         EditorGUILayout.HelpBox(T(33), MessageType.Error);
                     using (new EditorGUI.DisabledScope(vrmAvatar == null || !DiNeVrmUtility.IsUniVrmAvailable))
                     {
-                        if (GUILayout.Button(T(32), GUILayout.Height(30f)))
+                        if (DiNeEditorUI.Button(T(32)))
                             ShowVrmReport(DiNeVrmUtility.ConvertPhysBones(vrmAvatar));
                         guidedTutorial.Anchor("PhysApply", GUILayoutUtility.GetLastRect());
                     }
@@ -540,7 +487,7 @@ namespace DiNeTool.ExtraModifier.Editor
         {
             SectionLabel(T(50));
             GUILayout.Space(4f);
-            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
             GUILayout.Label(T(51), EditorStyles.wordWrappedLabel);
 
             var available = DiNeVrmMaterialConverter.IsMToonAvailable;
@@ -581,7 +528,7 @@ namespace DiNeTool.ExtraModifier.Editor
             GUILayout.Space(4f);
             using (new EditorGUI.DisabledScope(vrmAvatar == null || !available))
             {
-                if (GUILayout.Button(T(52), GUILayout.Height(30f)))
+                if (DiNeEditorUI.Button(T(52)))
                     ShowVrmReport(DiNeVrmMaterialConverter.ConvertToMToon(vrmAvatar, materialOptions));
                 guidedTutorial.Anchor("ConvertMaterials", GUILayoutUtility.GetLastRect());
             }
@@ -596,7 +543,7 @@ namespace DiNeTool.ExtraModifier.Editor
         {
             SectionLabel(T(64));
             GUILayout.Space(4f);
-            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
             GUILayout.Label(T(65), EditorStyles.wordWrappedLabel);
 
             var installed = DiNeUniVrmBridge.DescribeInstallation();
@@ -610,7 +557,7 @@ namespace DiNeTool.ExtraModifier.Editor
             GUILayout.Space(4f);
             using (new EditorGUI.DisabledScope(vrmAvatar == null))
             {
-                if (GUILayout.Button(T(68), GUILayout.Height(26f)))
+                if (DiNeEditorUI.Button(T(68)))
                     preflightIssues = DiNeVrmPreflight.Run(vrmAvatar);
                 guidedTutorial.Anchor("Preflight", GUILayoutUtility.GetLastRect());
                 guidedTutorial.Anchor("FixIssues", GUILayoutUtility.GetLastRect());
@@ -670,7 +617,7 @@ namespace DiNeTool.ExtraModifier.Editor
         {
             using (new EditorGUI.DisabledScope(vrmAvatar == null || !DiNeUniVrmBridge.IsAvailable(action)))
             {
-                bool requested = GUILayout.Button(T(textIndex), GUILayout.Height(26f));
+                bool requested = GUILayout.Button(T(textIndex), GUILayout.Height(DiNeEditorUI.CompactButtonHeight));
                 string tutorialId = textIndex == 71 ? "Freeze" : textIndex == 72 ? "MeshUtility" : textIndex == 73 ? "Export0" : textIndex == 74 ? "Export1" : "VrChatConverter";
                 guidedTutorial.Anchor(tutorialId, GUILayoutUtility.GetLastRect());
                 if (!requested) return;
@@ -764,14 +711,14 @@ namespace DiNeTool.ExtraModifier.Editor
         {
             SectionLabel(T(titleIndex));
             GUILayout.Space(4f);
-            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
             GUILayout.Label(T(descriptionIndex), EditorStyles.wordWrappedLabel);
             if (!available)
                 EditorGUILayout.HelpBox(T(33), MessageType.Error);
 
             using (new EditorGUI.DisabledScope(vrmAvatar == null || !available))
             {
-                if (GUILayout.Button(T(buttonIndex), GUILayout.Height(30f)))
+                if (DiNeEditorUI.Button(T(buttonIndex)))
                     ShowVrmReport(operation());
                 string tutorialId = buttonIndex == 29 ? "MergeBones" : buttonIndex == 36 ? "Cleanup" : "EmptyObjects";
                 guidedTutorial.Anchor(tutorialId, GUILayoutUtility.GetLastRect());
@@ -825,55 +772,14 @@ namespace DiNeTool.ExtraModifier.Editor
             Repaint();
         }
 
-        private static GUIStyle ActionButtonStyle()
-        {
-            return actionButtonStyle ?? (actionButtonStyle = new GUIStyle(GUI.skin.button)
-            {
-                fontStyle = FontStyle.Bold,
-                fontSize = 13,
-                normal = { textColor = Color.white }
-            });
-        }
-
         private static int DrawToolbar(int selected, string[] options, float height)
         {
-            EditorGUILayout.BeginHorizontal();
-            var result = selected;
-            for (var i = 0; i < options.Length; i++)
-            {
-                var previousColor = GUI.backgroundColor;
-                GUI.backgroundColor = i == selected ? AccentColor : InactiveColor;
-                if (selectedToolbarStyle == null)
-                    selectedToolbarStyle = new GUIStyle(GUI.skin.button)
-                {
-                    fontSize = 12,
-                    fontStyle = FontStyle.Bold,
-                    normal = { textColor = Color.white }
-                };
-                if (inactiveToolbarStyle == null)
-                    inactiveToolbarStyle = new GUIStyle(GUI.skin.button)
-                    {
-                        fontSize = 12,
-                        normal = { textColor = new Color(0.8f, 0.8f, 0.8f) }
-                    };
-                var style = i == selected ? selectedToolbarStyle : inactiveToolbarStyle;
-                if (GUILayout.Button(options[i], style, GUILayout.Height(height)))
-                    result = i;
-                GUI.backgroundColor = previousColor;
-            }
-            EditorGUILayout.EndHorizontal();
-            return result;
+            return DiNeEditorUI.DrawToolbar(selected, options, height);
         }
 
         private static void SectionLabel(string text)
         {
-            if (sectionLabelStyle == null)
-                sectionLabelStyle = new GUIStyle(EditorStyles.boldLabel)
-            {
-                fontSize = 11,
-                normal = { textColor = AccentColor }
-            };
-            GUILayout.Label(text, sectionLabelStyle);
+            GUILayout.Label(text, EditorStyles.boldLabel);
         }
 
         private static void HLine()
@@ -918,6 +824,14 @@ namespace DiNeTool.ExtraModifier.Editor
             guidedTutorial.BeginFrame();
             try
             {
+                int language = DiNeExtraModifierWindow.CurrentLanguage;
+                DiNeEditorUI.DrawHeader("Focus", language == 1
+                    ? "기존 Focus 컴포넌트의 현재 상태를 확인합니다."
+                    : language == 2 ? "従来のFocusコンポーネントの現在の状態を確認します。"
+                    : "Review the current status of the legacy Focus component.");
+                GUILayout.Space(5f);
+                DiNeEditorUI.DrawLanguageToolbar(language);
+                GUILayout.Space(15f);
                 guidedTutorial.DrawControls();
                 EditorGUILayout.HelpBox(DiNeExtraModifierWindow.InspectorInfo, MessageType.Warning);
                 var infoRect = GUILayoutUtility.GetLastRect();
