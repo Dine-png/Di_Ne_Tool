@@ -99,9 +99,9 @@ namespace DiNeTool.ExpressionEditor
         private void DrawListHeader(Rect rect)
         {
             Remember("ControlsHeader", rect);
-            EditorGUI.LabelField(new Rect(rect.x, rect.y, Mathf.Max(0, rect.width - 92), rect.height),
+            EditorGUI.LabelField(new Rect(rect.x, rect.y, Mathf.Max(0, rect.width - 94), rect.height),
                 T("Controls", "메뉴 항목", "メニュー項目") + $" ({controlsList.count} / 8)");
-            float x = rect.xMax - 86;
+            float x = rect.xMax - 88;
             Control selected = SelectedControl();
             DrawIconButton(new Rect(x, rect.y, 18, 18), "SaveActive", C("Copy", "복사", "コピー"), selected != null,
                 () => RunGuiAction(() => CopyControl(selected)), "Copy");
@@ -914,7 +914,8 @@ namespace DiNeTool.ExpressionEditor
 
         private static Rect FieldArea(Rect rect, string label, float labelWidth = -1)
         {
-            float width = labelWidth < 0 ? Mathf.Min(100, rect.width * .4f) : Mathf.Min(labelWidth, rect.width - 25);
+            // Follow the Inspector label width so these fields line up with the Avatar and Submenu rows.
+            float width = labelWidth < 0 ? Mathf.Clamp(EditorGUIUtility.labelWidth - 3, 40, rect.width * .45f) : Mathf.Min(labelWidth, rect.width - 25);
             GUI.Label(new Rect(rect.x, rect.y, width, rect.height), label);
             return new Rect(rect.x + width + 3, rect.y, Mathf.Max(10, rect.width - width - 3), rect.height);
         }

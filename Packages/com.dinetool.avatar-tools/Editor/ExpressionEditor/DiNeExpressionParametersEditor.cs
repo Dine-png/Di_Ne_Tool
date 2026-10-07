@@ -14,7 +14,7 @@ namespace DiNeTool.ExpressionEditor
     [CustomEditor(typeof(VRCExpressionParameters))]
     public sealed class DiNeExpressionParametersEditor : DiNeExpressionInspectorBase
     {
-        private const float TableMinimumWidth = 620;
+        private const float TableMinimumWidth = 440;
         private SerializedProperty parameterProperty;
         private ReorderableList parameterList;
         private Vector2 tableScroll;
@@ -25,6 +25,8 @@ namespace DiNeTool.ExpressionEditor
         private int drawnParameterCount = -1;
         private bool restoreListFocus;
         private ParameterDropdown parameterDropdown;
+        private readonly Dictionary<string, int> nameCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+        private AnimatorControllerParameter[] suggestions = Array.Empty<AnimatorControllerParameter>();
         internal readonly Dictionary<string, Rect> Geometry = new Dictionary<string, Rect>();
         private VRCExpressionParameters Parameters => (VRCExpressionParameters)target;
         protected override string SdkEditorName => "VRC.SDK3.Editor.VRCExpressionParametersEditor";
@@ -59,6 +61,7 @@ namespace DiNeTool.ExpressionEditor
             if (parameterList == null || parameterProperty == null || parameterProperty.arraySize != drawnParameterCount)
                 BuildParameterList();
             if (parameterProperty == null) return;
+            CacheNames();
             parameterList.draggable = DiNeExpressionUtility.CanEditAsset(target);
             if (restoreListFocus && Event.current != null)
             {
@@ -219,7 +222,7 @@ namespace DiNeTool.ExpressionEditor
             bool blank = string.IsNullOrWhiteSpace(parameterName);
             var matched = AnimatorParameters.FirstOrDefault(parameter => parameter.name == parameterName);
             bool missing = Avatar != null && matched == null && !blank;
-            bool duplicate = !blank && ContainsName(parameterName, index);
+            bool duplicate = !blank && nameCounts.TryGetValue(parameterName, out int count) && count > 1;
             rect.height = 18;
             var columns = GetColumns(rect, missing);
             Geometry["ParameterDelete" + index] = columns.Delete;
@@ -228,7 +231,6 @@ namespace DiNeTool.ExpressionEditor
             {
                 EditorGUI.PropertyField(columns.Name, name, GUIContent.none);
                 GUI.Label(columns.Name, matched == null ? "(?)" : "(" + matched.type + ")", typeHint);
-                var suggestions = AnimatorParameters.Where(parameter => !ContainsName(parameter.name)).ToArray();
                 using (new EditorGUI.DisabledScope(suggestions.Length == 0))
                     if (GUI.Button(columns.Dropdown, GUIContent.none, EditorStyles.popup))
                     {
@@ -350,15 +352,18 @@ namespace DiNeTool.ExpressionEditor
             catch (ArgumentException) { return (name ?? "").IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0; }
         }
 
-        private bool ContainsName(string name, int skip = -1)
+        // Rows read these per draw; scanning SerializedProperties per row made every repaint quadratic.
+        private void CacheNames()
         {
+            nameCounts.Clear();
             for (int index = 0; index < parameterProperty.arraySize; index++)
             {
-                if (index == skip) continue;
                 var existing = parameterProperty.GetArrayElementAtIndex(index).FindPropertyRelative("name");
-                if (existing != null && existing.stringValue == name) return true;
+                if (existing == null) continue;
+                nameCounts.TryGetValue(existing.stringValue, out int count);
+                nameCounts[existing.stringValue] = count + 1;
             }
-            return false;
+            suggestions = AnimatorParameters.Where(parameter => !nameCounts.ContainsKey(parameter.name)).ToArray();
         }
 
         private bool HasCleanupCandidates()
@@ -481,13 +486,9 @@ namespace DiNeTool.ExpressionEditor
 
         private static Columns GetColumns(Rect rect, bool add)
         {
-            var columns = new Columns();
-            float right = rect.xMax;
-            columns.Delete = TakeColumn(ref right, rect, 32, 4);
-            columns.Synced = TakeColumn(ref right, rect, 18, 16);
-            columns.Saved = TakeColumn(ref right, rect, 18, 34);
-            columns.Default = TakeColumn(ref right, rect, 85, 32);
-            columns.Type = TakeColumn(ref right, rect, 85, 12);
+            // Rows share the header's width-scaled columns so both stay aligned at any window size.
+            var columns = GetHeaderColumns(rect);
+            float right = columns.Type.x;
             columns.Warning = TakeColumn(ref right, rect, 18, 4);
             if (add) columns.Add = TakeColumn(ref right, rect, 55, 4);
             columns.Dropdown = TakeColumn(ref right, rect, 21, 1);
@@ -500,11 +501,12 @@ namespace DiNeTool.ExpressionEditor
             var columns = new Columns();
             float right = rect.xMax;
             columns.Delete = TakeColumn(ref right, rect, 32, 4);
-            columns.Synced = TakeColumn(ref right, rect, 54);
-            columns.Saved = TakeColumn(ref right, rect, 54);
-            columns.Default = TakeColumn(ref right, rect, 117);
-            columns.Type = TakeColumn(ref right, rect, 75);
-            columns.Warning = TakeColumn(ref right, rect, 48);
+            float toggle = Mathf.Clamp(rect.width * 0.09f, 42, 54);
+            float field = Mathf.Clamp(rect.width * 0.15f, 60, 90);
+            columns.Synced = TakeColumn(ref right, rect, toggle);
+            columns.Saved = TakeColumn(ref right, rect, toggle);
+            columns.Default = TakeColumn(ref right, rect, field, 6);
+            columns.Type = TakeColumn(ref right, rect, field, 6);
             columns.Name = new Rect(rect.x, rect.y, Math.Max(20, right - rect.x), rect.height);
             return columns;
         }

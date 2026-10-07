@@ -3,10 +3,16 @@
 VRChat 아바타의 편집, 메뉴 제작, 라이팅, 최적화, 아이콘·스크린샷 제작, VRM 변환 준비를 한곳에서 처리하는 **Unity Editor 도구 모음**입니다.
 
 ![Unity 2022.3](https://img.shields.io/badge/Unity-2022.3_LTS%2B-black?logo=unity&style=flat)
-![Version 1.8.2](https://img.shields.io/badge/Version-1.8.2-30D1C2?style=flat)
+![Version 1.8.3](https://img.shields.io/badge/Version-1.8.3-30D1C2?style=flat)
 ![Languages](https://img.shields.io/badge/UI-EN%20%2F%20KO%20%2F%20JP-4C9BD6?style=flat)
 
 > 대부분의 도구는 English / 한국어 / 日本語 UI를 지원합니다. 기능에 따라 lilToon, Poiyomi, NDMF, Modular Avatar, UniVRM을 함께 사용할 수 있습니다.
+
+### 1.8.3 변경 사항
+
+- Multi Dresser에서 같은 옷을 한 옷장의 여러 버튼에 넣으면 아래쪽 버튼에서만 켜지던 문제를 수정했습니다.
+- Expression Menu·Parameters Inspector의 필드 정렬과 좁은 창에서의 파라미터 표 열 배치를 개선하고, 연속 삭제 시 클릭이 빗나가던 문제를 수정했습니다.
+- Armature Scaler 에디터 스크립트 파일 이름을 정리했습니다.
 
 ### 1.8.2 변경 사항
 
@@ -470,4 +476,4 @@ Hierarchy의 각 GameObject 오른쪽에는 `● / ○` 활성화 버튼이 표�
 
 **Made with ❤️ for avatar creators**
 
-_Last updated: 2026-10-05_
+_Last updated: 2026-10-08_

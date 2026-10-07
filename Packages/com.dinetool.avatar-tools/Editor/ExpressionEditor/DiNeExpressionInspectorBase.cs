@@ -18,6 +18,8 @@ namespace DiNeTool.ExpressionEditor
         protected string Status;
         private Editor sdkEditor;
         private VisualElement inspectorRoot;
+        private IMGUIContainer contentsContainer;
+        private float lockedHeight;
         private bool lastMode, lastEditable;
         private int lastLanguage = -1;
         protected abstract string SdkEditorName { get; }
@@ -57,6 +59,7 @@ namespace DiNeTool.ExpressionEditor
         private void BuildInspectorRoot()
         {
             inspectorRoot.Clear();
+            contentsContainer = null;
             if (sdkEditor != null) DestroyImmediate(sdkEditor);
             sdkEditor = null;
             lastMode = DiNeExpressionInspectorSettings.UseDiNeInspector;
@@ -65,6 +68,8 @@ namespace DiNeTool.ExpressionEditor
             if (lastMode)
             {
                 var contents = new IMGUIContainer(OnInspectorGUI) { name = "DiNeExpressionInspectorIMGUI" };
+                contents.style.minHeight = lockedHeight;
+                contentsContainer = contents;
                 contents.AddManipulator(new ContextualMenuManipulator(AppendLanguageMenu));
                 inspectorRoot.Add(contents);
                 return;
@@ -210,6 +215,7 @@ namespace DiNeTool.ExpressionEditor
         protected void ApplyAction(Action action)
         {
             if (!DiNeExpressionUtility.CanEditAsset(target)) return;
+            LockHeight();
             serializedObject.ApplyModifiedProperties();
             if (sdkEditor != null) sdkEditor.serializedObject.ApplyModifiedProperties();
             serializedObject.Update();
@@ -222,11 +228,20 @@ namespace DiNeTool.ExpressionEditor
         protected void RunGuiAction(Action action)
         {
             if (!DiNeExpressionUtility.CanEditAsset(target)) return;
+            LockHeight();
             serializedObject.ApplyModifiedProperties();
             action();
             serializedObject.Update();
             Repaint();
             if (Event.current != null) GUIUtility.ExitGUI();
+        }
+
+        // A shrinking inspector clamps a scrolled view and shifts every row, so repeated delete clicks miss.
+        private void LockHeight()
+        {
+            if (contentsContainer == null || float.IsNaN(contentsContainer.layout.height)) return;
+            lockedHeight = Mathf.Max(lockedHeight, contentsContainer.layout.height);
+            contentsContainer.style.minHeight = lockedHeight;
         }
 
         private static int Language => Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", 0), 0, 2);

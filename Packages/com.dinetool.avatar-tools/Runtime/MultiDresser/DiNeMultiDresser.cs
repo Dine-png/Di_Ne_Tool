@@ -742,14 +742,20 @@ public class DiNeMultiDresser : MonoBehaviour, VRC.SDKBase.IEditorOnly
             string clipFileName = GetSafeName(rawStateName);
             string clipPath = $"{folderPath}/{clipFileName}.anim";
 
-            // (1) Main Targets
+            // (1) Main Targets — the same object may appear in several buttons; ON wins.
+            var targetMap = new Dictionary<GameObject, float>();
             for (int j = 0; j < layerData.targets.Count; j++)
             {
                 var t = layerData.targets[j];
                 if (t == null) continue;
+                if (i == j) targetMap[t] = 1f;
+                else if (!targetMap.ContainsKey(t)) targetMap[t] = 0f;
+            }
+            foreach (var kvp in targetMap)
+            {
                 AnimationUtility.SetEditorCurve(clip,
-                    EditorCurveBinding.FloatCurve(AnimationUtility.CalculateTransformPath(t.transform, rootTransform), typeof(GameObject), "m_IsActive"),
-                    new AnimationCurve(new Keyframe(0, i == j ? 1 : 0)));
+                    EditorCurveBinding.FloatCurve(AnimationUtility.CalculateTransformPath(kvp.Key.transform, rootTransform), typeof(GameObject), "m_IsActive"),
+                    new AnimationCurve(new Keyframe(0, kvp.Value)));
             }
 
             // (2) Linked Objects — collect all linked objects across all buttons,
