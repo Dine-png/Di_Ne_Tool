@@ -2002,6 +2002,8 @@ namespace DiNeScreenSaver
             return Mathf.Max(bounds.extents.x, Mathf.Max(bounds.extents.y, bounds.extents.z), 0.0001f);
         }
 
+        // SkinnedMeshRenderer.bounds는 방금 만든 클론에선 아직 갱신 전이라 옷에 저장된 바운드 값을 그대로 쓴다.
+        // 옷마다 그 값이 엉뚱하게 잡혀 있으면 중심이 어긋나 잘리므로 실제 메시 정점으로 잰다.
         private static bool TryGetCaptureBounds(List<GameObject> captureRoots, out Bounds bounds)
         {
             bounds = default;
@@ -2012,8 +2014,9 @@ namespace DiNeScreenSaver
                 {
                     if (renderer == null || !renderer.enabled || !renderer.gameObject.activeInHierarchy)
                         continue;
-                    if (!found) { bounds = renderer.bounds; found = true; }
-                    else bounds.Encapsulate(renderer.bounds);
+                    Bounds measured = DiNeAvatarHeadFraming.GetBounds(renderer);
+                    if (!found) { bounds = measured; found = true; }
+                    else bounds.Encapsulate(measured);
                 }
             }
             return found;

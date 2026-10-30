@@ -313,9 +313,10 @@ public static class DiNeIconMaker
             foreach (SkinnedMeshRenderer renderer in root.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                 renderer.updateWhenOffscreen = true;
 
-            Bounds bounds = renderers[0].bounds;
+            // 갱신 전 SkinnedMeshRenderer.bounds는 옷에 저장된 값이라 어긋날 수 있어 실제 메시 정점으로 잰다.
+            Bounds bounds = DiNeAvatarHeadFraming.GetBounds(renderers[0]);
             for (int i = 1; i < renderers.Length; i++)
-                bounds.Encapsulate(renderers[i].bounds);
+                bounds.Encapsulate(DiNeAvatarHeadFraming.GetBounds(renderers[i]));
 
             float radius = Mathf.Max(bounds.extents.magnitude, 0.001f);
             cameraObject = new GameObject("DiNe_IconCamera") { hideFlags = HideFlags.HideAndDontSave };
