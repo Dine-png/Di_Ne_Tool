@@ -11,6 +11,7 @@ public partial class DiNeMultiSupporter : Editor
     private Texture2D accPresetIcon;
     private int selectedLayerIndex = 0;
     private int selectedContentTab;
+    private bool showExtraMenuSettings;
     private string ContentTabSessionKey => $"DiNe.MultiDresser.ContentTab.{target.GetInstanceID()}";
     private int draggedItemIndex = -1;
     private int dragTargetIndex  = -1;
@@ -141,7 +142,11 @@ public partial class DiNeMultiSupporter : Editor
                 { "cleanupDialogCancel", "취소 (No)" },
                 { "extraMenu",   "추가 메뉴" },
                 { "extraParams", "추가 파라미터" },
-                { "extraTooltip", "다른 모듈이나 직접 만든 메뉴·파라미터를 업로드/플레이 시 아바타에 함께 넣습니다." },
+                { "extraSection", "추가 메뉴 · 파라미터 (선택)" },
+                { "extraInUse", "  — 사용 중" },
+                { "extraDescription", "다른 툴이나 직접 만든 메뉴·파라미터를 Multi Dresser가 생성할 때 아바타에 같이 넣습니다. 메인 메뉴나 파라미터 에셋에 손으로 합칠 필요가 없고, 업로드·플레이할 때만 적용됩니다. 필요 없으면 비워 두세요." },
+                { "extraMenuTooltip", "넣은 메뉴가 아바타 메인 메뉴에 서브메뉴 버튼 하나로 들어갑니다. 버튼 이름은 메뉴 에셋 이름이며, 메인 메뉴가 가득 차면 \"Next ▶\" 페이지에 들어갑니다." },
+                { "extraParamsTooltip", "넣은 파라미터를 아바타 파라미터에 합칩니다. 이름이 이미 있는 파라미터는 건너뜁니다. 보통 추가 메뉴의 버튼이 쓰는 파라미터를 넣습니다." },
                 { "matSwap",    "마테리얼 교체" },
                 { "addMatSwap", "+ 추가" }
             }
@@ -185,7 +190,11 @@ public partial class DiNeMultiSupporter : Editor
                 { "cleanupDialogCancel", "Cancel (No)" },
                 { "extraMenu",   "Extra Menu" },
                 { "extraParams", "Extra Parameters" },
-                { "extraTooltip", "Adds menus/parameters from other modules or your own to the avatar on upload/play." },
+                { "extraSection", "Extra Menu · Parameters (Optional)" },
+                { "extraInUse", "  — In use" },
+                { "extraDescription", "Adds a menu and parameters from another tool, or ones you made, to the avatar when Multi Dresser generates. You don't need to merge them into the main menu or parameter asset by hand; they are applied only on upload and play. Leave empty if not needed." },
+                { "extraMenuTooltip", "The menu is added to the avatar's main menu as one submenu button named after the menu asset. If the main menu is full, it goes on the \"Next ▶\" page." },
+                { "extraParamsTooltip", "Merges these parameters into the avatar's parameters. Parameters whose name already exists are skipped. Usually holds the parameters used by the extra menu's buttons." },
                 { "matSwap",    "Material Swap" },
                 { "addMatSwap", "+ Add" }
             }
@@ -229,7 +238,11 @@ public partial class DiNeMultiSupporter : Editor
                 { "cleanupDialogCancel", "キャンセル (No)" },
                 { "extraMenu",   "追加メニュー" },
                 { "extraParams", "追加パラメーター" },
-                { "extraTooltip", "他のモジュールや自作のメニュー・パラメーターをアップロード/プレイ時にアバターへ追加します。" },
+                { "extraSection", "追加メニュー · パラメーター (任意)" },
+                { "extraInUse", "  — 使用中" },
+                { "extraDescription", "他のツールや自作のメニュー・パラメーターを、Multi Dresserの生成時にアバターへ一緒に追加します。メインメニューやパラメーターアセットに手作業で統合する必要はなく、アップロード・プレイ時にのみ適用されます。不要なら空のままにしてください。" },
+                { "extraMenuTooltip", "メニューはアバターのメインメニューにサブメニューボタンとして1つ追加されます。ボタン名はメニューアセット名で、メインメニューが満杯なら「Next ▶」ページに入ります。" },
+                { "extraParamsTooltip", "パラメーターをアバターのパラメーターに統合します。同じ名前が既にあるものはスキップします。通常は追加メニューのボタンが使うパラメーターを入れます。" },
                 { "matSwap",    "マテリアル交換" },
                 { "addMatSwap", "+ 追加" }
             }
@@ -326,6 +339,8 @@ public partial class DiNeMultiSupporter : Editor
     private void OnEnable()
     {
         selectedContentTab = Mathf.Clamp(SessionState.GetInt(ContentTabSessionKey, 0), 0, 1);
+        var dresser = (DiNeMultiDresser)target;
+        showExtraMenuSettings = dresser.extraMenu != null || dresser.extraParameters != null;
         toggleMenuChoices = new DiNeToggleMenuChoices();
         EditorApplication.hierarchyChanged += InvalidateEditorCaches;
         EditorApplication.projectChanged += InvalidateEditorCaches;
@@ -449,18 +464,31 @@ public partial class DiNeMultiSupporter : Editor
         exMenu.objectReferenceValue = EditorGUILayout.ObjectField(exMenu.objectReferenceValue, typeof(VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionsMenu), false, GUILayout.MinWidth(0f));
         EditorGUILayout.EndHorizontal();
 
+        EditorGUILayout.EndVertical();
+
+        // 자주 쓰지 않는 선택 기능이라 기본 설정과 분리해 접어 둔다(값이 있으면 펼친 상태로 연다).
+        GUILayout.Space(DiNeEditorUI.CardSpacing);
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
         SerializedProperty extraMenu = serializedObject.FindProperty("extraMenu");
-        EditorGUILayout.BeginHorizontal();
-        GUILayout.Label(new GUIContent(lang["extraMenu"], lang["extraTooltip"]), GUILayout.Width(110));
-        extraMenu.objectReferenceValue = EditorGUILayout.ObjectField(extraMenu.objectReferenceValue, typeof(VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionsMenu), false, GUILayout.MinWidth(0f));
-        EditorGUILayout.EndHorizontal();
-
         SerializedProperty extraParams = serializedObject.FindProperty("extraParameters");
-        EditorGUILayout.BeginHorizontal();
-        GUILayout.Label(new GUIContent(lang["extraParams"], lang["extraTooltip"]), GUILayout.Width(110));
-        extraParams.objectReferenceValue = EditorGUILayout.ObjectField(extraParams.objectReferenceValue, typeof(VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionParameters), false, GUILayout.MinWidth(0f));
-        EditorGUILayout.EndHorizontal();
+        bool extraInUse = extraMenu.objectReferenceValue != null || extraParams.objectReferenceValue != null;
+        showExtraMenuSettings = EditorGUILayout.Foldout(showExtraMenuSettings,
+            lang["extraSection"] + (extraInUse ? lang["extraInUse"] : ""), true, EditorStyles.foldoutHeader);
+        if (showExtraMenuSettings)
+        {
+            EditorGUILayout.LabelField(lang["extraDescription"], EditorStyles.wordWrappedMiniLabel);
+            GUILayout.Space(3);
 
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label(new GUIContent(lang["extraMenu"], lang["extraMenuTooltip"]), GUILayout.Width(110));
+            extraMenu.objectReferenceValue = EditorGUILayout.ObjectField(extraMenu.objectReferenceValue, typeof(VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionsMenu), false, GUILayout.MinWidth(0f));
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label(new GUIContent(lang["extraParams"], lang["extraParamsTooltip"]), GUILayout.Width(110));
+            extraParams.objectReferenceValue = EditorGUILayout.ObjectField(extraParams.objectReferenceValue, typeof(VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionParameters), false, GUILayout.MinWidth(0f));
+            EditorGUILayout.EndHorizontal();
+        }
         EditorGUILayout.EndVertical();
         GUILayout.Space(DiNeEditorUI.CardSpacing);
         int nextContentTab = DrawCustomToolbar(selectedContentTab, new[] {

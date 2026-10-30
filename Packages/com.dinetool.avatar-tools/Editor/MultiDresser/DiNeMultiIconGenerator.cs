@@ -8,8 +8,8 @@ public static class DiNeMultiIconGenerator
     private const string CustomDefaultKey           = "DiNe_MD_DefaultIcon_Customized";
     private const string DefaultPitchKey            = "DiNe_MD_DefaultIcon_Pitch";
     private const string DefaultYawKey              = "DiNe_MD_DefaultIcon_Yaw";
-    private const string DefaultPanXKey             = "DiNe_MD_DefaultIcon_PanX";
-    private const string DefaultPanYKey             = "DiNe_MD_DefaultIcon_PanY";
+    private const string DefaultPanXKey             = "DiNe_MD_DefaultIcon_PanRelX";
+    private const string DefaultPanYKey             = "DiNe_MD_DefaultIcon_PanRelY";
     private const string DefaultZoomKey             = "DiNe_MD_DefaultIcon_Zoom";
     private const string DefaultIdlePoseKey         = "DiNe_MD_DefaultIcon_IdlePose";
     private const string DefaultOutlineKey          = "DiNe_MD_DefaultIcon_Outline";

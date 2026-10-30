@@ -1805,7 +1805,8 @@ namespace DiNeScreenSaver
             }
             else if (e.type == EventType.MouseDrag && e.button == 1)
             {
-                float panSpeed = 0.005f / _zoomFactor; 
+                // 이동 값은 촬영 화면 크기 기준 비율이라, 화면 픽셀만큼 정확히 따라오게 환산한다.
+                float panSpeed = 2.4f / (Mathf.Max(_zoomFactor, 0.01f) * Mathf.Max(_previewRect.height, 1f));
                 _previewPan.x -= e.delta.x * panSpeed;
                 _previewPan.y += e.delta.y * panSpeed; 
                 _previewDirty = true;
@@ -1994,6 +1995,13 @@ namespace DiNeScreenSaver
             return captureRoots;
         }
 
+        // 옷마다 크기가 달라 화면 크기도 달라지므로, 이동 값을 미터가 아닌 화면 크기 비율로 적용해야
+        // 같은 구도로 여러 옷을 찍어도 작은 옷이 화면 밖으로 밀려 잘리지 않는다.
+        private static float GetPanScale(Bounds bounds)
+        {
+            return Mathf.Max(bounds.extents.x, Mathf.Max(bounds.extents.y, bounds.extents.z), 0.0001f);
+        }
+
         private static bool TryGetCaptureBounds(List<GameObject> captureRoots, out Bounds bounds)
         {
             bounds = default;
@@ -2100,8 +2108,8 @@ namespace DiNeScreenSaver
 
             float dist = Mathf.Max(_previewBoundsCache.extents.magnitude * 2.5f, 0.01f);
             _previewCameraObjectCache.transform.rotation = Quaternion.Euler(_previewEuler.x, _previewEuler.y, 0f);
-            Vector3 panOffset = _previewCameraObjectCache.transform.right * _previewPan.x +
-                                _previewCameraObjectCache.transform.up * _previewPan.y;
+            Vector3 panOffset = (_previewCameraObjectCache.transform.right * _previewPan.x +
+                                 _previewCameraObjectCache.transform.up * _previewPan.y) * GetPanScale(_previewBoundsCache);
             _previewCameraObjectCache.transform.position =
                 (_previewBoundsCache.center + panOffset) - _previewCameraObjectCache.transform.forward * dist;
             _previewCameraCache.orthographicSize =
@@ -2290,7 +2298,7 @@ namespace DiNeScreenSaver
                 float dist = bounds.extents.magnitude * 2.5f;
                 camObj.transform.rotation = Quaternion.Euler(euler.x, euler.y, 0f);
                 
-                Vector3 panOffset = camObj.transform.right * pan.x + camObj.transform.up * pan.y;
+                Vector3 panOffset = (camObj.transform.right * pan.x + camObj.transform.up * pan.y) * GetPanScale(bounds);
                 camObj.transform.position = (bounds.center + panOffset) - camObj.transform.forward * dist;
                 
                 cam.orthographicSize      = Mathf.Max(bounds.extents.x, bounds.extents.y, bounds.extents.z) * 1.2f / zoom;
@@ -2646,8 +2654,8 @@ namespace DiNeScreenSaver
             EditorPrefs.SetFloat("DiNe_IconPitch", _previewEuler.x);
             EditorPrefs.SetFloat("DiNe_IconYaw",   _previewEuler.y);
             EditorPrefs.SetFloat("DiNe_IconZoom",  _zoomFactor);
-            EditorPrefs.SetFloat("DiNe_IconPanX",  _previewPan.x);
-            EditorPrefs.SetFloat("DiNe_IconPanY",  _previewPan.y);
+            EditorPrefs.SetFloat("DiNe_IconPanRelX",  _previewPan.x);
+            EditorPrefs.SetFloat("DiNe_IconPanRelY",  _previewPan.y);
         }
 
         private void LoadSettings()
@@ -2688,8 +2696,8 @@ namespace DiNeScreenSaver
             _previewEuler.x = EditorPrefs.GetFloat("DiNe_IconPitch", 0f);
             _previewEuler.y = EditorPrefs.GetFloat("DiNe_IconYaw", 180f);
             _zoomFactor     = EditorPrefs.GetFloat("DiNe_IconZoom",   1f);
-            _previewPan.x   = EditorPrefs.GetFloat("DiNe_IconPanX",   0f);
-            _previewPan.y   = EditorPrefs.GetFloat("DiNe_IconPanY",   0f);
+            _previewPan.x   = EditorPrefs.GetFloat("DiNe_IconPanRelX",   0f);
+            _previewPan.y   = EditorPrefs.GetFloat("DiNe_IconPanRelY",   0f);
         }
     }
 
