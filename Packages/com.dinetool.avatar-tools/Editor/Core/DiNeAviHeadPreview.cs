@@ -183,7 +183,8 @@ internal sealed class DiNeAviHeadPreview : IDisposable
 
         var baked = new Mesh { name = "__DiNeHeadPreviewMesh__", hideFlags = HideFlags.HideAndDontSave };
         _snapshotMeshes.Add(baked);
-        skin.BakeMesh(baked, true);
+        // 복사한 트랜스폼이 스케일을 다시 적용하므로 스케일 없이 굽는다.
+        skin.BakeMesh(baked, false);
         // Only a static renderer is exposed to the preview camera, never a source behaviour.
         UnityEngine.Object.DestroyImmediate(skin);
         copy.gameObject.AddComponent<MeshFilter>().sharedMesh = baked;

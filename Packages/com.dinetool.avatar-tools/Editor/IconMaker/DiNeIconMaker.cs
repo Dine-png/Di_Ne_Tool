@@ -68,8 +68,18 @@ public static class DiNeIconMaker
 
         Texture2D lastGenerated = null;
         var quickSettings = new Settings { outlineEnabled = false, forbiddenOverlay = false };
+        // 같은 이름의 오브젝트를 함께 선택하면 서로 덮어쓰지 않게 이번 묶음 안에서는 경로를 겹치지 않게 한다.
+        var usedPaths = new HashSet<string>();
         foreach (GameObject target in targets)
-            lastGenerated = GenerateIcon(target, null, GetDefaultIconAssetPath(target.name), quickSettings);
+        {
+            string path = GetDefaultIconAssetPath(target.name);
+            if (!usedPaths.Add(path))
+            {
+                path = AssetDatabase.GenerateUniqueAssetPath(path);
+                usedPaths.Add(path);
+            }
+            lastGenerated = GenerateIcon(target, null, path, quickSettings);
+        }
 
         if (lastGenerated != null)
         {
@@ -696,7 +706,8 @@ public static class DiNeIconMaker
             importer.alphaIsTransparency = true;
             importer.mipmapEnabled = false;
             importer.npotScale = TextureImporterNPOTScale.None;
-            importer.textureCompression = TextureImporterCompression.Uncompressed;
+            // VRChat SDK는 메뉴 아이콘이 Uncompressed면 검증 에러로 업로드를 막는다.
+            importer.textureCompression = TextureImporterCompression.CompressedHQ;
             importer.maxTextureSize = OutputSize;
             importer.wrapMode = TextureWrapMode.Clamp;
             importer.SaveAndReimport();

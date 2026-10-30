@@ -169,9 +169,9 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             // 종료 후 복원이 영구히 막히므로 여기서 내려준다.
             BuildInProgress = false;
 
-            // Apply temporary FX/Menu assets before Unity clones the scene for play mode.
-            // EnteredPlayMode is too late for tools that cache avatar controllers during startup.
-            ApplyAllDressersInScene();
+            // 에디트 씬은 건드리지 않는다(비파괴). 이전에 남은 임시 참조만 정리해 두고,
+            // 실제 적용은 플레이 모드 클론에 BeforeSceneLoad에서 한다.
+            RestoreAllSessions("before play mode");
         }
         else if (state == PlayModeStateChange.EnteredPlayMode)
         {
@@ -185,6 +185,24 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
             // The play scene has now been discarded, so its guard must not block restoration.
             BuildInProgress = false;
             EditorApplication.delayCall += () => TryRestoreIfIdle("play mode ended");
+        }
+    }
+
+    // 플레이 모드 씬 오브젝트가 로드된 직후, 어떤 Awake(NDMF -9995, 에뮬레이터 등)보다 먼저 호출된다.
+    // 여기서 바꾼 참조는 플레이 모드 클론에만 남고, 종료하면 Unity가 에디트 씬을 그대로 되돌린다.
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void ApplyToPlayModeScene()
+    {
+        if (!EditorApplication.isPlaying)
+            return;
+
+        try
+        {
+            ApplyAllDressersInScene();
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[DiNe] 플레이 모드 임시 적용 실패: {e.Message}\n{e.StackTrace}");
         }
     }
 
@@ -400,7 +418,6 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
 
     private static void ApplyAllDressersInScene()
     {
-        RestoreAllSessions("refresh temporary session");
 
         var dressers = UnityEngine.Object.FindObjectsOfType<DiNeMultiDresser>(true)
             .Where(dresser => dresser != null && dresser.enabled)
@@ -614,7 +631,11 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
         {
             int cost = session.TempExpressionParameters.CalcTotalCost();
             if (cost > VRCExpressionParameters.MAX_PARAMETER_COST)
-                Debug.LogError($"[DiNe] '{descriptor.name}'의 Expression 파라미터 예산을 초과했습니다: {cost} / {VRCExpressionParameters.MAX_PARAMETER_COST} bits. 인게임에서 일부 파라미터가 동기화되지 않습니다.");
+            {
+                string message = $"[DiNe] '{descriptor.name}'의 Expression 파라미터 예산을 초과했습니다: {cost} / {VRCExpressionParameters.MAX_PARAMETER_COST} bits. 인게임에서 일부 파라미터가 동기화되지 않습니다.";
+                // 뒤에서 도는 VRCFury/NDMF 파라미터 압축이 예산을 줄일 수 있으므로 여기서 업로드를 막지 않는다.
+                Debug.LogError(message);
+            }
         }
     }
 
@@ -2132,6 +2153,9 @@ public class DiNeMultiDresserAutoApply : IVRCSDKBuildRequestedCallback, IVRCSDKP
     // 이렇게 해야 도메인 리로드/씬 재로드 후에도 원본 FX/메뉴/파라미터 할당이 유지된다.
     private static void MarkSceneDirty(UnityEngine.Object sceneObject)
     {
+        // 플레이 모드 클론은 종료 시 버려지므로 더티 표시가 필요 없다(플레이 중 호출하면 예외).
+        if (EditorApplication.isPlaying)
+            return;
         if (sceneObject is Component component && component != null)
         {
             var scene = component.gameObject.scene;

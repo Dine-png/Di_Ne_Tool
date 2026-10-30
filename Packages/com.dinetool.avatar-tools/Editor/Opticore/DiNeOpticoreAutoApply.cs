@@ -20,6 +20,8 @@ public static class DiNeOpticoreAutoApply
 
     private static void OnBeforeAssemblyReload()
     {
+        // 플레이 모드 진입 시의 도메인 리로드에서는 방금 만든 복제본을 지우면 안 된다.
+        if (EditorApplication.isPlayingOrWillChangePlaymode && !EditorApplication.isPlaying) return;
         RestorePlayModeSessions("assembly reload");
     }
 

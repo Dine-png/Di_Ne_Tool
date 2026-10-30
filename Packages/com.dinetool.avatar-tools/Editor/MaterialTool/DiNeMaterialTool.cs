@@ -1199,11 +1199,23 @@ public partial class DiNeMaterialTool : EditorWindow
         var textures = so.FindProperty("textures");
 
         Undo.RecordObjects(targets.Select(m => (Object)m.Material).ToArray(), "DiNe Material Tool Preset Apply");
+        // lilToon 자체 적용 루틴이 있으면 그걸 쓴다. 프리셋의 셰이더/렌더링 모드/아웃라인/렌더 큐까지 반영된다.
+        var lilApplyPreset = _selPreset.Asset.GetType().GetMethod("ApplyPreset",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static, null,
+            new[] { typeof(Material), _selPreset.Asset.GetType(), typeof(bool) }, null);
+
         int success = 0;
         foreach (var info in targets)
         {
             var mat = info.Material;
-            ApplyProps(colors, (e, p) => { if (mat.HasProperty(p)) mat.SetColor(p, e.FindPropertyRelative("value").colorValue); });
+            if (lilApplyPreset != null)
+            {
+                lilApplyPreset.Invoke(null, new object[] { mat, _selPreset.Asset, mat.shader.name.Contains("lilToonMulti") });
+                EditorUtility.SetDirty(mat);
+                success++;
+                continue;
+            }
+            ApplyProps(colors,(e, p) => { if (mat.HasProperty(p)) mat.SetColor(p, e.FindPropertyRelative("value").colorValue); });
             ApplyProps(floats, (e, p) => { if (mat.HasProperty(p)) mat.SetFloat(p, e.FindPropertyRelative("value").floatValue); });
             ApplyProps(vectors, (e, p) => { if (mat.HasProperty(p)) mat.SetVector(p, e.FindPropertyRelative("value").vector4Value); });
             if (textures != null)
@@ -1833,9 +1845,13 @@ public partial class DiNeMaterialTool : EditorWindow
                     if (info.BPP > info.MinBPP)
                     {
                         info.CanOptimizeFormat = true;
-                        info.SuggestedFormat = (info.HasAlpha || importer.textureType == TextureImporterType.NormalMap)
+                        // 포맷은 활성 빌드 타깃의 오버라이드에 쓰이므로, 모바일에서는 BC7/DXT1(미지원) 대신 ASTC를 쓴다.
+                        BuildTarget buildTarget = EditorUserBuildSettings.activeBuildTarget;
+                        bool mobile = buildTarget == BuildTarget.Android || buildTarget == BuildTarget.iOS;
+                        info.SuggestedFormat = mobile ? TextureImporterFormat.ASTC_6x6
+                            : (info.HasAlpha || importer.textureType == TextureImporterType.NormalMap)
                             ? TextureImporterFormat.BC7 : TextureImporterFormat.DXT1;
-                        float newBpp = info.SuggestedFormat == TextureImporterFormat.BC7 ? 8f : 4f;
+                        float newBpp = mobile ? 3.56f : info.SuggestedFormat == TextureImporterFormat.BC7 ? 8f : 4f;
                         info.FormatSavings = info.VRAMBytes - DiNeTextureVRAM.CalcTextureVRAMWithBPP(tex, newBpp, resScale);
                     }
 

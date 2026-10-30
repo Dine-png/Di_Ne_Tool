@@ -341,7 +341,9 @@ namespace DiNeTool.ExtraModifier.Editor
                     if (collider == null || groupByCollider.ContainsKey(collider))
                         continue;
 
-                    var host = GetMember(collider, "rootTransform") as Transform ?? collider.transform;
+                    // 비어 있는 직렬화 참조는 Unity의 가짜 null이라 ??로는 대체되지 않는다.
+                    var hostRoot = GetMember(collider, "rootTransform") as Transform;
+                    var host = hostRoot != null ? hostRoot : collider.transform;
                     // UniVRM은 내보내기 루트 밖이거나 비활성인 트랜스폼을 내보내지 않는다.
                     // 그런 곳에 ColliderGroup을 만들면 내보내기에서 "is out of hierarchy"로 막힌다.
                     if (!IsExportTarget(host, avatarRoot.transform))
@@ -375,7 +377,8 @@ namespace DiNeTool.ExtraModifier.Editor
 
             foreach (var physBone in physBones)
             {
-                var root = GetMember(physBone, "rootTransform") as Transform ?? physBone.transform;
+                var rootTransform = GetMember(physBone, "rootTransform") as Transform;
+                var root = rootTransform != null ? rootTransform : physBone.transform;
                 if (root == null)
                     continue;
 
@@ -414,7 +417,10 @@ namespace DiNeTool.ExtraModifier.Editor
             foreach (var collider in usedColliders.Where(collider => collider != null).Distinct().ToArray())
                 Undo.DestroyObjectImmediate(collider);
             // 건너뛴(비활성) PhysBone 본체는 남겨 둔다. 활성화한 뒤 다시 변환할 수 있어야 한다.
-            foreach (var collider in CollectPhysBoneComponents(avatarRoot).Where(c => c != null && !IsPhysBone(c.GetType())).ToArray())
+            // 남겨 둔 PhysBone이 쓰는 콜라이더는 지우지 않는다.
+            var keptColliders = new HashSet<Component>(CollectPhysBoneComponents(avatarRoot)
+                .Where(c => c != null && IsPhysBone(c.GetType())).SelectMany(pb => ReadComponents(pb, "colliders")).Where(c => c != null));
+            foreach (var collider in CollectPhysBoneComponents(avatarRoot).Where(c => c != null && !IsPhysBone(c.GetType()) && !keptColliders.Contains(c)).ToArray())
                 Undo.DestroyObjectImmediate(collider);
 
             // 예전 변환이 남긴 잘못된 참조까지 여기서 함께 정리한다.
@@ -741,17 +747,18 @@ namespace DiNeTool.ExtraModifier.Editor
             if (property == null || !property.isArray)
                 return;
 
-            property.ClearArray();
+            // 이전 변환이 만든 그룹이면 기존 구체를 지우지 않고 뒤에 덧붙인다(원본 콜라이더는 이미 삭제됨).
+            var start = property.arraySize;
             for (var i = 0; i < spheres.Count; i++)
             {
-                property.InsertArrayElementAtIndex(i);
-                var element = property.GetArrayElementAtIndex(i);
+                property.InsertArrayElementAtIndex(start + i);
+                var element = property.GetArrayElementAtIndex(start + i);
                 var offset = element.FindPropertyRelative("Offset") ?? element.FindPropertyRelative("m_offset");
                 var radius = element.FindPropertyRelative("Radius") ?? element.FindPropertyRelative("m_radius");
                 if (offset != null) offset.vector3Value = spheres[i].Offset;
                 if (radius != null) radius.floatValue = Mathf.Max(0.001f, spheres[i].Radius);
             }
-            serialized.ApplyModifiedPropertiesWithoutUndo();
+            serialized.ApplyModifiedProperties();
         }
 
         private enum ColliderShape

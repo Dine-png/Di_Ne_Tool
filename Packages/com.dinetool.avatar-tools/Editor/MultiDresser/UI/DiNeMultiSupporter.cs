@@ -139,7 +139,9 @@ public partial class DiNeMultiSupporter : Editor
                 { "cleanupDialogMsg", "드레서에 설정된 모든 데이터(레이어, 오브젝트, 쉐이프키)를 초기화하고 연결된 프리셋도 해제합니다.\n이 작업은 되돌릴 수 없습니다." },
                 { "cleanupDialogOk", "초기화 (Yes)" },
                 { "cleanupDialogCancel", "취소 (No)" },
-                { "particle",   "파티클 오브젝트" },
+                { "extraMenu",   "추가 메뉴" },
+                { "extraParams", "추가 파라미터" },
+                { "extraTooltip", "다른 모듈이나 직접 만든 메뉴·파라미터를 업로드/플레이 시 아바타에 함께 넣습니다." },
                 { "matSwap",    "마테리얼 교체" },
                 { "addMatSwap", "+ 추가" }
             }
@@ -181,7 +183,9 @@ public partial class DiNeMultiSupporter : Editor
                 { "cleanupDialogMsg", "This will clear all dresser settings (layers, objects, shape keys) and unlink the connected preset.\nThis action cannot be undone." },
                 { "cleanupDialogOk", "Reset (Yes)" },
                 { "cleanupDialogCancel", "Cancel (No)" },
-                { "particle",   "Particle Object" },
+                { "extraMenu",   "Extra Menu" },
+                { "extraParams", "Extra Parameters" },
+                { "extraTooltip", "Adds menus/parameters from other modules or your own to the avatar on upload/play." },
                 { "matSwap",    "Material Swap" },
                 { "addMatSwap", "+ Add" }
             }
@@ -223,7 +227,9 @@ public partial class DiNeMultiSupporter : Editor
                 { "cleanupDialogMsg", "ドレッサーに設定された全データ（レイヤー、オブジェクト、シェイプキー）を初期化し、接続されたプリセットも解除します。\nこの操作は元に戻せません。" },
                 { "cleanupDialogOk", "初期化 (Yes)" },
                 { "cleanupDialogCancel", "キャンセル (No)" },
-                { "particle",   "パーティクル" },
+                { "extraMenu",   "追加メニュー" },
+                { "extraParams", "追加パラメーター" },
+                { "extraTooltip", "他のモジュールや自作のメニュー・パラメーターをアップロード/プレイ時にアバターへ追加します。" },
                 { "matSwap",    "マテリアル交換" },
                 { "addMatSwap", "+ 追加" }
             }
@@ -251,6 +257,11 @@ public partial class DiNeMultiSupporter : Editor
 
         EditorApplication.playModeStateChanged -= OnPreviewPlayModeStateChanged;
         EditorApplication.playModeStateChanged += OnPreviewPlayModeStateChanged;
+
+        // 미리보기 상태(활성/셰이프키/머티리얼)가 씬·프리팹 파일에 저장되지 않게 저장 직전에 되돌린다.
+        UnityEditor.SceneManagement.EditorSceneManager.sceneSaving += (scene, path) => ClearAllActivePreviews();
+        UnityEditor.SceneManagement.EditorSceneManager.sceneClosing += (scene, removingScene) => ClearAllActivePreviews();
+        UnityEditor.SceneManagement.PrefabStage.prefabSaving += root => ClearAllActivePreviews();
 
         // 이전 도메인이 비정상적으로 종료되어 인스턴스 복원 액션이 사라진 경우에도
         // SessionState에 남은 스냅샷으로 씬 값을 되돌린다.
@@ -438,6 +449,18 @@ public partial class DiNeMultiSupporter : Editor
         exMenu.objectReferenceValue = EditorGUILayout.ObjectField(exMenu.objectReferenceValue, typeof(VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionsMenu), false, GUILayout.MinWidth(0f));
         EditorGUILayout.EndHorizontal();
 
+        SerializedProperty extraMenu = serializedObject.FindProperty("extraMenu");
+        EditorGUILayout.BeginHorizontal();
+        GUILayout.Label(new GUIContent(lang["extraMenu"], lang["extraTooltip"]), GUILayout.Width(110));
+        extraMenu.objectReferenceValue = EditorGUILayout.ObjectField(extraMenu.objectReferenceValue, typeof(VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionsMenu), false, GUILayout.MinWidth(0f));
+        EditorGUILayout.EndHorizontal();
+
+        SerializedProperty extraParams = serializedObject.FindProperty("extraParameters");
+        EditorGUILayout.BeginHorizontal();
+        GUILayout.Label(new GUIContent(lang["extraParams"], lang["extraTooltip"]), GUILayout.Width(110));
+        extraParams.objectReferenceValue = EditorGUILayout.ObjectField(extraParams.objectReferenceValue, typeof(VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionParameters), false, GUILayout.MinWidth(0f));
+        EditorGUILayout.EndHorizontal();
+
         EditorGUILayout.EndVertical();
         GUILayout.Space(DiNeEditorUI.CardSpacing);
         int nextContentTab = DrawCustomToolbar(selectedContentTab, new[] {
@@ -583,7 +606,6 @@ public partial class DiNeMultiSupporter : Editor
             gen.layers[gen.layers.Count - 1].linkedObjects.Clear();
             gen.layers[gen.layers.Count - 1].perButtonShapeKeyStates.Clear();
             gen.layers[gen.layers.Count - 1].perButtonMaterialSwaps.Clear();
-            gen.layers[gen.layers.Count - 1].particleObject = null;
             gen.layers[gen.layers.Count - 1].layerIcon = null;
 
             selectedLayerIndex = layers.arraySize - 1;
@@ -646,6 +668,12 @@ public partial class DiNeMultiSupporter : Editor
                 Mathf.Min(categoryNameAnchor.yMin, categoryConfirmAnchor.yMin), Mathf.Max(categoryNameAnchor.xMax, categoryConfirmAnchor.xMax),
                 Mathf.Max(categoryNameAnchor.yMax, categoryConfirmAnchor.yMax));
 
+        if (HasDuplicateLayerName(gen, layerName.stringValue))
+            EditorGUILayout.HelpBox(Localized(
+                "Another category on this avatar already uses this name. Categories with the same name overwrite each other's menu and animation, so use a different name.",
+                "이 아바타에 같은 이름의 카테고리가 이미 있습니다. 이름이 같으면 메뉴와 애니메이션을 서로 덮어쓰므로 다른 이름을 써 주세요.",
+                "このアバターに同じ名前のカテゴリーが既にあります。名前が同じだとメニューとアニメーションを互いに上書きするため、別の名前にしてください。"), MessageType.Error);
+
         GUILayout.Space(5);
         EditorGUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
@@ -671,13 +699,6 @@ public partial class DiNeMultiSupporter : Editor
         DrawTutorialBubble(TutorialStep.Category, categoryNameAnchor);
 
         GUILayout.Space(DiNeEditorUI.CardSpacing);
-
-        // 파티클 오브젝트 (레이어 공통)
-        SerializedProperty particleProp = layerProp.FindPropertyRelative("particleObject");
-        EditorGUILayout.BeginHorizontal(DiNeEditorUI.CardStyle);
-        GUILayout.Label(lang["particle"], GUILayout.Width(120));
-        particleProp.objectReferenceValue = EditorGUILayout.ObjectField(particleProp.objectReferenceValue, typeof(GameObject), true, GUILayout.MinWidth(0f));
-        EditorGUILayout.EndHorizontal();
 
         EditorGUILayout.Space(5);
 
@@ -758,6 +779,7 @@ public partial class DiNeMultiSupporter : Editor
                     DiNeMultiIconGenerator.ReleaseIconReference(ref releasedIcon);
                     currentLayerData.icons[i] = releasedIcon;
                 }
+                Undo.RecordObject(gen, "Remove Multi Dresser Item");
                 currentLayerData.RemoveAt(i);
                 EditorUtility.SetDirty(target);
                 serializedObject.Update();
@@ -858,9 +880,12 @@ public partial class DiNeMultiSupporter : Editor
                     if (serializedObject.ApplyModifiedProperties()) toggleMenuChoices?.Invalidate();
                     Texture2D existingIcon = icon.objectReferenceValue as Texture2D;
                     GameObject editTarget = i < currentLayerData.targets.Count ? currentLayerData.targets[i] : null;
+                    List<GameObject> linkedObjects = i < currentLayerData.linkedObjects.Count && currentLayerData.linkedObjects[i] != null
+                        ? currentLayerData.linkedObjects[i].objects
+                        : null;
 
                     DiNeScreenSaver.DiNeScreenSaver.OpenIconEditor(
-                        editTarget, existingIcon, gen, index, i, null);
+                        editTarget, existingIcon, gen, index, i, linkedObjects);
                 }
                 GUI.backgroundColor = previousIconButtonColor;
                 using (new EditorGUI.DisabledScope(currentTarget == null))
@@ -900,9 +925,11 @@ public partial class DiNeMultiSupporter : Editor
                 {
                     EditorGUILayout.BeginHorizontal();
                     EditorGUI.BeginChangeCheck();
-                    currentLayerData.linkedObjects[i].objects[j] = (GameObject)EditorGUILayout.ObjectField(currentLayerData.linkedObjects[i].objects[j], typeof(GameObject), true);
+                    var linkedObject = (GameObject)EditorGUILayout.ObjectField(currentLayerData.linkedObjects[i].objects[j], typeof(GameObject), true);
                     if (EditorGUI.EndChangeCheck())
                     {
+                        Undo.RecordObject(gen, "Change Linked Object");
+                        currentLayerData.linkedObjects[i].objects[j] = linkedObject;
                         EditorUtility.SetDirty(target);
                         serializedObject.Update();
                         if (previewLayerIndex == index && previewButtonIndex == i)
@@ -910,6 +937,7 @@ public partial class DiNeMultiSupporter : Editor
                     }
                     if (GUILayout.Button("-", GUILayout.Width(25)))
                     {
+                        Undo.RecordObject(gen, "Remove Linked Object");
                         currentLayerData.linkedObjects[i].objects.RemoveAt(j);
                         EditorUtility.SetDirty(target);
                         serializedObject.Update();
@@ -927,6 +955,7 @@ public partial class DiNeMultiSupporter : Editor
                 GUI.backgroundColor = subOriginalColor;
 
                 HandleDragDrop(subDrop, (objs) => {
+                    Undo.RecordObject(gen, "Add Linked Objects");
                     foreach(var o in objs) currentLayerData.linkedObjects[capturedI].objects.Add(o);
                     EditorUtility.SetDirty(target);
                     serializedObject.Update();
@@ -1058,6 +1087,9 @@ public partial class DiNeMultiSupporter : Editor
         EditorGUILayout.Space(4);
         DiNeMultiDresser.InvokeDrawLayerExtensionUI(gen, index);
 
+        EditorGUILayout.Space(DiNeEditorUI.CardSpacing);
+        DrawDefaultIconCaptureCard(gen, currentLayerData);
+
         // 비어있는(None) 버튼 삭제 요청 처리 (레이아웃 그리기가 끝난 뒤)
         if (pendingEmptyButtonRemoval >= 0 && pendingEmptyButtonRemoval < currentLayerData.targets.Count)
         {
@@ -1069,6 +1101,119 @@ public partial class DiNeMultiSupporter : Editor
             serializedObject.Update();
             Repaint();
         }
+    }
+
+    private void DrawDefaultIconCaptureCard(DiNeMultiDresser gen, DiNeMultiDresser.DresserLayer currentLayerData)
+    {
+        EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
+        EditorGUILayout.LabelField(
+            Localized(
+                "Default Icon Capture (Screen Saver)",
+                "기본 아이콘 촬영 (Screen Saver)",
+                "デフォルトアイコン撮影 (Screen Saver)"),
+            EditorStyles.boldLabel);
+
+        bool hasCustom = DiNeMultiIconGenerator.HasCustomDefaultCapture;
+        if (hasCustom)
+        {
+            var preset = DiNeMultiIconGenerator.GetDefaultCapturePreset();
+            string onLabel = Localized("On", "켜짐", "オン");
+            string offLabel = Localized("Off", "꺼짐", "オフ");
+            string outlineSummary = preset.effects != null && preset.effects.outlineEnabled
+                ? $"{onLabel} ({preset.effects.outlineSize}px)"
+                : offLabel;
+            string forbiddenSummary = preset.effects != null && preset.effects.forbiddenOverlay ? onLabel : offLabel;
+            string idleSummary = preset.idlePose ? onLabel : offLabel;
+            string customSummary = Localized(
+                $"Custom preset active — Pitch {preset.euler.x:0.#}°, Yaw {preset.euler.y:0.#}° · Zoom {preset.zoom:0.##}× · Idle {idleSummary} · Outline {outlineSummary} · Forbidden {forbiddenSummary}",
+                $"커스텀 기본 촬영 사용 중 — Pitch {preset.euler.x:0.#}°, Yaw {preset.euler.y:0.#}° · 줌 {preset.zoom:0.##}× · 포즈 {idleSummary} · 외곽선 {outlineSummary} · 금지 표시 {forbiddenSummary}",
+                $"カスタム設定を使用中 — Pitch {preset.euler.x:0.#}°, Yaw {preset.euler.y:0.#}° · ズーム {preset.zoom:0.##}× · ポーズ {idleSummary} · アウトライン {outlineSummary} · 禁止マーク {forbiddenSummary}");
+            EditorGUILayout.LabelField(customSummary, EditorStyles.wordWrappedMiniLabel);
+        }
+        else
+        {
+            EditorGUILayout.LabelField(
+                Localized(
+                    "Built-in default (Front · Zoom 1× · Outline On) — Configure an angle and effects in Screen Saver to overwrite Multi Dresser's default capture.",
+                    "내장 기본값 (정면 · 줌 1× · 외곽선 켜짐) — Screen Saver에서 각도·구도·효과를 정해 멀티 드레서의 기본 촬영으로 덮어쓸 수 있습니다.",
+                    "標準設定 (正面 · ズーム 1× · アウトライン オン) — Screen Saverで角度・構図・効果を決めてMulti Dresserのデフォルト撮影を上書きできます。"),
+                EditorStyles.wordWrappedMiniLabel);
+        }
+
+        GUILayout.Space(4f);
+        bool narrow = EditorGUIUtility.currentViewWidth < 420f;
+        if (!narrow) EditorGUILayout.BeginHorizontal();
+
+        string openLabel = Localized(
+            "Configure in Screen Saver",
+            "Screen Saver에서 기본 촬영 설정",
+            "Screen Saverでデフォルト撮影を設定");
+        if (DiNeEditorUI.Button(openLabel, DiNeEditorUI.CompactButtonHeight))
+        {
+            GameObject sampleTarget = FindSampleOutfitTarget(gen, currentLayerData);
+            DiNeScreenSaver.DiNeScreenSaver.OpenMultiDresserDefaultCaptureEditor(gen, sampleTarget);
+        }
+
+        string recaptureLabel = Localized(
+            "Recapture All Icons",
+            "전체 의상 아이콘 재촬영",
+            "全衣装アイコンを再撮影");
+        string recaptureTip = Localized(
+            "Recapture and overwrite all outfit icons in this Multi Dresser using the current default capture preset.",
+            "현재 기본 촬영 설정으로 이 멀티 드레서의 모든 의상 아이콘을 일괄 재촬영하여 덮어씁니다.",
+            "現在のデフォルト撮影設定で、このMulti Dresserの全衣装アイコンを一括再撮影して上書きします。");
+        using (new EditorGUI.DisabledScope(!HasAnyOutfitTarget(gen)))
+        {
+            if (GUILayout.Button(new GUIContent(recaptureLabel, recaptureTip), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
+            {
+                if (serializedObject.ApplyModifiedProperties()) toggleMenuChoices?.Invalidate();
+                DiNeMultiIconGenerator.RegenerateAllIcons(gen);
+                serializedObject.Update();
+                Repaint();
+            }
+        }
+
+        if (!narrow) EditorGUILayout.EndHorizontal();
+        EditorGUILayout.EndVertical();
+    }
+
+    private static bool HasAnyOutfitTarget(DiNeMultiDresser gen)
+    {
+        if (gen == null || gen.layers == null) return false;
+        foreach (var layer in gen.layers)
+        {
+            if (layer?.targets == null) continue;
+            for (int i = 1; i < layer.targets.Count; i++)
+            {
+                if (layer.targets[i] != null) return true;
+            }
+        }
+        return false;
+    }
+
+    private static GameObject FindSampleOutfitTarget(DiNeMultiDresser gen, DiNeMultiDresser.DresserLayer preferredLayer)
+    {
+        if (preferredLayer?.targets != null)
+        {
+            for (int i = 1; i < preferredLayer.targets.Count; i++)
+            {
+                if (preferredLayer.targets[i] != null) return preferredLayer.targets[i];
+            }
+            if (preferredLayer.targets.Count > 0 && preferredLayer.targets[0] != null)
+                return preferredLayer.targets[0];
+        }
+        if (gen?.layers != null)
+        {
+            foreach (var layer in gen.layers)
+            {
+                if (layer?.targets == null) continue;
+                for (int i = 1; i < layer.targets.Count; i++)
+                {
+                    if (layer.targets[i] != null) return layer.targets[i];
+                }
+            }
+        }
+        return null;
     }
 
     private void SwapItems(DiNeMultiDresser.DresserLayer layerData, int indexA, int indexB)
@@ -1152,7 +1297,8 @@ public partial class DiNeMultiSupporter : Editor
         {
             var go = layerData.targets[j];
             if (go == null) continue;
-            bool next = (j == buttonIdx);
+            // The same object may sit in several buttons; compare objects, not indices.
+            bool next = buttonIdx >= 0 && buttonIdx < layerData.targets.Count && layerData.targets[buttonIdx] == go;
             CapturePreviewObjectState(go);
             SafeSetActive(go, next);
         }
@@ -1658,7 +1804,7 @@ public partial class DiNeMultiSupporter : Editor
             var go = layerData.targets[j];
             if (go == null) continue;
             CapturePreviewObjectState(go);
-            SafeSetActive(go, j == buttonIdx);
+            SafeSetActive(go, buttonIdx >= 0 && buttonIdx < layerData.targets.Count && layerData.targets[buttonIdx] == go);
         }
 
         // 링크 오브젝트
@@ -1794,6 +1940,20 @@ public partial class DiNeMultiSupporter : Editor
 
     private string Localized(string en, string ko, string ja)
         => currentLanguage == Language.Korean ? ko : currentLanguage == Language.Japanese ? ja : en;
+
+    // 카테고리 이름은 파라미터/FX 레이어/메뉴 에셋의 키라서, 같은 아바타 안에서 겹치면(다른 Multi Dresser 포함) 서로 덮어쓴다.
+    private static bool HasDuplicateLayerName(DiNeMultiDresser gen, string name)
+    {
+        var dressers = new HashSet<DiNeMultiDresser> { gen };
+        if (gen.rootTransform != null)
+            dressers.UnionWith(gen.rootTransform.GetComponentsInChildren<DiNeMultiDresser>(true));
+
+        int count = 0;
+        foreach (var dresser in dressers)
+            foreach (var layer in dresser.layers)
+                if (layer != null && (layer.layerName ?? "") == (name ?? "")) count++;
+        return count > 1;
+    }
 
     // Runtime validation owns the conditions; the Inspector translates only their presentation.
     private string LocalizeAssignmentValidation(string message)

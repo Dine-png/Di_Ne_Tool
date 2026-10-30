@@ -37,7 +37,7 @@ foreach ($relative in @('Assets/DiNe.png', 'DungGeunMo.ttf')) {
 # Unity cannot attach MonoBehaviours compiled into the Editor assembly. Keep the
 # adapters outside Editor and give the MA adapter its component class filename.
 $isolatedRoot = [IO.Path]::GetFullPath($project) + [IO.Path]::DirectorySeparatorChar
-foreach ($name in @('AviEditorPreviewProbe.cs', 'SdkTypeStubs.cs')) {
+foreach ($name in @('AviEditorPreviewProbe.cs', 'SdkTypeStubs.cs', 'AviEditor.cs')) {
     foreach ($suffix in @('', '.meta')) {
         $stalePath = [IO.Path]::GetFullPath((Join-Path $scripts ($name + $suffix)))
         if (!$stalePath.StartsWith($isolatedRoot, [StringComparison]::OrdinalIgnoreCase)) {

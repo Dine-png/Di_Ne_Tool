@@ -104,7 +104,7 @@ public static partial class AnimationToolRegression
         {
             Set(uiAnimation, "selectedTab", uiCase == 20 ? 2 : uiCase == 21 ? 1 : uiCase >= 18 ? uiCase - 18 : local % 3);
             Set(uiAnimation, "scrollPosition", uiCase >= 20 ? new Vector2(0, 10000) : Vector2.zero);
-            Set(uiAnimation, "previewDirty", true); Set(uiAnimation, "status", ""); Set(uiAnimation, "repairStatus", "");
+            Set(uiAnimation, "status", ""); Set(uiAnimation, "repairStatus", "");
         }
         else typeof(ArmatureScalerEditor).GetMethod("SetMainModeIndex", InstanceFields).Invoke(uiAvi, new object[] { local % 3 });
         if (uiAvi != null) uiAvi.position = new Rect(50, 50, UiWidth, UiHeight);

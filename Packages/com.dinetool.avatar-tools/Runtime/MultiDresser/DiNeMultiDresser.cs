@@ -47,7 +47,8 @@ public class DiNeMultiDresser : MonoBehaviour, VRC.SDKBase.IEditorOnly
         public List<LinkedGroup> linkedObjects = new List<LinkedGroup>();
         public List<ShapeKeyMeshList>  perButtonShapeKeyStates  = new List<ShapeKeyMeshList>();
         public List<MaterialSwapList>  perButtonMaterialSwaps   = new List<MaterialSwapList>();
-        public GameObject              particleObject;
+        // 레거시: 더 이상 생성에 쓰지 않는다. Dresser Plus 등 외부 패키지 컴파일 호환용으로만 남겨 둔다.
+        [HideInInspector] public GameObject particleObject;
 
         public void EnsureSize(int size)
         {
@@ -73,6 +74,9 @@ public class DiNeMultiDresser : MonoBehaviour, VRC.SDKBase.IEditorOnly
 
     [SerializeField] public AnimatorController animatorController;
     [SerializeField] public VRCExpressionsMenu expressionsMenu;
+    // 다른 모듈이나 직접 만든 메뉴/파라미터를 생성 시 아바타 메뉴·파라미터에 함께 넣는다.
+    [SerializeField] public VRCExpressionsMenu extraMenu;
+    [SerializeField] public VRCExpressionParameters extraParameters;
     [SerializeField] public Transform rootTransform;
     [SerializeField] public List<GameObject> shapeKeyTargets = new List<GameObject>();
     [SerializeField] public List<DresserLayer> layers = new List<DresserLayer>();
@@ -173,6 +177,7 @@ public class DiNeMultiDresser : MonoBehaviour, VRC.SDKBase.IEditorOnly
         // 3. Refresh() 이후에 다시 실행해야 씬 오브젝트 참조가 재임포트로 null이 되는 것을 방지
         TryAddExpressionParameters();
         DiNeMultiMenuGenerator.TryCreateExpressionMenu(this, generatedRootFolder, mergeIntoExistingMenu);
+        MergeExtraMenuAndParameters();
 
         // 확장 패키지(Random Dresser 등)가 생성된 FX 위에 자기 레이어를 얹는 지점.
         // 구독자 예외가 드레서 생성 자체를 실패시키지 않도록 감싼다.
@@ -308,6 +313,8 @@ public class DiNeMultiDresser : MonoBehaviour, VRC.SDKBase.IEditorOnly
             return true;
         if (shapeKeyTargets != null && shapeKeyTargets.Count > 0)
             return true;
+        if (extraMenu != null || extraParameters != null)
+            return true;
 
         if (layers == null)
             return false;
@@ -316,8 +323,6 @@ public class DiNeMultiDresser : MonoBehaviour, VRC.SDKBase.IEditorOnly
         {
             if (layer == null) continue;
             if (layer.targets != null && layer.targets.Count > 0)
-                return true;
-            if (layer.particleObject != null)
                 return true;
         }
 
@@ -375,8 +380,9 @@ public class DiNeMultiDresser : MonoBehaviour, VRC.SDKBase.IEditorOnly
     }
 
     /// <summary>
-    /// 새로고침(↺) 버튼용: 루트/FX/메뉴를 아바타의 현재 값으로 강제로 다시 가져오고,
-    /// 누락된 Expression 파라미터를 보충한다. stale/다른 아바타의 FX·메뉴를 덮어쓴다.
+    /// 새로고침(↺) 버튼용: 루트/FX/메뉴를 아바타의 현재 값으로 강제로 다시 가져온다.
+    /// stale/다른 아바타의 FX·메뉴를 덮어쓴다. 파라미터는 빌드/플레이 때 임시 세션에만 추가하므로
+    /// 여기서 원본 Expression Parameters 에셋을 건드리지 않는다.
     /// </summary>
     public void ReassignFromAvatar()
     {
@@ -394,9 +400,6 @@ public class DiNeMultiDresser : MonoBehaviour, VRC.SDKBase.IEditorOnly
 
         if (descriptor.expressionsMenu != null)
             expressionsMenu = descriptor.expressionsMenu;   // 강제 재배정
-
-        // 파라미터(아바타 Expression Parameters)에 누락분 보충
-        TryAddExpressionParameters();
 
         EditorUtility.SetDirty(this);
     }
@@ -528,6 +531,62 @@ public class DiNeMultiDresser : MonoBehaviour, VRC.SDKBase.IEditorOnly
         EditorUtility.SetDirty(control);
     }
 
+
+    // 추가 메뉴는 아바타 메인 메뉴에 서브메뉴 버튼으로, 추가 파라미터는 이름이 겹치지 않는 것만 넣는다.
+    private void MergeExtraMenuAndParameters()
+    {
+        var descriptor = rootTransform != null ? rootTransform.GetComponent<VRCAvatarDescriptor>() : null;
+        if (descriptor == null) return;
+
+        if (extraParameters != null && extraParameters.parameters != null && descriptor.expressionParameters != null
+            && extraParameters != descriptor.expressionParameters)
+        {
+            var list = new List<VRCExpressionParameters.Parameter>(descriptor.expressionParameters.parameters);
+            int before = list.Count;
+            foreach (var p in extraParameters.parameters)
+            {
+                if (p == null || string.IsNullOrEmpty(p.name) || list.Exists(e => e.name == p.name)) continue;
+                list.Add(new VRCExpressionParameters.Parameter
+                {
+                    name = p.name, valueType = p.valueType, defaultValue = p.defaultValue,
+                    saved = p.saved, networkSynced = p.networkSynced
+                });
+            }
+            if (list.Count != before)
+            {
+                descriptor.expressionParameters.parameters = list.ToArray();
+                EditorUtility.SetDirty(descriptor.expressionParameters);
+            }
+        }
+
+        var mainMenu = expressionsMenu != null ? expressionsMenu : descriptor.expressionsMenu;
+        if (extraMenu != null && mainMenu != null && extraMenu != mainMenu
+            && !mainMenu.controls.Exists(c => c.subMenu == extraMenu))
+        {
+            // 루트가 가득 찼으면 멀티 드레서가 만든 "Next ▶" 페이지에 넣는다.
+            var host = mainMenu;
+            if (host.controls.Count >= 8 && host.controls[7].name == "Next ▶" && host.controls[7].subMenu != null)
+                host = host.controls[7].subMenu;
+
+            if (host.controls.Count >= 8 || host.controls.Exists(c => c.subMenu == extraMenu))
+            {
+                if (host.controls.Count >= 8)
+                    Debug.LogWarning($"⚠ [DiNe] 아바타 메인 메뉴가 가득 차 추가 메뉴 '{extraMenu.name}'를 넣지 못했습니다.");
+            }
+            else
+            {
+                host.controls.Add(new VRCExpressionsMenu.Control
+                {
+                    name = extraMenu.name,
+                    type = VRCExpressionsMenu.Control.ControlType.SubMenu,
+                    subMenu = extraMenu
+                });
+                EditorUtility.SetDirty(host);
+            }
+        }
+
+        AssetDatabase.SaveAssets();
+    }
 
     public void TryAddExpressionParameters()
     {
@@ -856,15 +915,6 @@ public class DiNeMultiDresser : MonoBehaviour, VRC.SDKBase.IEditorOnly
                             new ObjectReferenceKeyframe { time = 1f, value = mats[mi] }
                         });
                 }
-            }
-
-            // (5) Particle (0s=OFF → 0.01s=ON)
-            if (layerData.particleObject != null)
-            {
-                string pPath = AnimationUtility.CalculateTransformPath(layerData.particleObject.transform, rootTransform);
-                AnimationUtility.SetEditorCurve(clip,
-                    EditorCurveBinding.FloatCurve(pPath, typeof(GameObject), "m_IsActive"),
-                    new AnimationCurve(new Keyframe(0f, 0f), new Keyframe(0.01f, 1f)));
             }
 
             AssetDatabase.CreateAsset(clip, clipPath);

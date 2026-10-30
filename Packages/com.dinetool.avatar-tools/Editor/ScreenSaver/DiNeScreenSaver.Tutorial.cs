@@ -56,6 +56,7 @@ namespace DiNeScreenSaver
                         DiNeTutorialStep.Optional("icon-copy", "A separate copy lets you keep an existing icon while saving a different angle or effect variation. If a file already exists, use Create Copy to save a separate icon.", "복사본은 기존 아이콘을 보존하면서 다른 각도·효과 버전을 저장할 때 사용합니다. 파일이 이미 있으면 복사본 생성으로 별도 아이콘을 저장하세요.", "コピーは既存のアイコンを残しながら、異なる角度や効果のバリエーションを保存する際に使います。 ファイルが既にある場合はコピー生成で別のアイコンを保存してください。"),
                         DiNeTutorialStep.Optional("open-folder", "The output folder contains the generated PNG files for reviewing or using outside Unity. Open Folder shows the saved icons.", "출력 폴더에는 생성한 PNG가 저장되어 결과를 확인하거나 Unity 밖에서 사용할 수 있습니다. 폴더 열기로 저장된 아이콘을 확인하세요.", "出力フォルダには生成したPNGが保存され、結果の確認やUnity外での利用ができます。 フォルダを開くで保存したアイコンを確認してください。"),
                         DiNeTutorialStep.Optional("ping-folder", "Locating the output in Project makes the generated image assets easy to select and assign in Unity. Ping Folder locates the icon folder in the Project window.", "Project에서 출력 위치를 찾으면 생성한 이미지 에셋을 Unity에서 선택·배정하기 쉽습니다. 폴더 찾기로 프로젝트에서 아이콘 폴더를 찾으세요.", "Projectで出力先を確認すると、生成した画像アセットをUnityで選択・割り当てしやすくなります。 フォルダを確認でProjectウィンドウのアイコンフォルダを確認してください。"),
+                        DiNeTutorialStep.Optional("icon-dresser-default", "Saving the current angle, framing and effects as Multi Dresser's default capture makes automatic outfit icon generation and bulk recapture use this same composition. Click Overwrite Multi Dresser Default Capture to save it.", "현재 각도·구도·효과를 멀티 드레서의 기본 촬영으로 저장하면 의상 자동 아이콘 생성과 일괄 재촬영에서 같은 구도를 사용합니다. 멀티 드레서 기본 촬영으로 덮어쓰기를 눌러 저장하세요.", "現在の角度・構図・効果をMulti Dresserのデフォルト撮影として保存すると、衣装アイコンの自動生成と一括再撮影で同じ構図を使います。 Multi Dresserのデフォルト撮影を上書きを押して保存してください。"),
                     },
                 };
             }
@@ -67,9 +68,9 @@ namespace DiNeScreenSaver
                 "指定したカメラやエディターのScene ViewをPNGスクリーンショットに保存し、アバター紹介やポートフォリオ画像に使えます。出力解像度と背景を選び、プレビューで構図を合わせて撮影します。結果はAssets/Di Ne/ScreenShotに保存され、カメラに適用でプレビューの構図をシーンのカメラにも残せます。"
             } : new[]
             {
-                "Render an avatar, outfit or prop as a transparent square PNG for uses such as an Expressions Menu icon. Adjust its angle and framing, optionally add an outline or forbidden mark, then generate the image. When opened to edit an existing icon, Generate overwrites it; Create Copy keeps the old image and saves a variation.",
-                "아바타·의상·소품을 투명한 정사각형 PNG로 만들어 Expressions Menu 아이콘 등에 사용합니다. 각도와 구도를 정하고 필요하면 외곽선·금지 표시를 더한 뒤 이미지를 생성합니다. 기존 아이콘 편집으로 연 경우 생성은 해당 파일을 덮어쓰며, 복사본 생성은 기존 이미지를 남기고 다른 버전을 저장합니다.",
-                "アバター・衣装・小物を透明な正方形PNGにし、Expressions Menuアイコンなどに使えます。角度と構図を調整し、必要に応じてアウトラインや禁止マークを付けて生成します。既存アイコンの編集で開いた場合、生成はそのファイルを上書きし、コピー生成は元の画像を残して別の版を保存します。"
+                "Render an avatar, outfit or prop as a transparent square PNG for uses such as an Expressions Menu icon. Adjust its angle and framing, optionally add an outline or forbidden mark, then generate the image. You can also save the composition as Multi Dresser's default capture. When opened to edit an existing icon, Generate overwrites it; Create Copy keeps the old image and saves a variation.",
+                "아바타·의상·소품을 투명한 정사각형 PNG로 만들어 Expressions Menu 아이콘 등에 사용합니다. 각도와 구도를 정하고 필요하면 외곽선·금지 표시를 더한 뒤 이미지를 생성합니다. 또한 구도를 멀티 드레서의 기본 촬영으로 덮어쓸 수도 있습니다. 기존 아이콘 편집으로 연 경우 생성은 해당 파일을 덮어쓰며, 복사본 생성은 기존 이미지를 남기고 다른 버전을 저장합니다.",
+                "アバター・衣装・小物を透明な正方形PNGにし、Expressions Menuアイコンなどに使えます。角度と構図を調整し、必要に応じてアウトラインや禁止マークを付けて生成します。また、構図をMulti Dresserのデフォルト撮影として上書き保存することもできます。既存アイコンの編集で開いた場合、生成はそのファイルを上書きし、コピー生成は元の画像を残して別の版を保存します。"
             };
             _tutorial.Configure(_mode.ToString(), screenshot ? "Screenshot" : "Icon", screenshot ? "스크린샷" : "아이콘", screenshot ? "スクリーンショット" : "アイコン", _tutorialCourses[(int)_mode],
                 overviewEn: overview[0], overviewKo: overview[1], overviewJa: overview[2]);

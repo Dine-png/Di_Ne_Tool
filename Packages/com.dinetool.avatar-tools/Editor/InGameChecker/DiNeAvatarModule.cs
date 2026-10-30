@@ -334,7 +334,9 @@ namespace DiNeTool.InGameChecker
                     case VRC_AvatarParameterDriver.ChangeType.Random:
                         float rnd = param.Type == AnimatorControllerParameterType.Bool
                             ? (UnityEngine.Random.value <= entry.chance ? 1f : 0f)
-                            : UnityEngine.Random.Range(entry.valueMin, entry.valueMax);
+                            : param.Type == AnimatorControllerParameterType.Int
+                                ? UnityEngine.Random.Range((int)entry.valueMin, (int)entry.valueMax + 1)
+                                : UnityEngine.Random.Range(entry.valueMin, entry.valueMax);
                         param.Set(rnd);
                         break;
                 }

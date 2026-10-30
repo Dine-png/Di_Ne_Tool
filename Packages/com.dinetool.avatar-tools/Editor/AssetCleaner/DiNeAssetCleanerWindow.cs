@@ -625,6 +625,17 @@ namespace DiNeTool.AssetCleaner
             }
         }
 
+        // 아직 저장하지 않은(Untitled) 열린 씬은 씬 목록에 없으므로, 그 씬이 쓰는 에셋은 항상 보존한다.
+        private void CollectUnsavedSceneDependencies()
+        {
+            for (int i = 0; i < SceneManager.sceneCount; i++)
+            {
+                var s = SceneManager.GetSceneAt(i);
+                if (s.isLoaded && string.IsNullOrEmpty(s.path))
+                    CollectLiveDependencies(s);
+            }
+        }
+
         private void RebuildUsedFromSelectedScenes()
         {
             _used.Clear();
@@ -638,6 +649,7 @@ namespace DiNeTool.AssetCleaner
                 if (open.IsValid() && open.isLoaded)
                     CollectLiveDependencies(open);
             }
+            CollectUnsavedSceneDependencies();
         }
 
         private void Analyze()
@@ -665,6 +677,7 @@ namespace DiNeTool.AssetCleaner
                     if (open.IsValid() && open.isLoaded)
                         CollectLiveDependencies(open);
                 }
+                CollectUnsavedSceneDependencies();
 
                 EditorUtility.DisplayProgressBar("Asset Cleaner", T(PROG_COLLECT), 0.9f);
                 BuildTree();

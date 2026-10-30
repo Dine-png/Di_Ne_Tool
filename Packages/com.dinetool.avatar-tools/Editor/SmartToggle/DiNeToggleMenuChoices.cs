@@ -111,8 +111,10 @@ public sealed class DiNeToggleMenuChoices : IDisposable
     {
         VRCExpressionsMenu current = root;
         if (string.IsNullOrEmpty(path)) return current;
-        foreach (string segment in path.Split('/'))
+        string[] segments = path.Split('/');
+        for (int index = 0; index < segments.Length; index++)
         {
+            string segment = segments[index];
             int split = segment.LastIndexOf('~');
             if (split < 0 || !int.TryParse(segment.Substring(split + 1), out int occurrence)) return null;
             string name = Uri.UnescapeDataString(segment.Substring(0, split));
@@ -120,8 +122,16 @@ public sealed class DiNeToggleMenuChoices : IDisposable
             if (occurrence < 0) return null;
             var matches = current.controls.Where(control => control != null && control.name == name &&
                 control.type == VRCExpressionsMenu.Control.ControlType.SubMenu && control.subMenu != null).ToList();
+            // 루트가 가득 차 "Next ▶" 페이지로 넘어간 버튼도 같은 단계에서 찾는다.
+            var pages = new HashSet<VRCExpressionsMenu> { current };
+            for (var page = NextPage(current); matches.Count <= occurrence && page != null && pages.Add(page); page = NextPage(page))
+                matches.AddRange(page.controls.Where(control => control != null && control.name == name &&
+                    control.type == VRCExpressionsMenu.Control.ControlType.SubMenu && control.subMenu != null));
             VRCExpressionsMenu.Control selected;
             if (occurrence < matches.Count) selected = matches[occurrence];
+            // 옷장이 하나뿐이면 Multi Dresser 버튼이 해당 옷장 메뉴를 직접 가리키므로 그 단계를 건너뛴다.
+            else if (index == 1 && occurrence == 0 && segments[0] == Segment("Multi Dresser") && current.name == SafeName(name) + "_Menu")
+                continue;
             else
             {
                 if (!allowCreate || occurrence != 0 || current.controls.Count >= 8) return null;
@@ -141,6 +151,9 @@ public sealed class DiNeToggleMenuChoices : IDisposable
         }
         return current;
     }
+    private static VRCExpressionsMenu NextPage(VRCExpressionsMenu menu) => menu?.controls?.FirstOrDefault(control => control != null &&
+        control.name == "Next ▶" && control.type == VRCExpressionsMenu.Control.ControlType.SubMenu)?.subMenu;
+
     private static string SafeName(string value)
     {
         foreach (char invalid in System.IO.Path.GetInvalidFileNameChars()) value = value.Replace(invalid, '_');

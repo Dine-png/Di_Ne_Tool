@@ -476,7 +476,7 @@ namespace DiNeTool.InGameChecker
                 case VRCExpressionsMenu.Control.ControlType.TwoAxisPuppet:
                     _puppetMode = PuppetMode.TwoAxis;
                     _puppetControl = control;
-                    _puppetAxisValue = new Vector2(GetSubParamValue(control, 0), GetSubParamValue(control, 1));
+                    _puppetAxisValue = new Vector2(GetSubParamValue(control, 0), -GetSubParamValue(control, 1));
                     SetControlParam(control, control.value);
                     break;
 
@@ -518,8 +518,9 @@ namespace DiNeTool.InGameChecker
                     break;
 
                 case PuppetMode.TwoAxis:
-                    SetSubParam(_puppetControl, 0, _puppetAxisValue.y);  // Vertical (Up/Down)
-                    SetSubParam(_puppetControl, 1, _puppetAxisValue.x);  // Horizontal (Left/Right)
+                    // SDK 순서: [0] Horizontal, [1] Vertical. GUI의 y는 아래가 +이므로 뒤집는다.
+                    SetSubParam(_puppetControl, 0, _puppetAxisValue.x);  // Horizontal (Left/Right)
+                    SetSubParam(_puppetControl, 1, -_puppetAxisValue.y); // Vertical (Up/Down)
                     break;
 
                 case PuppetMode.FourAxis:

@@ -34,7 +34,11 @@ public sealed class DiNeRemoveMeshInBox : MonoBehaviour, IEditorOnly
         /// <summary>True if <paramref name="point"/> (in the renderer's local space) is inside this box.</summary>
         public bool Contains(Vector3 point)
         {
-            Vector3 local = Quaternion.Inverse(rotation) * (point - center);
+            // rotation 필드가 생기기 전에 저장된 박스는 (0,0,0,0)으로 읽히므로 identity로 취급한다.
+            Quaternion r = rotation;
+            float sq = r.x * r.x + r.y * r.y + r.z * r.z + r.w * r.w;
+            r = sq < 1e-8f ? Quaternion.identity : new Quaternion(r.x, r.y, r.z, r.w).normalized;
+            Vector3 local = Quaternion.Inverse(r) * (point - center);
             Vector3 half = size * 0.5f;
             return Mathf.Abs(local.x) <= half.x
                 && Mathf.Abs(local.y) <= half.y

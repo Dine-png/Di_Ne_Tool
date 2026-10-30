@@ -385,8 +385,9 @@ internal sealed class DiNeShaderProfilePoiyomi : DiNeShaderProfile
         baker.SetFloat(MainBrightness, brightness);
 
         int hash = HashOf(source, color, mask, hue, hueReplace, saturation, brightness);
-        var baked = session.Bake(hash, source, baker, color.a < 1f);
-        UnityEngine.Object.DestroyImmediate(baker);
+        Texture baked;
+        try { baked = session.Bake(hash, source, baker, color.a < 1f); }
+        finally { UnityEngine.Object.DestroyImmediate(baker); }
 
         material.SetTexture(MainTex, baked);
 

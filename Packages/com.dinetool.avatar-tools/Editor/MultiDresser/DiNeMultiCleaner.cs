@@ -28,6 +28,8 @@ public class DiNeMultiCleaner
         foreach (var dresser in allDresserObjects)
         {
             var go = dresser.gameObject;
+            // 아바타 루트나 옷/아마추어처럼 다른 컴포넌트·자식이 있는 오브젝트에 붙었으면 태그를 달지 않는다(통째로 업로드에서 빠짐).
+            if (go.transform.childCount > 0 || go.GetComponents<Component>().Length > 2) continue;
             if (go.tag != "EditorOnly")
             {
                 Undo.RecordObject(go, "Set EditorOnly Tag");

@@ -279,11 +279,11 @@ internal static class DiNeLightingDiagnostics
 
         if (!alreadyThere && menu.controls.Count >= 8)
         {
-            issues.Add(new Issue(MessageType.Error,
+            issues.Add(new Issue(MessageType.Info,
                 T(
-                    $"아바타 루트 메뉴가 8칸을 다 써서 '{menuName}' 서브메뉴를 넣을 자리가 없습니다. 루트 메뉴에서 항목을 하나 정리하거나 서브메뉴로 묶으세요.",
-                    $"The avatar root menu already uses all 8 slots, so there is no room for the '{menuName}' submenu. Remove an item or group items into another submenu.",
-                    $"アバターのルートメニューが8枠すべて使用されているため、「{menuName}」サブメニューを追加できません。項目を整理するか別のサブメニューへまとめてください。")));
+                    $"아바타 루트 메뉴 8칸이 다 차 있어 '{menuName}' 서브메뉴는 \"Next ▶\" 페이지에 들어갑니다.",
+                    $"The avatar root menu already uses all 8 slots, so the '{menuName}' submenu will be placed on a \"Next ▶\" page.",
+                    $"アバターのルートメニューが8枠すべて使用されているため、「{menuName}」サブメニューは「Next ▶」ページに配置されます。")));
         }
     }
 

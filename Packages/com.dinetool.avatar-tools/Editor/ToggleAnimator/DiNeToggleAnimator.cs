@@ -634,7 +634,7 @@ public partial class DiNeToggleAnimator : EditorWindow
         if (row.IsBlendShape)
         {
             var smr = t.GetComponent<SkinnedMeshRenderer>();
-            if (smr != null)
+            if (smr != null && smr.sharedMesh != null)
             {
                 string bsName = row.propName.Substring(11);
                 int idx = smr.sharedMesh.GetBlendShapeIndex(bsName);
@@ -683,6 +683,8 @@ public partial class DiNeToggleAnimator : EditorWindow
         {
             while (_grid[r].Count < _clips.Count) _grid[r].Add(null);
             while (_grid[r].Count > _clips.Count) _grid[r].RemoveAt(_grid[r].Count - 1);
+            // 선택한 클립이 바뀌면 이전 클립 값이 남아 새 클립에 저장되지 않게 비운다.
+            for (int c = 0; c < _grid[r].Count; c++) _grid[r][c] = null;
         }
 
         for (int c = 0; c < _clips.Count; c++)
@@ -847,6 +849,10 @@ public partial class DiNeToggleAnimator : EditorWindow
 
             if (st.HasValue)
             {
+                // 값이 그대로인 여러 키 커브(파티클 등)는 상수로 덮어쓰지 않는다.
+                var existing = AnimationUtility.GetEditorCurve(clip, binding);
+                if (existing != null && existing.length > 1 && Mathf.Approximately(existing.Evaluate(0f), st.Value))
+                    continue;
                 AnimationUtility.SetEditorCurve(clip, binding, AnimationCurve.Constant(0f, 0f, st.Value));
             }
             else

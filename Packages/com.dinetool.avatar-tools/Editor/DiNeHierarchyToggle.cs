@@ -26,6 +26,8 @@ public static class DiNeHierarchyToggle
     private static readonly PropertyInfo MouseOverGuiView = GuiViewType?.GetProperty("mouseOverView");
     private static GUIStyle nameStyle;
     private static GUIStyle selectionStyle;
+    private static GUIStyle toggleStyle;
+    private static bool toggleStyleIsProSkin;
     private static bool styleIsProSkin;
     private static Color hierarchyBackground;
     private static Color hierarchyHover;
@@ -58,20 +60,25 @@ public static class DiNeHierarchyToggle
 
         GUI.backgroundColor = isActive ? ColMint : ColDark;
 
-        var style = new GUIStyle(GUI.skin.button)
+        // 보이는 행마다·이벤트마다 호출되므로 스타일은 한 번만 만든다.
+        if (toggleStyle == null || toggleStyleIsProSkin != EditorGUIUtility.isProSkin)
         {
-            fontSize   = 9,
-            fontStyle  = FontStyle.Bold,
-            padding    = new RectOffset(0, 0, 0, 0),
-            alignment  = TextAnchor.MiddleCenter,
-        };
-        style.normal.textColor  = isActive ? ColTextOn : ColTextOff;
-        style.hover.textColor   = Color.white;
-        style.active.textColor  = Color.white;
+            toggleStyleIsProSkin = EditorGUIUtility.isProSkin;
+            toggleStyle = new GUIStyle(GUI.skin.button)
+            {
+                fontSize   = 9,
+                fontStyle  = FontStyle.Bold,
+                padding    = new RectOffset(0, 0, 0, 0),
+                alignment  = TextAnchor.MiddleCenter,
+            };
+            toggleStyle.hover.textColor  = Color.white;
+            toggleStyle.active.textColor = Color.white;
+        }
+        toggleStyle.normal.textColor = isActive ? ColTextOn : ColTextOff;
 
         string label = isActive ? "●" : "○";
 
-        if (GUI.Button(btnRect, label, style))
+        if (GUI.Button(btnRect, label, toggleStyle))
             ToggleActive(obj, !isActive);
 
         GUI.backgroundColor = prevBg;

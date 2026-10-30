@@ -23,7 +23,7 @@ public partial class DiNeAnimationTool
     private void DrawExpressionGUI()
     {
         if (targetAvatarRoot == null) return;
-        BeginCard(Tr("Expression Preview", "표정 미리보기", "表情プレビュー"));
+        BeginCard(Tr("Face Mesh", "얼굴 메시", "顔メッシュ"));
         SkinnedMeshRenderer[] meshes = targetAvatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true)
             .Where(r => r.sharedMesh != null && r.sharedMesh.blendShapeCount > 0).ToArray();
         if (meshes.Length == 0)
@@ -38,7 +38,6 @@ public partial class DiNeAnimationTool
         TutorialAnchor("expression-mesh");
         if (next != current) { _bodySmr = meshes[next]; ReadShapeValues(); }
         TutorialDraw("expression-mesh");
-        DrawPreviewImage(true);
         EndCard();
         DrawExpressionClipSection();
         DrawExpressionFxSection();
@@ -67,7 +66,6 @@ public partial class DiNeAnimationTool
             _exprShapeValues = new float[_bodySmr.sharedMesh.blendShapeCount];
             for (int i = 0; i < _exprShapeValues.Length; i++) _exprShapeValues[i] = _bodySmr.GetBlendShapeWeight(i);
         }
-        previewDirty = true;
     }
 
     private void DrawExpressionClipSection()
@@ -85,7 +83,6 @@ public partial class DiNeAnimationTool
             _exprClip = null; _exprNewClipName = "New Expression";
             _exprFxStateSel = -1; _exprFxPreviewMode = false; _exprWorkingValues = null;
             if (_exprShapeValues != null) Array.Clear(_exprShapeValues, 0, _exprShapeValues.Length);
-            previewDirty = true;
         }
         EditorGUILayout.EndHorizontal();
         TutorialDraw("expression-clip");
@@ -177,7 +174,7 @@ public partial class DiNeAnimationTool
         EditorGUILayout.BeginHorizontal();
         if (GUILayout.Button(Tr("Reset All", "전체 초기화", "すべてリセット"), GUILayout.Height(24)))
         {
-            EndFxPreview(); Array.Clear(_exprShapeValues, 0, _exprShapeValues.Length); previewDirty = true;
+            EndFxPreview(); Array.Clear(_exprShapeValues, 0, _exprShapeValues.Length);
         }
         using (new EditorGUI.DisabledScope(!CanApply()))
             if (GUILayout.Button(Tr("Apply Expression to Scene", "표정을 씬에 적용", "表情をシーンに適用"), GUILayout.Height(24))) ApplyExpression();
@@ -192,7 +189,7 @@ public partial class DiNeAnimationTool
             {
                 // Editing a previewed FX expression starts a new working expression.
                 _exprFxStateSel = -1; _exprFxPreviewMode = false; _exprWorkingValues = null;
-                _exprShapeValues[i] = value; previewDirty = true; Repaint();
+                _exprShapeValues[i] = value; Repaint();
             }
         }
         EndCard();
@@ -203,7 +200,7 @@ public partial class DiNeAnimationTool
         if (!CanApply() || _bodySmr == null || _bodySmr.sharedMesh == null || _exprShapeValues == null) return;
         Undo.RecordObject(_bodySmr, "Animation Tool Apply Expression");
         for (int i = 0; i < Mathf.Min(_exprShapeValues.Length, _bodySmr.sharedMesh.blendShapeCount); i++) _bodySmr.SetBlendShapeWeight(i, _exprShapeValues[i]);
-        MarkChanged(_bodySmr); SceneView.RepaintAll(); previewDirty = true;
+        MarkChanged(_bodySmr); SceneView.RepaintAll();
         SetStatus(Tr("Applied expression to the scene. Undo is available.", "표정을 씬에 적용했습니다. 실행 취소로 되돌릴 수 있습니다.", "表情をシーンに適用しました。元に戻す操作が利用できます。"));
     }
 
@@ -216,7 +213,7 @@ public partial class DiNeAnimationTool
     {
         if (_exprWorkingValues != null && _exprShapeValues != null)
             Array.Copy(_exprWorkingValues, _exprShapeValues, Mathf.Min(_exprWorkingValues.Length, _exprShapeValues.Length));
-        previewDirty = true; Repaint();
+        Repaint();
     }
     private void EndFxPreview()
     {
@@ -251,7 +248,7 @@ public partial class DiNeAnimationTool
             AnimationCurve curve = AnimationUtility.GetEditorCurve(clip, binding);
             if (index >= 0 && curve != null) _exprShapeValues[index] = curve.Evaluate(0f);
         }
-        previewDirty = true; Repaint();
+        Repaint();
     }
 
     private bool CanOverwriteExpression()

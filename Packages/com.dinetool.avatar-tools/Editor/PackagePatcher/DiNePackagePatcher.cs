@@ -58,19 +58,24 @@ public partial class DiNePackagePatcher : EditorWindow
     [System.Serializable]
     private class PendingState
     {
+        public bool         organize = true;
         public string       target  = "_1_Patch";
         public List<string> roots   = new List<string>(); // 이동 대상 후보 (Assets/xxx)
         public List<string> before  = new List<string>(); // 임포트 전 Assets 최상위 목록
         public List<string> queue   = new List<string>(); // 남은 임시 패키지 경로
         public List<string> queueId = new List<string>(); // queue 와 1:1 대응하는 PackageItem.Id
+        public List<string> doneIds   = new List<string>();
+        public List<string> failedIds = new List<string>();
         public string inFlight;      // 현재 임포트 중인 임시 경로 (없으면 빈 값)
         public string inFlightId;
         public int    total;
         public int    done;
         public int    phase = PHASE_IMPORT;
+        public bool   parseFailed;   // tar 파싱에 실패한 패키지가 있으면 임포트 전후 스캔으로 대체
     }
 
     private const string SESSION_STATE = "DiNePatcher_State";
+    private const string PREF_ORGANIZE = "DiNePatcher_Organize";
 
     private static bool   s_driverRunning;
     private static bool   s_callbacksHooked;
@@ -114,11 +119,15 @@ public partial class DiNePackagePatcher : EditorWindow
             // 파일 기록을 끝내므로 성공으로 간주하고 다음으로 넘어간다.
             // 여기서 배치를 포기하면 남은 패키지가 통째로 누락된다.
             Debug.Log($"[DiNe] 도메인 리로드 감지 → 임포트 이어서 진행 ({st.done + 1}/{st.total})");
-            MarkItem(st.inFlightId, true);
+            RecordOutcome(st, st.inFlightId, true);
             st.inFlight   = "";
             st.inFlightId = "";
             st.done++;
             SaveState(st);
+        }
+        else
+        {
+            SyncWindowItems(st);
         }
 
         StartDriver();
@@ -256,7 +265,7 @@ public partial class DiNePackagePatcher : EditorWindow
         var st = LoadState();
         if (st == null || string.IsNullOrEmpty(st.inFlight)) return;
 
-        MarkItem(st.inFlightId, succeeded);
+        RecordOutcome(st, st.inFlightId, succeeded);
         st.inFlight   = "";
         st.inFlightId = "";
         st.done++;
@@ -275,11 +284,18 @@ public partial class DiNePackagePatcher : EditorWindow
         ClearState();
         StopDriver();
 
+        if (!st.organize)
+        {
+            CleanTempFolder();
+            SetWindowStatusDone(st);
+            return;
+        }
+
         var roots = new HashSet<string>(st.roots, StringComparer.OrdinalIgnoreCase);
 
         // tar 파싱이 완전히 실패한 경우에만 임포트 전후 스냅샷을 안전망으로 쓴다.
         // 정상 파싱된 패키지를 처리하는 동안 사용자가 만든 무관한 에셋까지 이동시키지 않는다.
-        if (roots.Count == 0)
+        if (roots.Count == 0 && st.parseFailed)
         {
             foreach (var added in FindNewTopLevelAssets(st.before, st.target))
                 roots.Add(added);
@@ -344,6 +360,31 @@ public partial class DiNePackagePatcher : EditorWindow
         return list;
     }
 
+    private static void RecordOutcome(PendingState st, string id, bool succeeded)
+    {
+        if (st != null && !string.IsNullOrEmpty(id))
+        {
+            if (succeeded)
+            {
+                if (!st.doneIds.Contains(id)) st.doneIds.Add(id);
+                st.failedIds.Remove(id);
+            }
+            else
+            {
+                if (!st.failedIds.Contains(id)) st.failedIds.Add(id);
+                st.doneIds.Remove(id);
+            }
+        }
+        MarkItem(id, succeeded);
+    }
+
+    private static void SyncWindowItems(PendingState st)
+    {
+        if (s_window == null || st == null) return;
+        foreach (var doneId in st.doneIds) MarkItem(doneId, true);
+        foreach (var failId in st.failedIds) MarkItem(failId, false);
+    }
+
     private static void MarkItem(string id, bool succeeded)
     {
         if (s_window == null || string.IsNullOrEmpty(id)) return;
@@ -361,18 +402,19 @@ public partial class DiNePackagePatcher : EditorWindow
     private static void SetWindowStatusDone(PendingState st)
     {
         if (s_window == null) return;
+        SyncWindowItems(st);
         s_window.statusMessage = s_window.UI_TEXT != null ? s_window.UI_TEXT[11] : "완료!";
         s_window.Repaint();
     }
     // ══════════════════════════════════════════════════════════════════════════
 
-    private LanguagePreset language = LanguagePreset.Korean;
+    [SerializeField] private LanguagePreset language = LanguagePreset.Korean;
+    [SerializeField] private bool organizeIntoFolder = true;
+    [SerializeField] private string targetFolderName = "_1_Patch";
+    [SerializeField] private List<PackageItem> foundPackages = new List<PackageItem>();
+    [SerializeField] private Vector2 packageScrollPos;
 
-    private string targetFolderName = "_1_Patch";
-    private List<PackageItem> foundPackages = new List<PackageItem>();
-    private Vector2 packageScrollPos;
-
-    private string statusMessage   = "";
+    [SerializeField] private string statusMessage   = "";
 
     private string[] UI_TEXT;
     private Texture2D tabIcon;
@@ -400,10 +442,12 @@ public partial class DiNePackagePatcher : EditorWindow
     {
         if (!EditorPrefs.HasKey("DiNeLang")) EditorPrefs.SetInt("DiNeLang", (int)language);
         language = (LanguagePreset)Mathf.Clamp(EditorPrefs.GetInt("DiNeLang", (int)language), 0, 2);
+        organizeIntoFolder = EditorPrefs.GetBool(PREF_ORGANIZE, organizeIntoFolder);
         s_window   = this;
         tabIcon    = DiNePackageAssets.LoadAsset<Texture2D>("Assets/DiNe_Icon.png");
         SetLanguage(language);
         if (!HasPendingBatch()) statusMessage = "";
+        else SyncWindowItems(LoadState());
     }
 
     void OnDisable()
@@ -455,14 +499,41 @@ public partial class DiNePackagePatcher : EditorWindow
             // ── 설정 ── (방해되던 수동 임포트 체크박스 제거)
             EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
             EditorGUILayout.LabelField(UI_TEXT[0], EditorStyles.boldLabel);
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField(UI_TEXT[1], GUILayout.Width(110));
-            var tutorialFolderBefore = targetFolderName;
-            targetFolderName = EditorGUILayout.TextField(targetFolderName);
-            guidedTutorial.Anchor("Folder", GUILayoutUtility.GetLastRect());
-            if (tutorialFolderBefore != targetFolderName) guidedTutorial.NotifyAction("Folder");
-            EditorGUILayout.EndHorizontal();
+            GUILayout.Space(3);
+
+            using (new EditorGUI.DisabledScope(isImporting))
+            {
+                int curMode = organizeIntoFolder ? 0 : 1;
+                var modeOptions = new[]
+                {
+                    new GUIContent(UI_TEXT[29], UI_TEXT[31]),
+                    new GUIContent(UI_TEXT[30], UI_TEXT[32]),
+                };
+                int newMode = DiNeEditorUI.DrawToolbar(curMode, modeOptions, DiNeEditorUI.CompactButtonHeight);
+                if (newMode != curMode)
+                {
+                    organizeIntoFolder = newMode == 0;
+                    EditorPrefs.SetBool(PREF_ORGANIZE, organizeIntoFolder);
+                    guidedTutorial.NotifyAction("Folder");
+                }
+            }
+
+            GUILayout.Space(4);
+
+            using (new EditorGUI.DisabledScope(!organizeIntoFolder || isImporting))
+            {
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField(new GUIContent(UI_TEXT[1], UI_TEXT[31]), GUILayout.Width(110));
+                var tutorialFolderBefore = targetFolderName;
+                targetFolderName = EditorGUILayout.TextField(targetFolderName);
+                if (tutorialFolderBefore != targetFolderName) guidedTutorial.NotifyAction("Folder");
+                EditorGUILayout.EndHorizontal();
+            }
+
+            GUILayout.Space(3);
+            EditorGUILayout.LabelField(organizeIntoFolder ? UI_TEXT[33] : UI_TEXT[34], EditorStyles.wordWrappedMiniLabel);
             EditorGUILayout.EndVertical();
+            guidedTutorial.Anchor("Folder", GUILayoutUtility.GetLastRect());
             guidedTutorial.Draw("Folder");
 
             GUILayout.Space(5);
@@ -1129,8 +1200,9 @@ public partial class DiNePackagePatcher : EditorWindow
 
         var state = new PendingState
         {
-            target = GetSafeFolderName(targetFolderName),
-            before = EnumerateTopLevelAssets(),
+            organize = organizeIntoFolder,
+            target   = organizeIntoFolder ? GetSafeFolderName(targetFolderName) : "",
+            before   = organizeIntoFolder ? EnumerateTopLevelAssets() : new List<string>(),
         };
         var predictedRoots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -1147,7 +1219,12 @@ public partial class DiNePackagePatcher : EditorWindow
 
                 state.queue.Add(prepared);
                 state.queueId.Add(item.Id);
-                foreach (var r in GetPackageRootFolders(prepared)) predictedRoots.Add(r);
+                if (organizeIntoFolder)
+                {
+                    var packageRoots = GetPackageRootFolders(prepared, out bool parseFailed);
+                    foreach (var r in packageRoots) predictedRoots.Add(r);
+                    if (parseFailed) state.parseFailed = true;
+                }
             }
         }
         finally
@@ -1166,7 +1243,9 @@ public partial class DiNePackagePatcher : EditorWindow
         }
 
         SaveState(state);
-        Debug.Log($"[DiNe] StartImport: {state.total}개 큐, 예측 폴더=[{string.Join(", ", predictedRoots)}]");
+        Debug.Log(organizeIntoFolder
+            ? $"[DiNe] StartImport: {state.total}개 큐, 예측 폴더=[{string.Join(", ", predictedRoots)}]"
+            : $"[DiNe] StartImport: {state.total}개 큐 (폴더 지정 없이 원래 경로로 연속 임포트)");
         StartDriver();
     }
 
@@ -1296,6 +1375,8 @@ public partial class DiNePackagePatcher : EditorWindow
     {
         string targetPath = "Assets/" + targetFolderName;
         if (root.Equals(targetPath, StringComparison.OrdinalIgnoreCase)) return targetPath;
+        // 이미 정리 폴더 안에 생긴 경로는 옮길 필요가 없다.
+        if (root.StartsWith(targetPath + "/", StringComparison.OrdinalIgnoreCase)) return root;
 
         bool isFolder = AssetDatabase.IsValidFolder(root);
         bool isFile   = !isFolder && !string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID(root));
@@ -1307,7 +1388,8 @@ public partial class DiNePackagePatcher : EditorWindow
         }
 
         // Assets 루트에 있어야만 동작하는 특수 폴더는 옮기지 않는다(기존 내용까지 딸려 간다).
-        if (isFolder && SpecialRootFolders.Contains(Path.GetFileName(root)))
+        string[] segments = root.Substring("Assets/".Length).Split('/');
+        if ((isFolder || segments.Length > 1) && SpecialRootFolders.Contains(segments[0]))
         {
             Debug.Log($"[DiNe] '{root}' 는 Unity 특수 폴더라 정리하지 않습니다.");
             return null;
@@ -1316,7 +1398,16 @@ public partial class DiNePackagePatcher : EditorWindow
         if (!AssetDatabase.IsValidFolder(targetPath))
             AssetDatabase.CreateFolder("Assets", targetFolderName);
 
-        string dest = targetPath + "/" + Path.GetFileName(root);
+        // 기존 폴더 안에 새로 생긴 경로(Assets/A/B)는 정리 폴더에도 같은 상위 구조(target/A/B)로 옮긴다.
+        string destParent = targetPath;
+        for (int i = 0; i < segments.Length - 1; i++)
+        {
+            string next = destParent + "/" + segments[i];
+            if (!AssetDatabase.IsValidFolder(next)) AssetDatabase.CreateFolder(destParent, segments[i]);
+            destParent = next;
+        }
+
+        string dest = destParent + "/" + segments[segments.Length - 1];
 
         // Assets 바로 아래에 놓인 단일 파일도 정리 폴더로 함께 옮긴다.
         if (isFile)
@@ -1441,8 +1532,9 @@ public partial class DiNePackagePatcher : EditorWindow
     /// .unitypackage(= tgz) 파일을 파싱해 설치될 Assets 루트 경로 목록 반환.
     /// 임포트 전에 호출하여 정확한 이동 대상을 미리 파악한다.
     /// </summary>
-    private static IEnumerable<string> GetPackageRootFolders(string packagePath)
+    private static IEnumerable<string> GetPackageRootFolders(string packagePath, out bool parseFailed)
     {
+        parseFailed = false;
         var roots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
@@ -1486,10 +1578,13 @@ public partial class DiNePackagePatcher : EditorWindow
                     string assetPath = raw.Split('\n')[0].Trim('\0', '\r', '\n', ' ');
                     if (assetPath.StartsWith("Assets/"))
                     {
+                        // 이번 임포트로 새로 생기는 Assets 최상위 경로만 루트로 삼는다.
+                        // 기존 폴더를 루트로 잡으면 무관한 사용자 에셋까지 옮겨지고, 기존 폴더 안의 새 파일만 옮기면
+                        // 패키지가 asmdef/상대 include 경로에서 떨어져 나가므로 기존 폴더에 들어가는 업데이트는 그대로 둔다.
                         var rel  = assetPath.Substring("Assets/".Length);
                         var idx  = rel.IndexOf('/');
-                        var root = idx >= 0 ? rel.Substring(0, idx) : rel;
-                        if (!string.IsNullOrEmpty(root)) roots.Add("Assets/" + root);
+                        var root = "Assets/" + (idx >= 0 ? rel.Substring(0, idx) : rel);
+                        if (rel.Length > 0 && !Directory.Exists(root) && !File.Exists(root)) roots.Add(root);
                     }
                     long pad = paddedSize - size;
                     if (pad > 0) TarSkipBytes(gz, pad, skipBuf);
@@ -1505,6 +1600,7 @@ public partial class DiNePackagePatcher : EditorWindow
             // 파싱이 실패해도 임포트 후 새 폴더 스캔이 정리를 대신 처리한다.
             Debug.LogWarning($"[DiNe] 패키지 파싱 실패 (임포트 후 새 폴더 스캔으로 대체): " +
                              $"{Path.GetFileName(packagePath)}\n{e.Message}");
+            parseFailed = true;
         }
         return roots;
     }
@@ -1596,6 +1692,12 @@ public partial class DiNePackagePatcher : EditorWindow
                     /* 26 */ "선택 항목 추가",
                     /* 27 */ "취소",
                     /* 28 */ "선택 창 {0} / {1}   ·   이 창 뒤에 {2}개 더 남았습니다",
+                    /* 29 */ "📁 폴더 지정 정리",
+                    /* 30 */ "⚡ 폴더 지정 안 함 (연속 임포트)",
+                    /* 31 */ "새로 가져온 에셋의 최상위 폴더를 지정한 폴더 아래로 모아 정리합니다.",
+                    /* 32 */ "폴더를 강제로 이동하지 않고 패키지 원래 경로 그대로 연속 임포트합니다.",
+                    /* 33 */ "임포트 후 새로 생성된 최상위 폴더를 지정한 폴더 안으로 모아 정리합니다.",
+                    /* 34 */ "폴더를 강제 이동하지 않고 패키지 원래 경로 그대로 연속 임포트합니다. 스크립트 포함 패키지나 기존 폴더와 연계된 파일이 고장 나는 것을 방지합니다.",
                 };
                 break;
             case LanguagePreset.Japanese:
@@ -1628,6 +1730,12 @@ public partial class DiNePackagePatcher : EditorWindow
                     /* 26 */ "選択項目を追加",
                     /* 27 */ "キャンセル",
                     /* 28 */ "選択ウィンドウ {0} / {1}   ·   この後にあと {2} 個あります",
+                    /* 29 */ "📁 フォルダ指定整理",
+                    /* 30 */ "⚡ フォルダ指定なし (連続インポート)",
+                    /* 31 */ "新しく読み込んだアセットの最上位フォルダを指定したフォルダの下にまとめて整理します。",
+                    /* 32 */ "フォルダを強制移動せず、パッケージ本来のパスへそのまま連続インポートします。",
+                    /* 33 */ "インポート後に新しく作成された最上位フォルダを指定フォルダ内へまとめて整理します。",
+                    /* 34 */ "フォルダを強制移動せずパッケージ本来のパスへそのまま連続インポートします。スクリプトを含むパッケージや既存フォルダと連携するファイルの破損を防ぎます。",
                 };
                 break;
             default:
@@ -1660,6 +1768,12 @@ public partial class DiNePackagePatcher : EditorWindow
                     /* 26 */ "Add Selected",
                     /* 27 */ "Cancel",
                     /* 28 */ "Window {0} / {1}   ·   {2} more after this one",
+                    /* 29 */ "📁 Organize into Folder",
+                    /* 30 */ "⚡ No Folder Move (Direct Import)",
+                    /* 31 */ "Organizes newly imported top-level asset folders under the specified target folder.",
+                    /* 32 */ "Imports packages sequentially into their original paths without moving folders.",
+                    /* 33 */ "Moves newly created top-level folders into the target folder after importing.",
+                    /* 34 */ "Imports packages sequentially into their original paths without moving folders. Prevents breakage for packages with scripts or files linked to existing folders.",
                 };
                 break;
         }

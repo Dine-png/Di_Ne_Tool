@@ -120,7 +120,51 @@ namespace DiNeScreenSaver
                              "選択したオブジェクトにフォーカスします。適切な選択がない場合は、画面内のキャラクターを自動で探します。" },
             /* 58 */ new[] { "No renderer could be captured from the target object.",
                              "대상 오브젝트에서 캡처할 수 있는 렌더러를 찾지 못했습니다.",
-                             "対象オブジェクトからキャプチャできるレンダラーが見つかりません。" }
+                             "対象オブジェクトからキャプチャできるレンダラーが見つかりません。" },
+            /* 59 */ new[] { "Multi Dresser Default Capture",
+                             "멀티 드레서 기본 촬영",
+                             "Multi Dresser 基本撮影" },
+            /* 60 */ new[] { "Overwrite Multi Dresser Default Capture",
+                             "현재 구도를 멀티 드레서 기본 촬영으로 덮어쓰기",
+                             "現在の構図をMulti Dresser基本撮影に上書き" },
+            /* 61 */ new[] { "Saves the current angle, framing, pose, and visibility effects as Multi Dresser's global default icon capture.",
+                             "현재 각도·구도·포즈·가시성 효과를 모든 멀티 드레서의 기본 아이콘 촬영 설정으로 저장합니다.",
+                             "現在の角度・構図・ポーズ・視認性エフェクトをすべてのMulti Dresserの基本アイコン撮影設定として保存します。" },
+            /* 62 */ new[] { "Load Default",
+                             "기본 촬영 불러오기",
+                             "基本撮影を読み込む" },
+            /* 63 */ new[] { "Reset Default",
+                             "기본 촬영 초기화",
+                             "基本撮影をリセット" },
+            /* 64 */ new[] { "Target Multi Dresser",
+                             "대상 멀티 드레서",
+                             "対象 Multi Dresser" },
+            /* 65 */ new[] { "Recapture All Dresser Icons",
+                             "멀티 드레서 아이콘 일괄 재촬영 (덮어쓰기)",
+                             "Multi Dresser アイコンを一括再撮影 (上書き)" },
+            /* 66 */ new[] { "Recaptures and overwrites all outfit icons in the selected Multi Dresser using the saved default capture.",
+                             "선택한 멀티 드레서에 등록된 모든 의상 아이콘을 기본 촬영 구도·효과로 다시 촬영해 덮어씁니다.",
+                             "選択したMulti Dresserに登録されたすべての衣装アイコンを基本撮影の構図・エフェクトで再撮影して上書きします。" },
+            /* 67 */ new[] { "Custom default active",
+                             "커스텀 기본 촬영 적용 중",
+                             "カスタム基本撮影が有効" },
+            /* 68 */ new[] { "Built-in front view default active",
+                             "기본 정면 촬영 사용 중",
+                             "標準の正面撮影を使用中" },
+            /* 69 */ new[] { "Saved current angle and effects as Multi Dresser's default capture.",
+                             "현재 각도·구도·효과를 멀티 드레서의 기본 촬영으로 저장했습니다.",
+                             "現在の角度・構図・エフェクトをMulti Dresserの基本撮影として保存しました。" },
+            /* 70 */ new[] { "Loaded Multi Dresser's default capture into the preview.",
+                             "멀티 드레서의 기본 촬영 설정을 미리보기에 불러왔습니다.",
+                             "Multi Dresserの基本撮影設定をプレビューに読み込みました。" },
+            /* 71 */ new[] { "Reset Multi Dresser's default capture to the initial front view.",
+                             "멀티 드레서의 기본 촬영 설정을 초기 정면 상태로 되돌렸습니다.",
+                             "Multi Dresserの基本撮影設定を初期の正面状態にリセットしました。" },
+            /* 72 */ new[] { "ON", "켜짐", "ON" },
+            /* 73 */ new[] { "OFF", "꺼짐", "OFF" },
+            /* 74 */ new[] { "Recaptured {0} outfit icon(s) with the default capture.",
+                             "의상 아이콘 {0}개를 기본 촬영 구도로 일괄 재촬영했습니다.",
+                             "衣装アイコン {0} 個を基本撮影構図で一括再撮影しました。" }
         };
         private static readonly string[][] BG_TEXT =
         {
@@ -198,6 +242,7 @@ namespace DiNeScreenSaver
         private DiNeMultiDresser _iconDresser;
         private int        _iconDresserLayerIndex = -1;
         private int        _iconDresserButtonIndex = -1;
+        private string     _iconDresserStatusMessage;
         private DiNeSmartToggle _iconSmartToggle;
 
         // Preview
@@ -270,6 +315,74 @@ namespace DiNeScreenSaver
             return GetWindow<DiNeScreenSaver>();
         }
 
+        private void ApplyPresetToWindow(DiNeMultiIconGenerator.CapturePreset preset)
+        {
+            _previewEuler = preset.euler;
+            _previewPan = preset.pan;
+            _zoomFactor = preset.zoom;
+            _iconIdlePose = preset.idlePose;
+            if (preset.effects != null)
+            {
+                _iconOutlineEnabled = preset.effects.outlineEnabled;
+                _iconOutlineColor = preset.effects.outlineColor;
+                _iconOutlineSize = preset.effects.outlineSize;
+                _iconForbiddenOverlay = preset.effects.forbiddenOverlay;
+                _iconForbiddenOpacity = preset.effects.forbiddenOpacity;
+                _iconForbiddenScale = preset.effects.forbiddenScale;
+                _iconForbiddenBehindObject = preset.effects.forbiddenBehindObject;
+            }
+            ReleaseIconPreviewResources();
+            _previewDirty = true;
+            _iconPreviewUnavailable = false;
+        }
+
+        public static void OpenMultiDresserDefaultCaptureEditor(
+            DiNeMultiDresser owner,
+            GameObject sampleTarget = null)
+        {
+            if (sampleTarget == null && owner != null && owner.layers != null)
+            {
+                foreach (var layer in owner.layers)
+                {
+                    if (layer?.targets == null) continue;
+                    for (int i = 1; i < layer.targets.Count; i++)
+                    {
+                        if (layer.targets[i] != null)
+                        {
+                            sampleTarget = layer.targets[i];
+                            break;
+                        }
+                    }
+                    if (sampleTarget != null) break;
+                }
+            }
+
+            bool created;
+            var window = GetReusableWindow(out created);
+            window.ReleaseIconPreviewResources();
+            window.minSize = new Vector2(420, 620);
+            if (created)
+                window.position = new Rect(window.position.x, window.position.y, 420, 760);
+            window._mode = ToolMode.Icon;
+            if (sampleTarget != null)
+            {
+                window._iconTarget = sampleTarget;
+                window._prevIconTarget = sampleTarget;
+            }
+            window.ApplyPresetToWindow(DiNeMultiIconGenerator.GetDefaultCapturePreset());
+            window._iconOverwriteAssetPath = null;
+            window._iconDresser = owner;
+            window._iconDresserLayerIndex = -1;
+            window._iconDresserButtonIndex = -1;
+            window._iconDresserStatusMessage = null;
+            window._iconSmartToggle = null;
+            window._iconLinkedObjects.Clear();
+
+            window.Show();
+            window.Focus();
+            window.Repaint();
+        }
+
         public static void OpenIconEditor(
             GameObject target,
             Texture2D existingIcon,
@@ -283,15 +396,11 @@ namespace DiNeScreenSaver
             window.ReleaseIconPreviewResources();
             window.minSize = new Vector2(420, 620);
             if (created)
-                window.position = new Rect(window.position.x, window.position.y, 420, 720);
+                window.position = new Rect(window.position.x, window.position.y, 420, 760);
             window._mode = ToolMode.Icon;
             window._iconTarget = target;
             window._prevIconTarget = target;
-            window._previewEuler = new Vector2(0f, 180f);
-            window._previewPan = Vector2.zero;
-            window._zoomFactor = 1f;
-            window._previewDirty = true;
-            window._iconPreviewUnavailable = false;
+            window.ApplyPresetToWindow(DiNeMultiIconGenerator.GetDefaultCapturePreset());
             window._iconOverwriteAssetPath = existingIcon != null
                 ? AssetDatabase.GetAssetPath(existingIcon).Replace('\\', '/')
                 : null;
@@ -304,6 +413,7 @@ namespace DiNeScreenSaver
             window._iconDresser = owner;
             window._iconDresserLayerIndex = layerIndex;
             window._iconDresserButtonIndex = buttonIndex;
+            window._iconDresserStatusMessage = null;
             window._iconSmartToggle = null;
             window._iconLinkedObjects.Clear();
             if (linkedObjects != null)
@@ -1283,16 +1393,26 @@ namespace DiNeScreenSaver
                 ReleaseIconPreviewResources();
                 _prevIconTarget  = _iconTarget;
                 TutorialNotify("icon-target");
-                _previewEuler    = new Vector2(0f, 180f);
-                _previewPan      = Vector2.zero;
-                _zoomFactor      = 1f;
+                var defaultPreset = DiNeMultiIconGenerator.GetDefaultCapturePreset();
+                _previewEuler    = defaultPreset.euler;
+                _previewPan      = defaultPreset.pan;
+                _zoomFactor      = defaultPreset.zoom;
                 _previewDirty    = true;
                 _iconOverwriteAssetPath = null;
-                _iconDresser = null;
                 _iconDresserLayerIndex = -1;
                 _iconDresserButtonIndex = -1;
+                _iconDresserStatusMessage = null;
                 _iconLinkedObjects.Clear();
                 _iconPreviewUnavailable = false;
+            }
+
+            if (_iconDresser == null && _iconTarget != null && Event.current.type == EventType.Layout)
+            {
+                var descriptor = _iconTarget.GetComponentInParent<VRC.SDK3.Avatars.Components.VRCAvatarDescriptor>(true);
+                if (descriptor != null)
+                    _iconDresser = descriptor.GetComponentInChildren<DiNeMultiDresser>(true);
+                else
+                    _iconDresser = _iconTarget.GetComponentInParent<DiNeMultiDresser>(true);
             }
 
             GUILayout.Space(8);
@@ -1465,6 +1585,11 @@ namespace DiNeScreenSaver
 
             GUILayout.Space(8);
 
+            // ── 멀티 드레서 기본 촬영 연동 ──
+            DrawMultiDresserDefaultCaptureCard();
+
+            GUILayout.Space(8);
+
             // ── 설정 및 버튼 ──
             EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
 
@@ -1524,6 +1649,94 @@ namespace DiNeScreenSaver
             TutorialDraw("open-folder", "ping-folder");
 
             EditorGUILayout.EndVertical();
+        }
+
+        private void DrawMultiDresserDefaultCaptureCard()
+        {
+            EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
+            Rect titleRect = EditorGUILayout.GetControlRect(false, 24f);
+            EditorGUI.DrawRect(new Rect(titleRect.x, titleRect.yMax - 1f, titleRect.width, 1f),
+                new Color(0.30f, 0.82f, 0.76f, 0.65f));
+            GUI.Label(titleRect, T(59), new GUIStyle(EditorStyles.boldLabel)
+            {
+                fontSize = 12,
+                normal = { textColor = Color.white }
+            });
+
+            EditorGUILayout.LabelField(T(61), EditorStyles.wordWrappedMiniLabel);
+            GUILayout.Space(3f);
+
+            bool hasCustom = DiNeMultiIconGenerator.HasCustomDefaultCapture;
+            var preset = DiNeMultiIconGenerator.GetDefaultCapturePreset();
+            string statusHeader = hasCustom ? T(67) : T(68);
+            string idleLabel = preset.idlePose ? T(72) : T(73);
+            string outlineLabel = preset.effects != null && preset.effects.outlineEnabled
+                ? $"{T(72)} ({preset.effects.outlineSize}px)"
+                : T(73);
+            string forbiddenLabel = preset.effects != null && preset.effects.forbiddenOverlay
+                ? T(72)
+                : T(73);
+            string summary = $"{statusHeader}  |  Pitch {preset.euler.x:0.#}°, Yaw {preset.euler.y:0.#}°  |  Zoom {preset.zoom:0.##}×\n" +
+                             $"{T(45)}: {idleLabel}  |  {T(31)}: {outlineLabel}  |  {T(34)}: {forbiddenLabel}";
+            EditorGUILayout.HelpBox(summary, MessageType.None);
+
+            GUILayout.Space(4f);
+            if (DiNeEditorUI.Button(new GUIContent(T(60), T(61)), DiNeEditorUI.CompactButtonHeight))
+            {
+                DiNeMultiIconGenerator.SaveDefaultCapturePreset(
+                    _previewEuler, _previewPan, _zoomFactor, GetIconEffectSettings(), _iconIdlePose);
+                SaveSettings();
+                _iconDresserStatusMessage = T(69);
+                TutorialNotify("icon-dresser-default");
+                Repaint();
+            }
+            TutorialAnchor("icon-dresser-default");
+
+            GUILayout.Space(3f);
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button(T(62), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
+            {
+                ApplyPresetToWindow(DiNeMultiIconGenerator.GetDefaultCapturePreset());
+                _iconDresserStatusMessage = T(70);
+                Repaint();
+            }
+            using (new EditorGUI.DisabledScope(!hasCustom))
+            {
+                if (GUILayout.Button(T(63), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
+                {
+                    DiNeMultiIconGenerator.ResetDefaultCapturePreset();
+                    _iconDresserStatusMessage = T(71);
+                    Repaint();
+                }
+            }
+            EditorGUILayout.EndHorizontal();
+
+            HLine();
+            _iconDresser = (DiNeMultiDresser)EditorGUILayout.ObjectField(
+                T(64), _iconDresser, typeof(DiNeMultiDresser), true);
+
+            using (new EditorGUI.DisabledScope(_iconDresser == null))
+            {
+                if (GUILayout.Button(new GUIContent(T(65), T(66)), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
+                {
+                    DiNeMultiIconGenerator.SaveDefaultCapturePreset(
+                        _previewEuler, _previewPan, _zoomFactor, GetIconEffectSettings(), _iconIdlePose);
+                    SaveSettings();
+                    int count = DiNeMultiIconGenerator.RegenerateAllIcons(_iconDresser);
+                    _iconDresserStatusMessage = string.Format(T(74), count);
+                    TutorialNotify("icon-dresser-default");
+                    Repaint();
+                }
+            }
+
+            if (!string.IsNullOrEmpty(_iconDresserStatusMessage))
+            {
+                GUILayout.Space(3f);
+                EditorGUILayout.HelpBox(_iconDresserStatusMessage, MessageType.Info);
+            }
+
+            EditorGUILayout.EndVertical();
+            TutorialDraw("icon-dresser-default");
         }
 
         private void DrawDirectionButtons()
@@ -2139,7 +2352,9 @@ namespace DiNeScreenSaver
                     importer.textureType         = TextureImporterType.Sprite;
                     importer.mipmapEnabled       = false;
                     importer.npotScale           = TextureImporterNPOTScale.None;
+                    importer.textureCompression  = TextureImporterCompression.CompressedHQ;
                     importer.maxTextureSize      = 256;
+                    importer.wrapMode            = TextureWrapMode.Clamp;
                     importer.SaveAndReimport();
                 }
 
@@ -2271,31 +2486,38 @@ namespace DiNeScreenSaver
             if (sv == null) { Debug.LogError("[DiNe] Scene View not active."); return; }
 
             EnsureDir(SCREENSHOT_ASSET_PATH);
-            int w = (int)_captureSize.x, h = (int)_captureSize.y;
+            int w = Mathf.Max(1, (int)_captureSize.x), h = Mathf.Max(1, (int)_captureSize.y);
             var orig_rt  = RenderTexture.active;
             var orig_cf  = sv.camera.clearFlags;
             var orig_bg  = sv.camera.backgroundColor;
 
             var rt = new RenderTexture(w, h, 24);
-            sv.camera.targetTexture = rt;
-            ApplyCameraBackground(sv.camera);
-            sv.Repaint();
-            sv.camera.Render();
-            RenderTexture.active = rt;
+            Texture2D tex = null;
+            try
+            {
+                sv.camera.targetTexture = rt;
+                ApplyCameraBackground(sv.camera);
+                sv.Repaint();
+                sv.camera.Render();
+                RenderTexture.active = rt;
 
-            var format = _bgType == BGType.Transparent ? TextureFormat.ARGB32 : TextureFormat.RGB24;
-            var tex = new Texture2D(w, h, format, false);
-            tex.ReadPixels(new Rect(0, 0, w, h), 0, 0);
-            tex.Apply();
+                var format = _bgType == BGType.Transparent ? TextureFormat.ARGB32 : TextureFormat.RGB24;
+                tex = new Texture2D(w, h, format, false);
+                tex.ReadPixels(new Rect(0, 0, w, h), 0, 0);
+                tex.Apply();
+            }
+            finally
+            {
+                // 실패해도 씬 뷰 카메라가 검게 남지 않도록 항상 되돌린다.
+                sv.camera.targetTexture = null;
+                sv.camera.clearFlags    = orig_cf;
+                sv.camera.backgroundColor = orig_bg;
+                RenderTexture.active    = orig_rt;
+                DestroyImmediate(rt);
+            }
 
-            sv.camera.targetTexture = null;
-            sv.camera.clearFlags    = orig_cf;
-            sv.camera.backgroundColor = orig_bg;
-            RenderTexture.active    = orig_rt;
-
-            SaveScreenshot(tex, w, h);
-            DestroyImmediate(tex);
-            DestroyImmediate(rt);
+            try { SaveScreenshot(tex, w, h); }
+            finally { DestroyImmediate(tex); }
         }
 
         private void ApplyCameraBackground(Camera cam)

@@ -42,10 +42,17 @@ namespace DiNeTool.ExpressionEditor
             }
         }
 
+        // 인스펙터가 IMGUI 이벤트마다 묻는 값이라 한 번만 조회한다. 패키지 목록이 바뀌면 도메인이 리로드되어 다시 계산된다.
+        private static bool? hasCompetingInspectorPackage;
+
         internal static bool HasCompetingInspectorPackage
         {
             get
             {
+                if (hasCompetingInspectorPackage.HasValue)
+                    return hasCompetingInspectorPackage.Value;
+
+                hasCompetingInspectorPackage = false;
                 var packages = UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages();
                 if (packages == null)
                     return false;
@@ -58,7 +65,10 @@ namespace DiNeTool.ExpressionEditor
                     foreach (string packageName in CompetingPackageNames)
                     {
                         if (package.name == packageName)
+                        {
+                            hasCompetingInspectorPackage = true;
                             return true;
+                        }
                     }
                 }
 

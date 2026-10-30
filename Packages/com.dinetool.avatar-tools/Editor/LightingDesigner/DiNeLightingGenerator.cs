@@ -701,20 +701,14 @@ public static class DiNeLightingGenerator
         rootMenu.controls.RemoveAll(control =>
             control != null && control.type == VRCExpressionsMenu.Control.ControlType.SubMenu && control.name == menuName);
 
-        if (rootMenu.controls.Count >= 8)
-        {
-            Debug.LogError(
-                $"[DiNe 라이팅 디자이너] 아바타 루트 메뉴가 8칸을 다 써서 '{menuName}' 서브메뉴를 추가하지 못했습니다.");
-            return;
-        }
-
-        rootMenu.controls.Add(new VRCExpressionsMenu.Control
+        // 루트 8칸이 다 찼으면 Multi Dresser/Smart Toggle과 같은 "Next ▶" 페이지로 넘긴다(rootMenu는 임시 복사본).
+        DiNeSmartToggleGenerator.AddControlWithPages(rootMenu, new VRCExpressionsMenu.Control
         {
             name = menuName,
             type = VRCExpressionsMenu.Control.ControlType.SubMenu,
             subMenu = menu,
             icon = designer.MenuIcon
-        });
+        }, menuName, generatedFolder, 1);
     }
 
     /// <summary>슬라이더/토글 메뉴 컨트롤 하나를 만든다.</summary>

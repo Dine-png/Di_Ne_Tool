@@ -92,7 +92,7 @@ namespace DiNeTool.ExtraModifier.Editor
         private static readonly string[] OutlineWidthNames = { "_OutlineWidth", "_outline_width", "_LineWidth", "_Outline_Width" };
         private static readonly string[] OutlineColorNames = { "_OutlineColor", "_LineColor", "_Outline_Color", "_OutlineCol" };
         private static readonly string[] OutlineTexNames = { "_OutlineWidthMask", "_OutlineWidthTexture", "_Outline_Sampler", "_OutlineMask" };
-        private static readonly string[] OutlineToggleNames = { "_UseOutline", "_OutlineEnabled", "_EnableOutline" };
+        private static readonly string[] OutlineToggleNames = { "_UseOutline", "_OutlineEnabled", "_EnableOutline", "_EnableOutlines" };
         private static readonly string[] RimColorNames = { "_RimColor", "_RimLightColor", "_RimLight_Color" };
         private static readonly string[] RimTexNames = { "_RimColorTex", "_RimTexture", "_Set_RimLightMask" };
         private static readonly string[] RimPowerNames = { "_RimFresnelPower", "_RimBorder", "_RimLightPower", "_RimPower" };
@@ -337,7 +337,9 @@ namespace DiNeTool.ExtraModifier.Editor
 
             // 아웃라인.
             var outlineWidth = GetFloat(source, OutlineWidthNames, 0f);
-            var outlineEnabled = outlineWidth > 0.0001f && GetFloat(source, OutlineToggleNames, 1f) > 0.5f;
+            // lilToon은 Outline 변형 셰이더에서도 _UseOutline을 0으로 두므로 셰이더 이름을 먼저 본다.
+            var outlineEnabled = outlineWidth > 0.0001f &&
+                                 (source.shader.name.Contains("Outline") || GetFloat(source, OutlineToggleNames, 1f) > 0.5f);
             if (outlineEnabled)
             {
                 if (options.KeepOutline)
@@ -430,9 +432,20 @@ namespace DiNeTool.ExtraModifier.Editor
             // lilToon 반투명은 RenderType=TransparentCutout, Queue 2460이라 태그만으로는 컷아웃으로 오판된다.
             if (source.HasProperty("_TransparentMode"))
             {
-                int lilMode = Mathf.RoundToInt(source.GetFloat("_TransparentMode"));
-                cutout = lilMode == 1 || lilMode == 5;
-                transparent = lilMode >= 2 && !cutout;
+                string shaderName = source.shader.name;
+                if (shaderName.Contains("lilToonMulti"))
+                {
+                    int lilMode = Mathf.RoundToInt(source.GetFloat("_TransparentMode"));
+                    cutout = lilMode == 1 || lilMode == 5;
+                    transparent = lilMode >= 2 && !cutout;
+                }
+                else
+                {
+                    // 일반 lilToon은 렌더링 모드가 셰이더 변형(이름)으로 정해지고 _TransparentMode는 0으로 남는다.
+                    cutout = shaderName.Contains("Cutout");
+                    transparent = !cutout && (shaderName.Contains("Transparent") || shaderName.Contains("Refraction") ||
+                                              shaderName.Contains("Fur") || shaderName.Contains("Gem") || shaderName.Contains("Overlay"));
+                }
             }
 
             var mode = transparent ? 2f : cutout ? 1f : 0f;

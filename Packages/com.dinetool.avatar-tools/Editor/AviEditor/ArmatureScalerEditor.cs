@@ -173,6 +173,7 @@ public partial class ArmatureScalerEditor : EditorWindow
         }
         SkeRestoreAndClearPreview();
         ReleaseHeadPreview();
+        if (selectedButtonTex != null) DestroyImmediate(selectedButtonTex);
     }
 
     private void ReleaseHeadPreview()
@@ -756,7 +757,7 @@ public partial class ArmatureScalerEditor : EditorWindow
             if (EditorGUI.EndChangeCheck())
             {
                 UpdatePartPosition(newPosition);
-                ArmatureScalerLogic.ApplyPosition(boneMapping, MapToHumanBodyBones(positionValues));
+                ArmatureScalerLogic.ApplyPosition(boneMapping, new Dictionary<HumanBodyBones, Vector3> { { GetBoneType(selectedPart), newPosition } });
             }
 
             if (CanRotate(selectedPart))
@@ -771,7 +772,7 @@ public partial class ArmatureScalerEditor : EditorWindow
                 if (EditorGUI.EndChangeCheck())
                 {
                     UpdatePartRotation(newRotation);
-                    ArmatureScalerLogic.ApplyRotation(boneMapping, MapToHumanBodyBonesForRotation(rotationValues));
+                    ArmatureScalerLogic.ApplyRotation(boneMapping, new Dictionary<HumanBodyBones, Quaternion> { { GetBoneType(selectedPart), newRotation } });
                 }
             }
             }
@@ -977,7 +978,8 @@ public partial class ArmatureScalerEditor : EditorWindow
         if (armatureEditMode == ArmatureEditMode.DirectTransform)
         {
             UpdatePartScale(scale);
-            ArmatureScalerLogic.ApplyScale(boneMapping, MapToHumanBodyBones(scaleValues));
+            // 캐시 전체를 다시 쓰면 창 밖에서 바꾼 다른 본이 예전 값으로 되돌아가므로 선택한 본만 적용한다.
+            ArmatureScalerLogic.ApplyScale(boneMapping, new Dictionary<HumanBodyBones, Vector3> { { GetBoneType(selectedPart), scale } });
             return;
         }
 

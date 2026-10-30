@@ -268,14 +268,14 @@ public static class DiNeSmartToggleGenerator
         return copy;
     }
 
-    private static void AddControlWithPages(
+    internal static void AddControlWithPages(
         VRCExpressionsMenu menu,
         VRCExpressionsMenu.Control control,
         string groupName,
         string folder,
         int pageNumber)
     {
-        RemoveMatchingControl(menu, control.parameter.name);
+        RemoveMatchingControl(menu, control.parameter?.name);
         if (menu.controls == null)
             menu.controls = new List<VRCExpressionsMenu.Control>();
         if (menu.controls.Count < 8)

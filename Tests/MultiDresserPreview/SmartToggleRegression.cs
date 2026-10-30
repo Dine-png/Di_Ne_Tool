@@ -180,6 +180,56 @@ public static class SmartToggleRegression
                 Require(AssetDatabase.GetAssetPath(layer.icons[1]) == renamed && System.IO.File.Exists(path), "New-name generation overwrote original");
             }
             finally { AssetDatabase.DeleteAsset(renamed); }
+
+            bool hadCustom = DiNeMultiIconGenerator.HasCustomDefaultCapture;
+            var prevPreset = DiNeMultiIconGenerator.GetDefaultCapturePreset();
+            var dresserGo = new GameObject("Dresser_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var dresser = dresserGo.AddComponent<DiNeMultiDresser>();
+                dresser.layers.Add(layer);
+                var customEffects = new DiNeIconMaker.Settings
+                {
+                    outlineEnabled = true,
+                    outlineColor = new Color(0.9f, 0.2f, 0.4f, 1f),
+                    outlineSize = 6,
+                    forbiddenOverlay = true,
+                    forbiddenScale = 0.7f,
+                    forbiddenOpacity = 0.6f,
+                    forbiddenBehindObject = true
+                };
+                DiNeMultiIconGenerator.SaveDefaultCapturePreset(
+                    new Vector2(20f, 150f), new Vector2(0.15f, -0.1f), 1.35f, customEffects, true);
+                Require(DiNeMultiIconGenerator.HasCustomDefaultCapture, "Custom default capture flag was not saved");
+                var loaded = DiNeMultiIconGenerator.GetDefaultCapturePreset();
+                Require(loaded.euler == new Vector2(20f, 150f) && loaded.pan == new Vector2(0.15f, -0.1f) &&
+                    Mathf.Approximately(loaded.zoom, 1.35f) && loaded.idlePose &&
+                    loaded.effects.outlineEnabled && loaded.effects.outlineSize == 6 &&
+                    loaded.effects.forbiddenOverlay && loaded.effects.forbiddenBehindObject,
+                    "Saved default capture preset did not round-trip");
+
+                int configuredBefore = DiNeScreenSaver.DiNeScreenSaver.ConfiguredCaptures;
+                int recaptured = DiNeMultiIconGenerator.RegenerateAllIcons(dresser);
+                Require(recaptured == 1 && DiNeScreenSaver.DiNeScreenSaver.ConfiguredCaptures == configuredBefore + 1,
+                    "Bulk recapture did not invoke configured Screen Saver capture");
+                Require(DiNeScreenSaver.DiNeScreenSaver.LastEuler == new Vector2(20f, 150f) &&
+                    Mathf.Approximately(DiNeScreenSaver.DiNeScreenSaver.LastZoom, 1.35f) &&
+                    DiNeScreenSaver.DiNeScreenSaver.LastIdle &&
+                    DiNeScreenSaver.DiNeScreenSaver.LastSettings.outlineSize == 6 &&
+                    DiNeScreenSaver.DiNeScreenSaver.LastSettings.forbiddenOverlay,
+                    "Configured capture did not receive the saved preset parameters");
+
+                DiNeMultiIconGenerator.ResetDefaultCapturePreset();
+                Require(!DiNeMultiIconGenerator.HasCustomDefaultCapture, "Reset did not clear custom default capture flag");
+            }
+            finally
+            {
+                Object.DestroyImmediate(dresserGo);
+                if (hadCustom)
+                    DiNeMultiIconGenerator.SaveDefaultCapturePreset(prevPreset.euler, prevPreset.pan, prevPreset.zoom, prevPreset.effects, prevPreset.idlePose);
+                else
+                    DiNeMultiIconGenerator.ResetDefaultCapturePreset();
+            }
         }
         finally { DiNeIconMaker.FailCapture = false; AssetDatabase.DeleteAsset(path); Object.DestroyImmediate(go); }
         using (var fixture = new Fixture())

@@ -324,26 +324,56 @@ public static class DiNeShapeKeyEditorCore
                 parent = folder;
             }
 
-            // Each edit gets a distinct mesh identity. In-place CopySerialized can
-            // leave a bound renderer using old skinning data; name-based overwrite
-            // also changes other avatars sharing that asset and cannot undo safely.
             string safeName = newMesh.name.Replace(" ", "_");
             foreach (char invalid in Path.GetInvalidFileNameChars())
                 safeName = safeName.Replace(invalid, '_');
             if (string.IsNullOrEmpty(safeName)) safeName = "Mesh";
-            string targetPath = AssetDatabase.GenerateUniqueAssetPath($"{SAVE_FOLDER}/{safeName}_dine.asset");
-            newMesh.hideFlags = HideFlags.None;
-            AssetDatabase.CreateAsset(newMesh, targetPath);
-            if (!AssetDatabase.Contains(newMesh))
-                throw new IOException(targetPath);
-            AssetDatabase.SaveAssetIfDirty(newMesh);
 
             var originalMesh = smr.sharedMesh;
             var originalWeights = new float[originalMesh.blendShapeCount];
             for (int i = 0; i < originalWeights.Length; i++)
                 originalWeights[i] = smr.GetBlendShapeWeight(i);
+
+            Mesh targetMesh;
+            string originalPath = AssetDatabase.GetAssetPath(originalMesh);
+            bool editable = originalPath.StartsWith("Assets/") && originalPath.EndsWith(".asset")
+                            && AssetDatabase.IsMainAsset(originalMesh);
+            if (editable)
+            {
+                // 편집 가능한 .asset 메시: 최초 1회 백업 후 원본을 제자리에서 수정
+                string backupFolder = SAVE_FOLDER + "/Backup";
+                if (!AssetDatabase.IsValidFolder(backupFolder))
+                    AssetDatabase.CreateFolder(SAVE_FOLDER, "Backup");
+                string guid = AssetDatabase.AssetPathToGUID(originalPath);
+                string backupPath = $"{backupFolder}/{safeName}_backup_{guid.Substring(0, 8)}.asset";
+                if (AssetDatabase.LoadAssetAtPath<Mesh>(backupPath) == null && !AssetDatabase.CopyAsset(originalPath, backupPath))
+                    throw new IOException(backupPath);
+
+                Undo.RegisterCompleteObjectUndo(originalMesh, "DiNe 쉐이프키 수정");
+                EditorUtility.CopySerialized(newMesh, originalMesh);
+                Object.DestroyImmediate(newMesh);
+                newMesh = null;
+                EditorUtility.SetDirty(originalMesh);
+                AssetDatabase.SaveAssetIfDirty(originalMesh);
+                targetMesh = originalMesh;
+            }
+            else
+            {
+                // FBX 등 읽기 전용 메시: 편집용 사본을 1회 생성 (원본 FBX가 백업 역할)
+                if (safeName.EndsWith("_dine")) safeName = safeName.Substring(0, safeName.Length - 5);
+                string targetPath = AssetDatabase.GenerateUniqueAssetPath($"{SAVE_FOLDER}/{safeName}_dine.asset");
+                newMesh.hideFlags = HideFlags.None;
+                AssetDatabase.CreateAsset(newMesh, targetPath);
+                if (!AssetDatabase.Contains(newMesh))
+                    throw new IOException(targetPath);
+                AssetDatabase.SaveAssetIfDirty(newMesh);
+                targetMesh = newMesh;
+            }
+
             Undo.RecordObject(smr, "DiNe 쉐이프키 수정");
-            smr.sharedMesh = newMesh;
+            // 같은 메시를 다시 할당해 스키닝 데이터를 갱신
+            smr.sharedMesh = null;
+            smr.sharedMesh = targetMesh;
             for (int i = 0; i < originalWeights.Length; i++)
                 smr.SetBlendShapeWeight(i, originalWeights[i]);
             if (PrefabUtility.IsPartOfPrefabInstance(smr))

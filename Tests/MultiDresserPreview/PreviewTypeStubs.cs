@@ -13,10 +13,10 @@ public static class DiNeIconMaker
     public static bool FailCapture;
     public class Settings
     {
-        public bool outlineEnabled, forbiddenOverlay, forbiddenBehindObject;
-        public Color outlineColor;
-        public int outlineSize;
-        public float forbiddenOpacity, forbiddenScale;
+        public bool outlineEnabled = true, forbiddenOverlay, forbiddenBehindObject;
+        public Color outlineColor = new Color(0.30f, 0.82f, 0.76f, 1.0f);
+        public int outlineSize = 3;
+        public float forbiddenOpacity = 0.85f, forbiddenScale = 0.85f;
     }
     public static string GetDefaultIconAssetPath(string name) => "Assets/TestIcons/" + name + ".png";
     public static bool CanOverwriteAsset(string path) => path != null && path.StartsWith("Assets/") && path.EndsWith(".png");
@@ -36,12 +36,28 @@ namespace DiNeScreenSaver
 {
     public static class DiNeScreenSaver
     {
+        public static int ConfiguredCaptures;
+        public static Vector2 LastEuler;
+        public static Vector2 LastPan;
+        public static float LastZoom;
+        public static bool LastIdle;
+        public static DiNeIconMaker.Settings LastSettings;
+
         public static void OpenIconEditor(GameObject target, Texture2D texture,
             DiNeMultiDresser dresser, int layer, int button, object callback) { }
         public static void OpenIconEditor(DiNeSmartToggle toggle) { }
+        public static void OpenMultiDresserDefaultCaptureEditor(DiNeMultiDresser dresser, GameObject sampleTarget = null) { }
         public static Texture2D GenerateConfiguredIcon(GameObject target, Vector2 euler, Vector2 pan,
             float zoom, DiNeIconMaker.Settings settings, string path, bool idle)
-            => DiNeIconMaker.GenerateIcon(target, null, path, settings);
+        {
+            ConfiguredCaptures++;
+            LastEuler = euler;
+            LastPan = pan;
+            LastZoom = zoom;
+            LastIdle = idle;
+            LastSettings = settings;
+            return DiNeIconMaker.GenerateIcon(target, null, path, settings);
+        }
     }
 }
 namespace nadena.dev.ndmf.preview

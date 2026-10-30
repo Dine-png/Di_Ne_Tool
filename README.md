@@ -3,10 +3,26 @@
 VRChat 아바타의 편집, 메뉴 제작, 라이팅, 최적화, 아이콘·스크린샷 제작, VRM 변환 준비를 한곳에서 처리하는 **Unity Editor 도구 모음**입니다.
 
 ![Unity 2022.3](https://img.shields.io/badge/Unity-2022.3_LTS%2B-black?logo=unity&style=flat)
-![Version 1.8.3](https://img.shields.io/badge/Version-1.8.3-30D1C2?style=flat)
+![Version 1.8.4](https://img.shields.io/badge/Version-1.8.4-30D1C2?style=flat)
 ![Languages](https://img.shields.io/badge/UI-EN%20%2F%20KO%20%2F%20JP-4C9BD6?style=flat)
 
 > 대부분의 도구는 English / 한국어 / 日本語 UI를 지원합니다. 기능에 따라 lilToon, Poiyomi, NDMF, Modular Avatar, UniVRM을 함께 사용할 수 있습니다.
+
+### 1.8.4 변경 사항
+
+- Multi Dresser: 루트 메뉴 8칸이 차면 "Next ▶" 페이지로 넘기고, 옷장이 하나면 바로 옷 목록으로 들어가게 했습니다. 등록된 의상 아이콘 일괄 재캡처, 추가 메뉴·파라미터 연동, 플레이 모드 비파괴 적용을 추가·개선했습니다.
+- Lighting Designer: 루트 메뉴가 가득 차도 "Next ▶" 페이지에 서브메뉴를 넣습니다.
+- Animation Tool: 별도 미리보기를 없애고 포즈·표정 적용 중심으로 정리했습니다.
+- Shape Key Editor: 편집 가능한 .asset 메시는 1회 백업 후 제자리에서 수정합니다.
+- Armature Scaler: 선택한 본만 적용해 다른 본 값이 되돌아가던 문제를 수정했습니다.
+- Package Patcher: 기존 폴더 안에 들어가는 업데이트는 옮기지 않아 asmdef·상대 경로가 깨지지 않습니다.
+- Screen Saver: Multi Dresser 기본 촬영 연동을 추가하고, 실패 시 씬 뷰 카메라를 항상 복구합니다.
+- Icon Maker·Multi Dresser 아이콘을 CompressedHQ로 저장해 VRChat 업로드 검증 에러를 막았습니다.
+- VRM 변환: lilToon 렌더링 모드·아웃라인 판별, PhysBone 콜라이더 변환을 수정했습니다.
+- Opticore: 립싱크·눈꺼풀 메시가 병합되지 않게 하고, 콜라이더 기준 트랜스폼을 바로잡았습니다.
+- In-Game Checker: Puppet 메뉴 축 방향과 Int 파라미터 랜덤 값을 수정했습니다.
+- Asset Cleaner: 저장하지 않은 열린 씬이 쓰는 에셋은 보존합니다.
+- Toggle Animator·Material Tool·Hierarchy Toggle 등 여러 도구의 작은 버그와 성능을 개선했습니다.
 
 ### 1.8.3 변경 사항
 
@@ -476,4 +492,4 @@ Hierarchy의 각 GameObject 오른쪽에는 `● / ○` 활성화 버튼이 표�
 
 **Made with ❤️ for avatar creators**
 
-_Last updated: 2026-10-08_
+_Last updated: 2026-10-30_

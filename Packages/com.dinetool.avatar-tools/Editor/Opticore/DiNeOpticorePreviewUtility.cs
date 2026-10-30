@@ -1326,10 +1326,14 @@ public static class DiNeOpticorePreviewUtility
         if (root == null || meshMutations == null)
             return;
 
+        // 디스크립터가 직접 가리키는 립싱크/눈꺼풀 메시는 병합되어 사라지면 안 된다.
+        var descriptor = root.GetComponentInChildren<VRC.SDK3.Avatars.Components.VRCAvatarDescriptor>(true);
         var groupedRenderers = new Dictionary<string, List<SkinnedMeshRenderer>>(StringComparer.Ordinal);
         foreach (SkinnedMeshRenderer renderer in root.GetComponentsInChildren<SkinnedMeshRenderer>(true))
         {
             if (renderer == null)
+                continue;
+            if (descriptor != null && (descriptor.VisemeSkinnedMesh == renderer || descriptor.customEyeLookSettings.eyelidsSkinnedMesh == renderer))
                 continue;
 
             Mesh mesh = meshMutations.GetMutableMesh(renderer);
@@ -2412,7 +2416,7 @@ public static class DiNeOpticorePreviewUtility
             if (transform == null || !transform.IsChildOf(root.transform))
                 continue;
 
-            if (IsAnimatedTransformOrParent(transform, root.transform, animatedTransforms))
+            if (IsAnimatedTransformOrParent(GetColliderHost(collider), root.transform, animatedTransforms))
                 continue;
 
             string signature = BuildPhysBoneColliderSignature(collider);
@@ -2500,11 +2504,13 @@ public static class DiNeOpticorePreviewUtility
         if (!(rotation is Quaternion localRotation))
             localRotation = Quaternion.identity;
 
-        float worldScale = GetMaxLossyScale(collider.transform);
+        // 콜라이더는 rootTransform(비어 있으면 자기 트랜스폼)을 따라간다.
+        Transform host = GetColliderHost(collider);
+        float worldScale = GetMaxLossyScale(host);
         float radiusValue = radius is float radiusFloat ? radiusFloat * worldScale : 0f;
         float heightValue = height is float heightFloat ? heightFloat * worldScale : 0f;
-        Vector3 worldPosition = collider.transform.TransformPoint(localPosition);
-        Quaternion worldRotation = collider.transform.rotation * localRotation;
+        Vector3 worldPosition = host.TransformPoint(localPosition);
+        Quaternion worldRotation = host.rotation * localRotation;
 
         Vector3 roundedPosition = RoundVector3(worldPosition);
         Quaternion roundedRotation = RoundQuaternion(worldRotation);
@@ -2512,6 +2518,7 @@ public static class DiNeOpticorePreviewUtility
         float roundedHeight = RoundFloat(heightValue);
 
         return string.Join("|",
+            host.GetInstanceID().ToString(),
             shapeType?.ToString() ?? "Unknown",
             insideBounds?.ToString() ?? "False",
             bonesAsSpheres?.ToString() ?? "False",
@@ -2524,6 +2531,12 @@ public static class DiNeOpticorePreviewUtility
             roundedRotation.y.ToString("F5"),
             roundedRotation.z.ToString("F5"),
             roundedRotation.w.ToString("F5"));
+    }
+
+    private static Transform GetColliderHost(Component collider)
+    {
+        Transform rootTransform = GetMemberValue(collider, "rootTransform") as Transform;
+        return rootTransform != null ? rootTransform : collider.transform;
     }
 
     private static float GetMaxLossyScale(Transform transform)
