@@ -2656,7 +2656,7 @@ namespace DiNeScreenSaver
             
             EditorPrefs.SetFloat("DiNe_IconPitch", _previewEuler.x);
             EditorPrefs.SetFloat("DiNe_IconYaw",   _previewEuler.y);
-            EditorPrefs.SetFloat("DiNe_IconZoom",  _zoomFactor);
+            EditorPrefs.SetFloat("DiNe_IconZoomV2",  _zoomFactor);
             EditorPrefs.SetFloat("DiNe_IconPanRelX",  _previewPan.x);
             EditorPrefs.SetFloat("DiNe_IconPanRelY",  _previewPan.y);
         }
@@ -2698,7 +2698,7 @@ namespace DiNeScreenSaver
             
             _previewEuler.x = EditorPrefs.GetFloat("DiNe_IconPitch", 0f);
             _previewEuler.y = EditorPrefs.GetFloat("DiNe_IconYaw", 180f);
-            _zoomFactor     = EditorPrefs.GetFloat("DiNe_IconZoom",   1f);
+            _zoomFactor     = EditorPrefs.GetFloat("DiNe_IconZoomV2",   1f);
             _previewPan.x   = EditorPrefs.GetFloat("DiNe_IconPanRelX",   0f);
             _previewPan.y   = EditorPrefs.GetFloat("DiNe_IconPanRelY",   0f);
         }

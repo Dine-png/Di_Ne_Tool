@@ -10,7 +10,8 @@ public static class DiNeMultiIconGenerator
     private const string DefaultYawKey              = "DiNe_MD_DefaultIcon_Yaw";
     private const string DefaultPanXKey             = "DiNe_MD_DefaultIcon_PanRelX";
     private const string DefaultPanYKey             = "DiNe_MD_DefaultIcon_PanRelY";
-    private const string DefaultZoomKey             = "DiNe_MD_DefaultIcon_Zoom";
+    // 1.8.6부터 촬영 범위를 실제 메시로 재므로, 그 전 바운드 기준으로 맞춘 줌 값은 옷을 잘라 먹어 새 키로 버린다.
+    private const string DefaultZoomKey             = "DiNe_MD_DefaultIcon_ZoomV2";
     private const string DefaultIdlePoseKey         = "DiNe_MD_DefaultIcon_IdlePose";
     private const string DefaultOutlineKey          = "DiNe_MD_DefaultIcon_Outline";
     private const string DefaultOutlineColorKey     = "DiNe_MD_DefaultIcon_OutlineColor";
