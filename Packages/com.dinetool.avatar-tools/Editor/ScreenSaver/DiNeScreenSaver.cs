@@ -29,7 +29,8 @@ namespace DiNeScreenSaver
             [InspectorName("16:9")] _16_9,
             [InspectorName("9:16")] _9_16,
             [InspectorName("3:4")]  _3_4,
-            [InspectorName("1:1")]  _1_1
+            [InspectorName("1:1")]  _1_1,
+            [InspectorName("4:3")]  _4_3
         }
         private enum BGType { Skybox, Color, Transparent }
 
@@ -735,6 +736,7 @@ namespace DiNeScreenSaver
                     case Aspect._9_16: _captureSize = new Vector2(base_.y, base_.x); break;
                     case Aspect._3_4:  _captureSize = new Vector2(base_.y * 0.75f, base_.y); break;
                     case Aspect._1_1:  _captureSize = new Vector2(base_.y, base_.y); break;
+                    case Aspect._4_3:  _captureSize = new Vector2(base_.y * 4f / 3f, base_.y); break;
                 }
                 EditorGUILayout.LabelField(T(4), $"{Mathf.Round(_captureSize.x)} x {Mathf.Round(_captureSize.y)}");
             }
