@@ -1513,6 +1513,8 @@ public partial class DiNeMaterialTool : EditorWindow
 
         // === [추가된 부분] 스크롤 무한 방지 및 사이즈 조정 ===
         float vramHeight = Mathf.Clamp(_vramTextures.Count * 46f + 8f, 160f, 500f);
+        // 기본 프리뷰 캐시(50)보다 텍스처가 많으면 썸네일이 계속 밀려나 재생성(깜박임·랙)된다.
+        AssetPreview.SetPreviewTextureCacheSize(Mathf.Max(256, _vramTextures.Count + 64));
         _tutorial?.BeginScrollScope();
         _vramScroll = EditorGUILayout.BeginScrollView(_vramScroll, GUILayout.Height(vramHeight));
         // .ToList() 스냅샷으로 순회 - VRAMScanTextures() 가 리스트를 Clear/교체해도 안전

@@ -220,8 +220,20 @@ public static class ArmatureScalerCore
     {
         Dictionary<HumanBodyBones, Transform> boneMapping = new Dictionary<HumanBodyBones, Transform>();
         
+        // 휴머노이드 아바타는 Animator의 본 매핑을 우선한다.
+        // 이름 탐색만 쓰면 아바타 안에 들어 있는 옷의 아마추어 본이 먼저 잡힐 수 있다.
+        var animator = avatar.GetComponent<Animator>();
+        if (animator != null && animator.avatar != null && animator.isHuman)
+        {
+            for (int i = 0; i < (int)HumanBodyBones.LastBone; i++)
+            {
+                var humanBone = animator.GetBoneTransform((HumanBodyBones)i);
+                if (humanBone != null) boneMapping[(HumanBodyBones)i] = humanBone;
+            }
+        }
+
         Transform[] allTransforms = avatar.GetComponentsInChildren<Transform>(true);
-        
+
         foreach (Transform t in allTransforms)
         {
             var normalizedName = NormalizeName(t.name);

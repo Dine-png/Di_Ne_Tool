@@ -30,58 +30,77 @@ public static class DiNeMultiIconGenerator
         public DiNeIconMaker.Settings effects;
     }
 
-    public static bool HasCustomDefaultCapture => EditorPrefs.GetBool(CustomDefaultKey, false);
+    // 기본 촬영은 PC 전체(EditorPrefs)가 아니라 이 유니티 프로젝트의 ProjectSettings에 저장한다.
+    private const string ProjectFilePath = "ProjectSettings/DiNeMultiDresserDefaultCapture.json";
+
+    [System.Serializable]
+    private class ProjectData
+    {
+        public Vector2 euler = new Vector2(0f, 180f);
+        public Vector2 pan;
+        public float zoom = 1f;
+        public bool idlePose;
+        public bool outline;
+        public Color outlineColor = new Color(0.03f, 0.03f, 0.03f, 1f);
+        public int outlineSize = 4;
+        public bool forbidden;
+        public float forbiddenOpacity = 1f;
+        public float forbiddenScale = 0.85f;
+        public bool forbiddenBehind = true;
+    }
+
+    private static ProjectData LoadProjectData()
+    {
+        try
+        {
+            if (System.IO.File.Exists(ProjectFilePath))
+                return JsonUtility.FromJson<ProjectData>(System.IO.File.ReadAllText(ProjectFilePath));
+        }
+        catch (System.Exception e) { Debug.LogWarning("[DiNe] 기본 촬영 설정을 읽지 못했습니다: " + e.Message); }
+        return null;
+    }
+
+    public static bool HasCustomDefaultCapture => System.IO.File.Exists(ProjectFilePath);
 
     public static CapturePreset GetDefaultCapturePreset()
     {
         var defaultOutlineColor = new Color(0.03f, 0.03f, 0.03f, 1f);
-        if (!HasCustomDefaultCapture)
+        ProjectData data = LoadProjectData();
+        if (data != null)
         {
             return new CapturePreset
             {
-                euler = new Vector2(0f, 180f),
-                pan = Vector2.zero,
-                zoom = 1f,
-                idlePose = false,
+                euler = data.euler,
+                pan = data.pan,
+                zoom = Mathf.Clamp(data.zoom, 0.2f, 5f),
+                idlePose = data.idlePose,
                 effects = new DiNeIconMaker.Settings
                 {
-                    outlineEnabled = false,
-                    outlineColor = defaultOutlineColor,
-                    outlineSize = 4,
-                    forbiddenOverlay = false,
-                    forbiddenOpacity = 1f,
-                    forbiddenScale = 0.85f,
-                    forbiddenBehindObject = true
+                    outlineEnabled = data.outline,
+                    outlineColor = data.outlineColor,
+                    outlineSize = Mathf.Clamp(data.outlineSize, 1, 12),
+                    forbiddenOverlay = data.forbidden,
+                    forbiddenOpacity = Mathf.Clamp01(data.forbiddenOpacity),
+                    forbiddenScale = Mathf.Clamp(data.forbiddenScale, 0.2f, 1.2f),
+                    forbiddenBehindObject = data.forbiddenBehind
                 }
             };
         }
-
-        Color outlineColor = defaultOutlineColor;
-        if (EditorPrefs.HasKey(DefaultOutlineColorKey))
-        {
-            ColorUtility.TryParseHtmlString(
-                "#" + EditorPrefs.GetString(DefaultOutlineColorKey), out outlineColor);
-        }
-
         return new CapturePreset
         {
-            euler = new Vector2(
-                EditorPrefs.GetFloat(DefaultPitchKey, 0f),
-                EditorPrefs.GetFloat(DefaultYawKey, 180f)),
-            pan = new Vector2(
-                EditorPrefs.GetFloat(DefaultPanXKey, 0f),
-                EditorPrefs.GetFloat(DefaultPanYKey, 0f)),
-            zoom = Mathf.Clamp(EditorPrefs.GetFloat(DefaultZoomKey, 1f), 0.2f, 5f),
-            idlePose = EditorPrefs.GetBool(DefaultIdlePoseKey, false),
+            euler = new Vector2(0f, 180f),
+            pan = Vector2.zero,
+            zoom = 1f,
+            idlePose = false,
             effects = new DiNeIconMaker.Settings
             {
-                outlineEnabled = EditorPrefs.GetBool(DefaultOutlineKey, false),
-                outlineColor = outlineColor,
-                outlineSize = Mathf.Clamp(EditorPrefs.GetInt(DefaultOutlineSizeKey, 4), 1, 12),
-                forbiddenOverlay = EditorPrefs.GetBool(DefaultForbiddenKey, false),
-                forbiddenOpacity = Mathf.Clamp01(EditorPrefs.GetFloat(DefaultForbiddenOpacityKey, 1f)),
-                forbiddenScale = Mathf.Clamp(EditorPrefs.GetFloat(DefaultForbiddenScaleKey, 0.85f), 0.2f, 1.2f),
-                forbiddenBehindObject = EditorPrefs.GetBool(DefaultForbiddenBehindKey, true)
+                outlineEnabled = false,
+                outlineColor = defaultOutlineColor,
+                outlineSize = 4,
+                forbiddenOverlay = false,
+                forbiddenOpacity = 1f,
+                forbiddenScale = 0.85f,
+                forbiddenBehindObject = true
             }
         };
     }
@@ -94,24 +113,27 @@ public static class DiNeMultiIconGenerator
         bool idlePose)
     {
         effects = effects ?? new DiNeIconMaker.Settings { outlineEnabled = false };
-        EditorPrefs.SetBool(CustomDefaultKey, true);
-        EditorPrefs.SetFloat(DefaultPitchKey, euler.x);
-        EditorPrefs.SetFloat(DefaultYawKey, euler.y);
-        EditorPrefs.SetFloat(DefaultPanXKey, pan.x);
-        EditorPrefs.SetFloat(DefaultPanYKey, pan.y);
-        EditorPrefs.SetFloat(DefaultZoomKey, Mathf.Clamp(zoom, 0.2f, 5f));
-        EditorPrefs.SetBool(DefaultIdlePoseKey, idlePose);
-        EditorPrefs.SetBool(DefaultOutlineKey, effects.outlineEnabled);
-        EditorPrefs.SetString(DefaultOutlineColorKey, ColorUtility.ToHtmlStringRGBA(effects.outlineColor));
-        EditorPrefs.SetInt(DefaultOutlineSizeKey, Mathf.Clamp(effects.outlineSize, 1, 12));
-        EditorPrefs.SetBool(DefaultForbiddenKey, effects.forbiddenOverlay);
-        EditorPrefs.SetFloat(DefaultForbiddenOpacityKey, Mathf.Clamp01(effects.forbiddenOpacity));
-        EditorPrefs.SetFloat(DefaultForbiddenScaleKey, Mathf.Clamp(effects.forbiddenScale, 0.2f, 1.2f));
-        EditorPrefs.SetBool(DefaultForbiddenBehindKey, effects.forbiddenBehindObject);
+        var data = new ProjectData
+        {
+            euler = euler,
+            pan = pan,
+            zoom = Mathf.Clamp(zoom, 0.2f, 5f),
+            idlePose = idlePose,
+            outline = effects.outlineEnabled,
+            outlineColor = effects.outlineColor,
+            outlineSize = Mathf.Clamp(effects.outlineSize, 1, 12),
+            forbidden = effects.forbiddenOverlay,
+            forbiddenOpacity = Mathf.Clamp01(effects.forbiddenOpacity),
+            forbiddenScale = Mathf.Clamp(effects.forbiddenScale, 0.2f, 1.2f),
+            forbiddenBehind = effects.forbiddenBehindObject
+        };
+        System.IO.File.WriteAllText(ProjectFilePath, JsonUtility.ToJson(data, true));
     }
 
     public static void ResetDefaultCapturePreset()
     {
+        if (System.IO.File.Exists(ProjectFilePath))
+            System.IO.File.Delete(ProjectFilePath);
         EditorPrefs.DeleteKey(CustomDefaultKey);
         EditorPrefs.DeleteKey(DefaultPitchKey);
         EditorPrefs.DeleteKey(DefaultYawKey);

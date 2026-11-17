@@ -3,10 +3,18 @@
 VRChat 아바타의 편집, 메뉴 제작, 라이팅, 최적화, 아이콘·스크린샷 제작, VRM 변환 준비를 한곳에서 처리하는 **Unity Editor 도구 모음**입니다.
 
 ![Unity 2022.3](https://img.shields.io/badge/Unity-2022.3_LTS%2B-black?logo=unity&style=flat)
-![Version 1.8.7](https://img.shields.io/badge/Version-1.8.7-30D1C2?style=flat)
+![Version 1.9.0](https://img.shields.io/badge/Version-1.9.0-30D1C2?style=flat)
 ![Languages](https://img.shields.io/badge/UI-EN%20%2F%20KO%20%2F%20JP-4C9BD6?style=flat)
 
 > 대부분의 도구는 English / 한국어 / 日本語 UI를 지원합니다. 기능에 따라 lilToon, Poiyomi, NDMF, Modular Avatar, UniVRM을 함께 사용할 수 있습니다.
+
+### 1.9.0 변경 사항
+
+- Screen Saver: 4:3 화면 비율을 추가했습니다.
+- 아이콘 촬영: Multi Dresser 기본 촬영을 PC 전체가 아닌 유니티 프로젝트별(ProjectSettings)로 저장합니다. 기본 촬영은 옷 실루엣에 맞춰 다시 자르지 않고 미리보기 화면 그대로 저장하며, Screen Saver의 기본 촬영 카드를 '현재 구도 덮어쓰기 / 초기화'로 간단히 정리했습니다.
+- 아바타 에디터: 휴머노이드 아바타는 Animator 본 매핑을 우선 사용해, 아바타 안의 옷 아마추어 본이 잘못 잡히던 문제를 수정했습니다.
+- 머티리얼 툴: VRAM 텍스처 목록이 많을 때 썸네일이 계속 깜박이며 랙이 걸리던 문제를 수정했습니다.
+- 패키지 패처: 정리 폴더로 옮겨 둔 패키지를 업데이트할 때 새 파일이 원래 경로에 따로 생기던 문제를 수정해, 기존 폴더로 합칩니다.
 
 ### 1.8.7 변경 사항
 

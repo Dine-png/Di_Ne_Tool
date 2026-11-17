@@ -72,6 +72,8 @@ public partial class DiNePackagePatcher : EditorWindow
         public int    done;
         public int    phase = PHASE_IMPORT;
         public bool   parseFailed;   // tar 파싱에 실패한 패키지가 있으면 임포트 전후 스캔으로 대체
+        public List<string> remapFrom = new List<string>(); // 패키지 원래 폴더 경로
+        public List<string> remapTo   = new List<string>(); // 같은 GUID 폴더가 프로젝트에 실제로 있는 경로
     }
 
     private const string SESSION_STATE = "DiNePatcher_State";
@@ -304,6 +306,22 @@ public partial class DiNePackagePatcher : EditorWindow
         var organizedFolders = new List<string>();
         try
         {
+            // 업데이트 패키지: 기존 파일은 옮겨 둔 위치에서 갱신되지만 새 파일은 원래 경로에 생긴다.
+            // 같은 GUID 폴더가 있는 실제 위치로 합친다 (깊은 경로부터).
+            int remapCount = Math.Min(st.remapFrom.Count, st.remapTo.Count);
+            foreach (int i in Enumerable.Range(0, remapCount).OrderByDescending(i => st.remapFrom[i].Length))
+            {
+                string from = st.remapFrom[i], to = st.remapTo[i];
+                if (!AssetDatabase.IsValidFolder(from) || !AssetDatabase.IsValidFolder(to)) continue;
+                try
+                {
+                    Debug.Log($"[DiNe] 업데이트 새 항목을 기존 폴더로 병합: {from} → {to}");
+                    MergeFolderInto(from, to);
+                    organizedFolders.Add(to);
+                }
+                catch (Exception e) { Debug.LogError($"[DiNe] '{from}' 병합 실패\n{e}"); }
+            }
+
             foreach (var root in roots)
             {
                 try
@@ -1221,7 +1239,7 @@ public partial class DiNePackagePatcher : EditorWindow
                 state.queueId.Add(item.Id);
                 if (organizeIntoFolder)
                 {
-                    var packageRoots = GetPackageRootFolders(prepared, out bool parseFailed);
+                    var packageRoots = GetPackageRootFolders(prepared, out bool parseFailed, state);
                     foreach (var r in packageRoots) predictedRoots.Add(r);
                     if (parseFailed) state.parseFailed = true;
                 }
@@ -1532,7 +1550,7 @@ public partial class DiNePackagePatcher : EditorWindow
     /// .unitypackage(= tgz) 파일을 파싱해 설치될 Assets 루트 경로 목록 반환.
     /// 임포트 전에 호출하여 정확한 이동 대상을 미리 파악한다.
     /// </summary>
-    private static IEnumerable<string> GetPackageRootFolders(string packagePath, out bool parseFailed)
+    private static IEnumerable<string> GetPackageRootFolders(string packagePath, out bool parseFailed, PendingState remapState = null)
     {
         parseFailed = false;
         var roots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1578,6 +1596,20 @@ public partial class DiNePackagePatcher : EditorWindow
                     string assetPath = raw.Split('\n')[0].Trim('\0', '\r', '\n', ' ');
                     if (assetPath.StartsWith("Assets/"))
                     {
+                        // 같은 GUID 폴더가 다른 위치에 이미 있으면(예전에 정리 폴더로 옮긴 경우) 기록한다.
+                        if (remapState != null)
+                        {
+                            string guid = entryName.Replace('\\', '/').TrimStart('.', '/').Split('/')[0];
+                            string existing = AssetDatabase.GUIDToAssetPath(guid);
+                            if (!string.IsNullOrEmpty(existing) && AssetDatabase.IsValidFolder(existing)
+                                && !existing.Equals(assetPath, StringComparison.OrdinalIgnoreCase)
+                                && !Directory.Exists(assetPath) && !remapState.remapFrom.Contains(assetPath))
+                            {
+                                remapState.remapFrom.Add(assetPath);
+                                remapState.remapTo.Add(existing);
+                            }
+                        }
+
                         // 이번 임포트로 새로 생기는 Assets 최상위 경로만 루트로 삼는다.
                         // 기존 폴더를 루트로 잡으면 무관한 사용자 에셋까지 옮겨지고, 기존 폴더 안의 새 파일만 옮기면
                         // 패키지가 asmdef/상대 include 경로에서 떨어져 나가므로 기존 폴더에 들어가는 업데이트는 그대로 둔다.

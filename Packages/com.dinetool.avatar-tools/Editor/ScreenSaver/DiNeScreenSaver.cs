@@ -125,18 +125,18 @@ namespace DiNeScreenSaver
             /* 59 */ new[] { "Multi Dresser Default Capture",
                              "멀티 드레서 기본 촬영",
                              "Multi Dresser 基本撮影" },
-            /* 60 */ new[] { "Overwrite Multi Dresser Default Capture",
-                             "현재 구도를 멀티 드레서 기본 촬영으로 덮어쓰기",
-                             "現在の構図をMulti Dresser基本撮影に上書き" },
+            /* 60 */ new[] { "Overwrite Current Framing",
+                             "현재 구도 덮어쓰기",
+                             "現在の構図を上書き" },
             /* 61 */ new[] { "Saves the current angle, framing, pose, and visibility effects as Multi Dresser's global default icon capture.",
                              "현재 각도·구도·포즈·가시성 효과를 모든 멀티 드레서의 기본 아이콘 촬영 설정으로 저장합니다.",
                              "現在の角度・構図・ポーズ・視認性エフェクトをすべてのMulti Dresserの基本アイコン撮影設定として保存します。" },
             /* 62 */ new[] { "Load Default",
                              "기본 촬영 불러오기",
                              "基本撮影を読み込む" },
-            /* 63 */ new[] { "Reset Default",
-                             "기본 촬영 초기화",
-                             "基本撮影をリセット" },
+            /* 63 */ new[] { "Reset",
+                             "초기화",
+                             "リセット" },
             /* 64 */ new[] { "Target Multi Dresser",
                              "대상 멀티 드레서",
                              "対象 Multi Dresser" },
@@ -1656,87 +1656,25 @@ namespace DiNeScreenSaver
         private void DrawMultiDresserDefaultCaptureCard()
         {
             EditorGUILayout.BeginVertical(DiNeEditorUI.CardStyle);
-            Rect titleRect = EditorGUILayout.GetControlRect(false, 24f);
-            EditorGUI.DrawRect(new Rect(titleRect.x, titleRect.yMax - 1f, titleRect.width, 1f),
-                new Color(0.30f, 0.82f, 0.76f, 0.65f));
-            GUI.Label(titleRect, T(59), new GUIStyle(EditorStyles.boldLabel)
-            {
-                fontSize = 12,
-                normal = { textColor = Color.white }
-            });
-
-            EditorGUILayout.LabelField(T(61), EditorStyles.wordWrappedMiniLabel);
-            GUILayout.Space(3f);
-
-            bool hasCustom = DiNeMultiIconGenerator.HasCustomDefaultCapture;
-            var preset = DiNeMultiIconGenerator.GetDefaultCapturePreset();
-            string statusHeader = hasCustom ? T(67) : T(68);
-            string idleLabel = preset.idlePose ? T(72) : T(73);
-            string outlineLabel = preset.effects != null && preset.effects.outlineEnabled
-                ? $"{T(72)} ({preset.effects.outlineSize}px)"
-                : T(73);
-            string forbiddenLabel = preset.effects != null && preset.effects.forbiddenOverlay
-                ? T(72)
-                : T(73);
-            string summary = $"{statusHeader}  |  Pitch {preset.euler.x:0.#}°, Yaw {preset.euler.y:0.#}°  |  Zoom {preset.zoom:0.##}×\n" +
-                             $"{T(45)}: {idleLabel}  |  {T(31)}: {outlineLabel}  |  {T(34)}: {forbiddenLabel}";
-            EditorGUILayout.HelpBox(summary, MessageType.None);
-
-            GUILayout.Space(4f);
+            EditorGUILayout.BeginHorizontal();
             if (DiNeEditorUI.Button(new GUIContent(T(60), T(61)), DiNeEditorUI.CompactButtonHeight))
             {
                 DiNeMultiIconGenerator.SaveDefaultCapturePreset(
                     _previewEuler, _previewPan, _zoomFactor, GetIconEffectSettings(), _iconIdlePose);
                 SaveSettings();
-                _iconDresserStatusMessage = T(69);
                 TutorialNotify("icon-dresser-default");
                 Repaint();
             }
             TutorialAnchor("icon-dresser-default");
-
-            GUILayout.Space(3f);
-            EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button(T(62), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
+            using (new EditorGUI.DisabledScope(!DiNeMultiIconGenerator.HasCustomDefaultCapture))
             {
-                ApplyPresetToWindow(DiNeMultiIconGenerator.GetDefaultCapturePreset());
-                _iconDresserStatusMessage = T(70);
-                Repaint();
-            }
-            using (new EditorGUI.DisabledScope(!hasCustom))
-            {
-                if (GUILayout.Button(T(63), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
+                if (GUILayout.Button(T(63), GUILayout.Height(DiNeEditorUI.CompactButtonHeight), GUILayout.Width(110f)))
                 {
                     DiNeMultiIconGenerator.ResetDefaultCapturePreset();
-                    _iconDresserStatusMessage = T(71);
                     Repaint();
                 }
             }
             EditorGUILayout.EndHorizontal();
-
-            HLine();
-            _iconDresser = (DiNeMultiDresser)EditorGUILayout.ObjectField(
-                T(64), _iconDresser, typeof(DiNeMultiDresser), true);
-
-            using (new EditorGUI.DisabledScope(_iconDresser == null))
-            {
-                if (GUILayout.Button(new GUIContent(T(65), T(66)), GUILayout.Height(DiNeEditorUI.CompactButtonHeight)))
-                {
-                    DiNeMultiIconGenerator.SaveDefaultCapturePreset(
-                        _previewEuler, _previewPan, _zoomFactor, GetIconEffectSettings(), _iconIdlePose);
-                    SaveSettings();
-                    int count = DiNeMultiIconGenerator.RegenerateAllIcons(_iconDresser);
-                    _iconDresserStatusMessage = string.Format(T(74), count);
-                    TutorialNotify("icon-dresser-default");
-                    Repaint();
-                }
-            }
-
-            if (!string.IsNullOrEmpty(_iconDresserStatusMessage))
-            {
-                GUILayout.Space(3f);
-                EditorGUILayout.HelpBox(_iconDresserStatusMessage, MessageType.Info);
-            }
-
             EditorGUILayout.EndVertical();
             TutorialDraw("icon-dresser-default");
         }
@@ -2098,7 +2036,7 @@ namespace DiNeScreenSaver
             bool idlePose = false)
         {
             return GenerateIconStatic(
-                target, null, euler, pan, zoom, 256, false, effects, overwriteAssetPath, idlePose);
+                target, null, euler, pan, zoom, 256, false, effects, overwriteAssetPath, idlePose, false);
         }
 
         private void RenderPreview()
@@ -2259,7 +2197,8 @@ namespace DiNeScreenSaver
             bool autoRename,
             DiNeIconMaker.Settings effects,
             string overwriteAssetPath,
-            bool idlePose = false)
+            bool idlePose = false,
+            bool autoCrop = true)
         {
             if (target == null) return null;
             EnsureDir(ICON_ASSET_PATH);
@@ -2329,8 +2268,17 @@ namespace DiNeScreenSaver
                 int effectMargin = effects != null && effects.outlineEnabled
                     ? Mathf.Clamp(effects.outlineSize, 1, 12) + 2
                     : 2;
-                var cropped = AutoCrop(raw, outputSize, effectMargin);
-                DestroyImmediate(raw);
+                // 기본 촬영은 옷 실루엣에 맞춰 다시 자르지 않고 미리보기와 같은 화면 그대로 저장한다.
+                Texture2D cropped;
+                if (autoCrop)
+                {
+                    cropped = AutoCrop(raw, outputSize, effectMargin);
+                    DestroyImmediate(raw);
+                }
+                else
+                {
+                    cropped = ResizeTex(raw, outputSize);
+                }
                 DiNeIconMaker.ApplyEffects(cropped, effects ?? new DiNeIconMaker.Settings());
 
                 // 파일 이름 및 복사본 넘버링 처리
